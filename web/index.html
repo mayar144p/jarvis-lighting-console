@@ -209,7 +209,11 @@
           <span>House</span><input type="range" id="house" min="0" max="1" step="0.01" value="0.35">
         </label>
         <label class="hud-slider" title="Haze in the room">
-          <span>Haze</span><input type="range" id="haze" min="0" max="1" step="0.01" value="0.6">
+          <span id="haze-label">Haze</span><input type="range" id="haze" min="0" max="1" step="0.01" value="0.6">
+        </label>
+        <button class="hud-btn toggle" id="haze-auto" title="Auto: the haze in the 3D follows the hazers in the rig - it builds up while the desk runs them, thickest round them at first, and settles after they stop. The slider is then the most it gets. Off: the slider sets the haze (handy for programming).">Auto</button>
+        <label class="hud-slider" title="Exposure: how bright the picture is, like a camera's - the lights themselves don't change. Double-click to put it back to the middle">
+          <span>Exposure</span><input type="range" id="exposure" min="-2" max="2" step="0.1" value="0">
         </label>
       </div>
       <div class="draw-hint" id="draw-hint" hidden></div>

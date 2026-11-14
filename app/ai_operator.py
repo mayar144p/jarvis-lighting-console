@@ -36,7 +36,7 @@ LOG_KEEP = 30
 _PASSIVE_PREFIX = ("select_", "venue_", "rig_", "show_versions", "paperwork")
 PASSIVE = frozenset(_READ_ONLY | {"clear_selection", "highlight", "locate", "ready_check", "status",
                                   "pad_info", "venue_info", "rig_pieces", "rig_report", "venue_preview",
-                                  "colour_cal_get", "motion_get", "fx_status", "sound_tempo"})
+                                  "colour_cal_get", "motion_get", "output_get", "fx_status", "sound_tempo"})
 
 SYSTEM = """You are running the lights LIVE for the night, on a lighting desk, with the music.
 Every phrase (and on a drop) you get the music now, what the lights are doing and what

@@ -285,7 +285,7 @@ _OBJ_WORDS = [
 _OBJ_SIZE = {"screen": (4.0, 0.2, 2.5), "sub": (0.8, 0.8, 0.6), "speaker": (0.6, 0.5, 1.0),
              "dj_booth": (2.0, 0.9, 1.1), "bar": (4.0, 0.8, 1.1), "riser": (3.0, 2.0, 0.4),
              "pillar": (0.4, 0.4, 3.0), "table": (1.6, 0.8, 0.75),
-             **{k: v for k, v in venue_mod.OBJECT_SIZE.items() if k not in ("table", "bar", "mark")}}
+             **{k: v for k, v in venue_mod.OBJECT_SIZE.items() if k not in ("table", "bar", "mark", "haze")}}
 
 
 def object_kind(name: str, tag: str = "SceneObject") -> str | None:

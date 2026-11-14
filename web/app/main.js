@@ -44,12 +44,12 @@ function wireGig() {
 
 // Show mode: the 3D, the programmer and the playbacks are separate windows.
 // A setting changed in one (Settings is in the programmer's) reaches the
-// others at once - the 3D's quality, the look, Gig mode.
+// others at once - the look, Gig mode, calm flashing.
 window.addEventListener("storage", (e) => {
   if (e.key === "haze.theme") applyTheme();
   else if (e.key === "haze.gig") document.body.classList.toggle("gig", e.newValue === "1");
-  else if (e.key === "haze.quality" && HAS_3D) {
-    stagePanel().then((m) => { const st = m && m.getStage(); if (st) st.setOptions({ quality: e.newValue || "high" }); }).catch(() => {});
+  else if (e.key === "haze.calm" && HAS_3D) {
+    stagePanel().then((m) => { const st = m && m.getStage(); if (st) st.setOptions({ calm: e.newValue === "1" }); }).catch(() => {});
   }
 });
 
@@ -60,15 +60,12 @@ const WINDOW = new URLSearchParams(location.search).get("window") || "";
 if (WINDOW) document.documentElement.dataset.window = WINDOW;
 
 initTheme();                              // before anything draws: no bright flash in a dark venue
-// The 3D starts at High (Max) quality.  A quality saved before that was the
-// standard (Medium, the old default) goes back to High once; a choice made
-// in Settings after this is kept.
+// The 3D has one quality, its best, on every computer: a quality an older
+// desk saved (Low, Medium) goes.
 try {
-  if (localStorage.getItem("haze.qualityV") !== "2") {
-    localStorage.setItem("haze.quality", "high");
-    localStorage.setItem("haze.qualityV", "2");
-  }
-} catch (e) { /* private window: High anyway */ }
+  localStorage.removeItem("haze.quality");
+  localStorage.removeItem("haze.qualityV");
+} catch (e) { /* private window: nothing saved */ }
 initDeskBridge();                         // the desktop app's questions show in the desk's own boxes
 async function boot() {
   try {

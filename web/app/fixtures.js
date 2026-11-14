@@ -425,6 +425,8 @@ export function rowMenu(btn, head) {
     { label: "Show DMX channels", run: () => openChannels([head]) },
     { label: "Edit fixture profile…", run: () => openProfileEditor(hd) },
     { label: "Change fixture type…", run: () => openChangeType(sameSelection(head)) },
+    ...(hd.photo ? [{ label: "Light output in the 3D…", hint: `${hd.photo.lm} lm${hd.photo.lm_from === "estimate" ? " (estimated)" : hd.photo.lm_from === "yours" ? " (yours)" : ""}`,
+      run: () => import("./lightdialogs.js").then((m) => m.openLightOutput(hd)) }] : []),
     ...((hd.map || []).some((r) => r === "pan" || r === "tilt")
       ? [{ label: "Calibrate movement speed…", run: () => openMotionCalibration(hd) },
         { label: "Line up with the real light…", hint: hd.align ? "lined up" : "point it at floor marks", run: () => import("./lineup.js").then((m) => m.openLineUp(sameSelection(head))) },

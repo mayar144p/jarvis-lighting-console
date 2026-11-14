@@ -1,7 +1,9 @@
 // The screen check: every part of the console, driven in a real browser
-// the way an operator would - top bar, fixtures, every programmer tab, the
-// 3D view and the venue editor, Faders / Buttons / Timeline, the Copilot,
-// every dialog and Settings - at 1280, 1440 and 1920 px wide.
+// the way an operator would - top bar, fixtures, every programmer tab,
+// Faders / Buttons / Timeline, the Copilot, every dialog and Settings - at
+// 1280, 1440 and 1920 px wide.  The desk opens as it does for the operator
+// (no 3D inside it); the 3D view and the venue editor are checked in the
+// 3D's own window, opened from the desk's "3D view" button.
 //
 // After every step it audits what is on screen and fails on:
 //   - a page error (an uncaught exception or a rejected promise)
@@ -293,9 +295,9 @@ async function clickAll(p, width, step, scope) {
 // ------------------------------------------------------------------- steps
 // Each: [name, async (p) => {...}, {click: scope}]
 const tab = (t) => async (p) => {
-  // 10 s: at 1920 wide with no graphics card (CI, this check's machines) the
-  // page's software-drawn 3D can keep it busy past 3 s - a slow machine, not
-  // a blocked tab (the step still has its 20 s limit)
+  // 10 s: a machine with no graphics card (CI) can keep the page busy past
+  // 3 s while the 3D's window draws - a slow machine, not a blocked tab (the
+  // step still has its 20 s limit)
   await p.click(`#prog-tabs [data-tab="${t}"]`, { timeout: 10000 });
   await p.waitForTimeout(500);
 };
@@ -372,9 +374,33 @@ const STEPS = [
   ["59-autopilot", async (p) => { await closeAll(p); await mod(p, "autopilot.js", "openAutopilot"); await p.waitForTimeout(400); }],
   ["60-rig-dialog", async (p) => { await closeAll(p); await mod(p, "rigdialog.js", "openRigDialog", "add"); await p.waitForTimeout(500); }],
   ["61-gig-buttons-full", async (p) => { await closeAll(p); await p.click('#pb-mode [data-mode="buttons"]'); await p.click("#qb-full"); await p.waitForTimeout(600); }],
-  ["62-stage-full", async (p) => { await p.click("#qb-full"); await p.waitForTimeout(300); await p.click("#fullscreen-btn"); await p.waitForTimeout(600); }],
-  ["63-end", async (p) => { await p.keyboard.press("Escape"); await closeAll(p); await p.waitForTimeout(300); }],
+  ["62-stage-full", async (p) => { await closeAll(p); await p.click("#fullscreen-btn"); await p.waitForTimeout(600); }],
+  ["63-end", async (p) => {
+    await p.keyboard.press("Escape"); await closeAll(p);
+    // (the buttons page back from the whole screen: step 61)
+    if (await p.isVisible("#qb-full")) await p.click("#qb-full", { timeout: 5000 }).catch(() => {});
+    await p.waitForTimeout(300);
+  }],
 ];
+// the steps on the 3D's toolbar and the venue editor: in the 3D's own window
+const IN_3D = new Set(["23-views-menu", "24-crowd-menu", "25-zones", "26-arrange", "27-room-dialog", "28-rigging-dialog",
+  "29-more-dialog", "30-venues-menu", "31-arrange-done", "62-stage-full"]);
+
+// The 3D's own window, opened as the operator opens it: Palettes -> "3D
+// view" (in a browser a window of its own, ?window=stage; the desktop app
+// opens its 3D window the same way).  Once a width: it stays open.
+async function open3dWindow(p) {
+  await closeAll(p);
+  await p.click('#prog-tabs [data-tab="desk"]', { timeout: 10000 });
+  const [w] = await Promise.all([p.waitForEvent("popup", { timeout: 15000 }), p.click("button.dv-3d", { timeout: 10000 })]);
+  w.on("pageerror", (e) => { pageErrors.push("3D window: " + String((e && e.stack) || e.message || e)); });
+  w.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource/.test(m.text())) pageErrors.push("3D window console: " + m.text().slice(0, 300)); });
+  await w.waitForLoadState();
+  // (its first pictures: the room and the rig loaded)
+  await w.waitForFunction(() => window.hazeStage && (window.hazeStage.ready || window.hazeStage.failed), null, { timeout: 30000 }).catch(() => {});
+  await w.waitForTimeout(1500);
+  return w;
+}
 
 // ---------------------------------------------------------------- the run
 // CHECKS_GPU=1: a visible window on the computer's graphics card (fast, and you
@@ -388,16 +414,12 @@ for (const [width, tall] of SIZES) {
   const p = await browser.newPage({ viewport: { width, height } });
   p.on("pageerror", (e) => { pageErrors.push(String((e && e.stack) || e.message || e)); });
   p.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource/.test(m.text())) pageErrors.push("console: " + m.text().slice(0, 300)); });
-  // the 3D drawn in software (no graphics card) at 1920 x 1080 kept the
-  // page too busy for clicks on CI's machines (the nightly: 03/04/14/15
-  // timed out there, never on a faster machine): draw it Fast, as with the
-  // big rig - the screen check is about the panels, not the 3D's detail
-  // (and with Max the standard 3D quality now, at every size)
-  const fast = BIG || !GPU;
-  await p.addInitScript((fast) => {
-    try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.people", "0"); localStorage.removeItem("haze.bottom"); if (fast) localStorage.setItem("haze.quality", "fast"); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ }
-  }, fast);
-  await p.goto(BASE + "?3d=1");   // (the 3D view is off by default: these steps cover it too)
+  // (for this page and the 3D window it opens)
+  await p.context().addInitScript(() => {
+    try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.people", "0"); localStorage.removeItem("haze.bottom"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ }
+  });
+  // the desk as it opens: no 3D inside it (the 3D has a window of its own)
+  await p.goto(BASE);
   await p.waitForTimeout(1500);
   if (!rigBuilt) { await buildRig(p); rigBuilt = true; await p.reload(); await p.waitForTimeout(1800); }
   else await quiet(p);   // each width starts from the same quiet desk as the first
@@ -406,29 +428,41 @@ for (const [width, tall] of SIZES) {
   await p.waitForTimeout(300);
   const dir = join(outDir, String(width));
   mkdirSync(dir, { recursive: true });
+  let w3d = null;                        // the 3D's own window, once opened
   for (const [name, run, o = {}] of STEPS) {
     if (ONLY && name !== "01-start" && !ONLY.test(name)) continue;
     const before = pageErrors.length;
+    let pg = p;
+    if (IN_3D.has(name)) {
+      try {
+        if (!w3d || w3d.isClosed()) w3d = await open3dWindow(p);
+        pg = w3d;
+      } catch (e) {
+        finding(width, name, "step-failed", "open the 3D window (Palettes -> 3D view)", String(e.message || e).split("\n")[0].slice(0, 400));
+        continue;
+      }
+    }
     try {
-      await Promise.race([run(p), new Promise((_, no) => setTimeout(() => no(new Error("step took over 20 s")), 20000))]);
+      await Promise.race([run(pg), new Promise((_, no) => setTimeout(() => no(new Error("step took over 20 s")), 20000))]);
     } catch (e) {
       // the first line, plus what was in the way when a click couldn't land
       const msg = String(e.message || e).split("\n");
       const blocker = msg.find((l) => /intercepts pointer events|not stable|not visible|outside of the viewport/.test(l));
       finding(width, name, "step-failed", name, (msg[0] + (blocker ? " - " + blocker.trim() : "")).slice(0, 400));
     }
-    await p.waitForTimeout(250);
-    for (const [kind, what, detail] of await p.evaluate(AUDIT)) finding(width, name, kind, what, detail);
+    await pg.waitForTimeout(250);
+    for (const [kind, what, detail] of await pg.evaluate(AUDIT)) finding(width, name, kind, what, detail);
     for (const e of pageErrors.slice(before)) finding(width, name, "page-error", name, e);
-    await p.screenshot({ path: join(dir, name + ".png") });
+    await pg.screenshot({ path: join(dir, name + ".png") });
     if (CLICK && o.click && width === 1440) {
-      const n = await clickAll(p, width, name, o.click);
+      const n = await clickAll(pg, width, name, o.click);
       console.log(`  ${width} ${name}: pressed ${n} buttons`);
       await quiet(p);
       // pressing may have changed the tab; put the step back
-      try { await run(p); } catch { /* fine */ }
+      try { await run(pg); } catch { /* fine */ }
     }
   }
+  if (w3d && !w3d.isClosed()) await w3d.close();
   await p.close();
 }
 await browser.close();

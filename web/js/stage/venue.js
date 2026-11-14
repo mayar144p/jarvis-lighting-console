@@ -300,7 +300,7 @@ function mats(v) {
   const steel = new THREE.MeshStandardMaterial({ color: 0x8a9099, roughness: 0.45, metalness: 0.85, envMapIntensity: 0.35 });
   const black = new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.7, metalness: 0.3, envMapIntensity: 0.2 });
   return {
-    floor: surfaceMaterial(FLOOR_COLOURS[v.room.floor] ?? FLOOR_COLOURS.concrete, { grid: 0.22, sheen: FLOOR_SHEEN[v.room.floor] ?? 0.35 }),
+    floor: surfaceMaterial(FLOOR_COLOURS[v.room.floor] ?? FLOOR_COLOURS.concrete, { grid: 0.22, sheen: FLOOR_SHEEN[v.room.floor] ?? 0.35, mirror: true }),
     wall: surfaceMaterial(new THREE.Color(v.room.wall_colour || "#2a2c33").getHex()),
     ceiling: surfaceMaterial(0x24262b, { side: THREE.DoubleSide }),
     deck: surfaceMaterial(new THREE.Color((v.stage && v.stage.colour) || "#26272c").getHex(), { grid: 0.12, sheen: 0.6 }),
@@ -424,6 +424,10 @@ function buildRig(r, M, room, hoisted) {
 let mediaLoader = null;
 const mediaUrls = new Map();
 export function setScreenMediaLoader(fn) { mediaLoader = fn; }
+
+/** A picture or clip's address: one kept on the desk ("upload:<id>") is
+ *  fetched once (screens, the sky); a link is itself. */
+export function mediaUrlFor(src) { return mediaUrl(src); }
 
 function mediaUrl(src) {
   if (!src.startsWith("upload:")) return Promise.resolve(src);
@@ -562,6 +566,42 @@ function buildObject(o, M) {
   const { w, d, h } = o;
   const custom = o.colour ? surfaceMaterial(new THREE.Color(o.colour).getHex()) : null;
   switch (o.kind) {
+    case "projector": {
+      // a video projector: a body, a lens on its front (+z), and what it
+      // shows on a hidden face (the picture projectors.js throws; the same
+      // sources as an LED screen).  The lens tips up by `tilt` degrees.
+      const bw = Math.max(0.25, w), bh = Math.max(0.12, h), bd = Math.max(0.2, d);
+      add(new THREE.BoxGeometry(bw, bh, bd).translate(0, bh / 2, 0), custom || M.black);
+      const lensAt = new THREE.Vector3(bw * 0.22, bh * 0.5, bd / 2);
+      const barrel = add(new THREE.CylinderGeometry(bh * 0.28, bh * 0.32, 0.08, 20).rotateX(Math.PI / 2)
+        .translate(lensAt.x, lensAt.y, lensAt.z + 0.04), M.steel);
+      barrel.userData.lens = true;
+      const lens = new THREE.Object3D();
+      lens.position.set(lensAt.x, lensAt.y, lensAt.z + 0.09);
+      lens.rotation.x = -(o.tilt || 0) * DEG;
+      lens.userData.projectorLens = true;
+      g.add(lens);
+      const content = o.content || "rig";
+      const aspect = o.aspect || 16 / 9;
+      const face = new THREE.Mesh(new THREE.PlaneGeometry(0.01, 0.01 / aspect), content === "off" ? M.screen : screenMaterial(content, aspect));
+      face.visible = false;
+      if (content !== "off") face.userData.screen = { content, aspect, projector: true };
+      g.add(face);
+      g.userData.projector = { o, lens, mat: face.material };
+      break;
+    }
+    case "haze": {
+      // where the haze is thicker: nothing to see in the room (the beams
+      // show it), a faint dashed box while arranging, picked by its box
+      g.add(new THREE.Mesh(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), PICK_HULL));
+      const box = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0)),
+        new THREE.LineDashedMaterial({ color: 0x9fb4c8, dashSize: 0.25, gapSize: 0.18, transparent: true, opacity: 0.6, toneMapped: false }));
+      box.computeLineDistances();
+      box.userData.editOnly = true;
+      box.visible = false;
+      g.add(box);
+      break;
+    }
     case "dj_booth": {
       add(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), custom || M.object);
       add(new THREE.BoxGeometry(w * 0.98, 0.02, d * 0.98).translate(0, h + 0.01, 0), M.black);
@@ -712,7 +752,7 @@ function buildObject(o, M) {
     }
   }
   g.traverse((m) => { if (m.isMesh) m.userData = { ...m.userData, venueId: o.id, venueKind: o.kind }; });
-  g.userData = { venueId: o.id, venueKind: o.kind };
+  g.userData = { ...g.userData, venueId: o.id, venueKind: o.kind };
   return g;
 }
 
@@ -721,10 +761,12 @@ function blockers(v) {
   const out = [];
   const s = v.stage;
   if (s && s.height > 0.01) {
-    out.push(new THREE.Box3(new THREE.Vector3(s.x - s.width / 2, 0, s.z), new THREE.Vector3(s.x + s.width / 2, s.height, s.z + s.depth)));
+    const deck = new THREE.Box3(new THREE.Vector3(s.x - s.width / 2, 0, s.z), new THREE.Vector3(s.x + s.width / 2, s.height, s.z + s.depth));
+    deck.kind = "stage";                         // (what a beam landing here lights back: hitDistance)
+    out.push(deck);
   }
   for (const o of v.objects || []) {
-    if (o.kind === "mark" || o.kind === "rope" || o.kind === "plant" || o.kind === "stool") continue;
+    if (o.kind === "mark" || o.kind === "rope" || o.kind === "plant" || o.kind === "stool" || o.kind === "haze") continue;
     if (CURVED.has(o.kind)) {
       // round the circle's centre: its whole half-circle, however turned
       const R = o.w / 2;
@@ -955,8 +997,9 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
   const floor = new THREE.Mesh(polygonGeo(outline, 0), M.floor);
   floor.userData = { venueKind: "floor" };
   group.add(floor);
+  // (outdoors on grass, the same grass on: no edge round the field)
   const apron = new THREE.Mesh(new THREE.PlaneGeometry(R.w + 60, R.d + 60),
-    surfaceMaterial(outdoor ? 0x1d2618 : 0x0b0c0f));
+    surfaceMaterial(outdoor ? (v.room.floor === "grass" ? FLOOR_COLOURS.grass : 0x1d2618) : 0x0b0c0f));
   apron.rotation.x = -Math.PI / 2;
   apron.position.set(R.cx, -0.01, R.z0 + R.d / 2);
   apron.userData.wireBare = true;                 // no outline in the line drawings
@@ -1057,9 +1100,11 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
     items.set(r.id, g);
     group.add(g);
   }
+  const projectors = [];
   for (const o of v.objects || []) {
     const g = buildObject(o, M);
-    if (o.kind !== "mark") casts(g);
+    if (o.kind !== "mark" && o.kind !== "haze") casts(g);
+    if (g.userData.projector) projectors.push(g.userData.projector);
     items.set(o.id, g);
     group.add(g);
   }
@@ -1110,8 +1155,18 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
   const screens = [];
   group.traverse((m) => { if (m.userData && m.userData.screen) screens.push(m); });
   for (const m of screens) if (m.material && m.material.userData.ndi) m.material.userData.wake = opts.onChange || null;
+  // the colours a beam's pool sends back into the room (stage.js _bounce)
+  const albedo = {
+    floor: new THREE.Color(FLOOR_COLOURS[v.room.floor] ?? FLOOR_COLOURS.concrete),
+    wall: new THREE.Color(v.room.wall_colour || "#2a2c33"),
+    ceiling: new THREE.Color(0x24262b),
+    stage: new THREE.Color((v.stage && v.stage.colour) || "#26272c"),
+    box: new THREE.Color(0x2e3036),
+  };
+  // the floor mirrors the room (reflect.js) by how shiny it is
+  const mirror = { sheen: FLOOR_SHEEN[v.room.floor] ?? 0.35, hide: [floor, apron] };
   return { group, venue: v, room: R, planes, segments, boxes: [...blockers(v), ...areaBoxes], walls, ceiling, zones, people,
-    crowdCount: crowd.userData.count || 0, items, stageFront, underlay, outline, screens };
+    crowdCount: crowd.userData.count || 0, items, stageFront, underlay, outline, screens, albedo, mirror, projectors };
 }
 
 /** Let go of what a built room's screens play: NDI feeds stop, clips pause. */
@@ -1136,9 +1191,13 @@ export function cutaway(built, cameraPos) {
 
 const _box = new THREE.Vector3();
 
-/** Distance along a ray to the first surface or solid it meets (capped). */
-export function hitDistance(planes, boxes, origin, dir, cap = 30, segments = null) {
+/** Distance along a ray to the first surface or solid it meets (capped).
+ *  `out` (optional) learns what it was - kind ("floor", "ceiling", "wall",
+ *  "stage", "box" or "" for nothing) and n, the surface's normal facing the
+ *  ray - so the pool can light the room back in that surface's colour. */
+export function hitDistance(planes, boxes, origin, dir, cap = 30, segments = null, out = null) {
   let best = cap;
+  let kind = "", nx = 0, ny = 0, nz = 0;
   for (const w of segments || []) {
     const denom = w.nx * dir.x + w.nz * dir.z;             // heading out through it?
     if (denom <= 1e-4) continue;
@@ -1148,13 +1207,13 @@ export function hitDistance(planes, boxes, origin, dir, cap = 30, segments = nul
     if (hy < 0 || hy > w.h) continue;
     const ex = w.bx - w.ax, ez = w.bz - w.az;
     const k = ((hx - w.ax) * ex + (hz - w.az) * ez) / (ex * ex + ez * ez);
-    if (k >= -0.01 && k <= 1.01) best = t;
+    if (k >= -0.01 && k <= 1.01) { best = t; kind = "wall"; nx = -w.nx; ny = 0; nz = -w.nz; }
   }
   for (const p of planes) {
     const denom = p.n.dot(dir);
     if (denom >= -1e-4) continue;
     const t = (p.c - p.n.dot(origin)) / denom;
-    if (t > 0.02 && t < best) best = t;
+    if (t > 0.02 && t < best) { best = t; kind = p.n.y > 0 ? "floor" : "ceiling"; nx = p.n.x; ny = p.n.y; nz = p.n.z; }
   }
   const ray = new THREE.Ray(origin, dir);
   for (const b of boxes || []) {
@@ -1162,8 +1221,17 @@ export function hitDistance(planes, boxes, origin, dir, cap = 30, segments = nul
     const hit = ray.intersectBox(b, _box);
     if (hit) {
       const t = hit.distanceTo(origin);
-      if (t > 0.02 && t < best) best = t;
+      if (t > 0.02 && t < best) {
+        best = t;
+        kind = b.kind || "box";
+        // the face it landed on: the side the point is nearest
+        const faces = [[hit.x - b.min.x, -1, 0, 0], [b.max.x - hit.x, 1, 0, 0], [hit.y - b.min.y, 0, -1, 0],
+          [b.max.y - hit.y, 0, 1, 0], [hit.z - b.min.z, 0, 0, -1], [b.max.z - hit.z, 0, 0, 1]];
+        faces.sort((f1, f2) => Math.abs(f1[0]) - Math.abs(f2[0]));
+        [, nx, ny, nz] = faces[0];
+      }
     }
   }
+  if (out) { out.kind = kind; if (out.n) out.n.set(nx, ny, nz); }
   return best;
 }

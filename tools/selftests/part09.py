@@ -2460,7 +2460,7 @@ def test_gobo_pictures() -> None:
 def test_shadows() -> None:
     """3D shadows: the brightest beams get a depth picture of the crowd,
     performers, objects and stage; the floor shader darkens what is behind
-    them; a toggle (Crowd menu) and the fast quality turn it off."""
+    them; a toggle (Crowd menu) turns it off."""
     print("3D shadows")
     st = ROOT / "web" / "js" / "stage"
     sh = (st / "shadows.js").read_text(encoding="utf-8")
@@ -2468,19 +2468,23 @@ def test_shadows() -> None:
     vj = (st / "venue.js").read_text(encoding="utf-8")
     sj = stage_js()
     sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    # (what the shadows DO - 16 of them, not drawn again while nothing
+    # moves, half a beam stopped by a balcony - is drawn and read
+    # back by tools/stagecheck.mjs; these only check the pieces are there)
     check("a depth atlas for the brightest beams, casters only, back faces",
-          "SHADOW_SLOTS = 8" in sh and "c.layers.set(CASTER_LAYER)" in sh and "THREE.BackSide" in sh
+          "SHADOW_SLOTS" in sh and "c.layers.set(CASTER_LAYER)" in sh and "THREE.BackSide" in sh
           and "DepthTexture" in sh, "")
     check("the surface shader darkens what a caster hides from a beam",
-          "const shadowAt = Fn(([i, wp])" in mj and "i.lessThan(LIGHTS.uShadowCount)" in mj
-          and 'arrayOf(SHADOW_SLOTS, () => new THREE.Matrix4(), "mat4")' in mj and "SHADOW_SLOTS = 8" in mj, "")
-    check("High: 8 beams cast shadows, Medium 4",
-          'this.options.quality === "high" ? 8 : 4' in sj and "Math.min(SHADOW_SLOTS, slots, n)" in sh, "")
-    check("the crowd, performers, objects (not marks) and the stage deck cast",
-          "casts(buildCrowd(" in vj and "casts(buildPerformers(" in vj and 'if (o.kind !== "mark") casts(g)' in vj
+          "const shadowAt = Fn(([i, wp])" in mj and "slot.greaterThanEqual(0)" in mj
+          and 'arrayOf(SHADOW_SLOTS, () => new THREE.Matrix4(), "mat4")' in mj and "SHADOW_SLOTS = 16" in mj, "")
+    check("16 beams cast shadows, on any computer",
+          "this.options.shadows === false ? 0 : SHADOW_SLOTS" in sj and "Math.min(SHADOW_SLOTS, slots, lights.length)" in sh, "")
+    check("the crowd, performers, objects (not marks or haze areas) and the stage deck cast",
+          "casts(buildCrowd(" in vj and "casts(buildPerformers(" in vj
+          and 'if (o.kind !== "mark" && o.kind !== "haze") casts(g)' in vj
           and "skirt.layers.enable(CASTER_LAYER)" in vj, "")
-    check("on by default, off with the toggle or the fast quality",
-          "shadows: true" in sj and 'this.options.quality !== "fast"' in sj and "this.shadows.off()" in sj
+    check("on by default, off with the toggle",
+          "shadows: true" in sj and "this.shadows.off()" in sj
           and '"Shadows"' in sp and 'pref("shadows", "1")' in sp, "")
 
 
@@ -2559,6 +2563,161 @@ def test_ai_sees_3d() -> None:
             cfg.DATA = saved
     cj = (ROOT / "web" / "app" / "copilot.js").read_text(encoding="utf-8")
     check("the copilot sends a picture when the AI asks to see", "r.need_view" in cj and "resume: r.turn" in cj and "can_see:" in cj, "")
+
+
+def test_venue_sky() -> None:
+    """The sky over a venue with no roof: night by default, set to a city,
+    sunset, overcast or daylight, or the operator's own 360-degree picture
+    (kept on the desk, or a plain web link - nothing else), turned; the AI
+    can set it; kept with the venue."""
+    from app import aitools, venue
+    from app import engine as eng_mod
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="outdoor")
+            room = e.venue["room"]
+            check("an outdoor stage has no roof and a night sky to start", room["ceiling"] == "none" and room["sky"] == "night"
+                  and room["sky_turn"] == 0, str(room))
+            r = e.act("venue_room", sky="dusk", sky_turn=-30)
+            check("...a sunset, turned (kept between 0 and 360)", r.get("ok") and e.venue["room"]["sky"] == "dusk"
+                  and e.venue["room"]["sky_turn"] == 330 and r.get("summary") == "the sky: dusk", json.dumps(r.get("summary")))
+            r = e.act("venue_room", sky="purple")
+            check("...an unknown sky is refused, saying which there are", not r.get("ok") and "night" in (r.get("error") or "")
+                  and e.venue["room"]["sky"] == "dusk", str(r.get("error")))
+            r = e.act("venue_room", sky="picture:upload:a1B2_c3")
+            check("...your own picture kept on the desk", r.get("ok") and e.venue["room"]["sky"] == "picture:upload:a1B2_c3", str(r.get("summary")))
+            again = venue.normalise(json.loads(json.dumps(e.venue)))
+            check("...and kept with the venue as it is", again["room"]["sky"] == "picture:upload:a1B2_c3" and again["room"]["sky_turn"] == 330, "")
+            bad = [venue._clean_room({"sky": s, "width": 10, "depth": 10})["sky"] for s in
+                   ("picture:javascript:alert(1)", "picture:upload:../../x", "picture:file:///etc/passwd", "DAY", 7)]
+            check("nothing but the skies, a picture on the desk or a web link (else night)", bad == ["night"] * 5, str(bad))
+            check("...a web link is kept", venue._clean_room({"sky": "picture:https://example.com/360.jpg", "width": 1, "depth": 1})["sky"]
+                  == "picture:https://example.com/360.jpg", "")
+            e.act("venue_template", name="club")
+            r = e.act("venue_room", sky="day")
+            check("a room with a roof keeps a sky for later, and says it shows only with no roof",
+                  r.get("ok") and "no roof" in r.get("summary", ""), str(r.get("summary")))
+        finally:
+            e.shutdown()
+    check("the AI can set the sky (venue_room takes it)", "sky" in aitools.params_of(eng_mod.Engine, "venue_room")
+          and "sky_turn" in aitools.params_of(eng_mod.Engine, "venue_room"), "")
+    sj = (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8")
+    check("Settings -> Venue has the sky, a turn and your own picture",
+          "skyRow(v)" in sj and "Your own 360° picture…" in sj and "sky_turn" in sj, "")
+
+
+def test_projector_object() -> None:
+    """A projector (Arrange -> + More): shows what an LED screen can, thrown
+    onto the room - its lumens, throw, picture shape and tilt kept within
+    what real ones do; a device in the MVR like any other."""
+    import io
+    import zipfile
+    from app import mvr
+    from app import engine as eng_mod
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            r = e.act("venue_add", item={"kind": "projector", "name": "FOH projector", "x": 0, "z": 9, "y": 3, "rot": 180})
+            o = next((x for x in e.venue["objects"] if x["kind"] == "projector"), {})
+            check("a projector can be added: the rig's colours, 10,000 lm, a throw of 1.6, 16:9, level",
+                  r.get("ok") and o.get("content") == "rig" and o.get("lm") == 10000 and o.get("throw") == 1.6
+                  and o.get("aspect") == 1.778 and o.get("tilt") == 0, str(o))
+            e.act("venue_update", id=o["id"], changes={"lm": 999999, "throw": 0.01, "aspect": 9, "tilt": 120, "content": "javascript:x"})
+            o2 = next(x for x in e.venue["objects"] if x["kind"] == "projector")
+            check("...kept to what real ones do (300-60,000 lm, a throw of 0.3-8, tilt within 89 degrees), a bad source the rig's",
+                  o2["lm"] == 60000 and o2["throw"] == 0.3 and o2["aspect"] == 3.0 and o2["tilt"] == 89 and o2["content"] == "rig", str(o2))
+            e.act("venue_update", id=o["id"], changes={"content": "clip:upload:abc123", "tilt": -12})
+            o3 = next(x for x in e.venue["objects"] if x["kind"] == "projector")
+            check("...a clip kept on the desk, tipped down", o3["content"] == "clip:upload:abc123" and o3["tilt"] == -12, str(o3))
+            data = mvr.write(e.patch, list(e.venue.get("rigging") or []), {}, "show", list(e.venue.get("objects") or []))
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                xml = zf.read("GeneralSceneDescription.xml").decode("utf-8")
+            check("...and it goes into an MVR (a real device in the room)", "FOH projector" in xml, "")
+        finally:
+            e.shutdown()
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Arrange -> + More has it, with its lumens, throw, tilt, picture shape and what it shows",
+          '["projector", "Projector (throws a video or picture)"]' in vp and "projectorFields(o, upd)" in vp
+          and 'o.kind === "projector" ? screenContent(o, upd)' in vp, "")
+
+
+def test_ai_measures_light() -> None:
+    """The assistant can measure the light (measure_light): the turn pauses,
+    the screen's 3D takes the readings (lux, the lights giving most of it),
+    the turn carries on with them; a screen without a 3D isn't asked."""
+    from app import assistant, config as cfg
+    from app import engine as eng
+
+    def tool(name, i=0, **args):
+        return {"id": f"c{name}{i}", "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}
+
+    seen, offered = [], []
+
+    def scripted(replies):
+        def chat(messages, tools=None, **_):
+            seen.append([dict(m) for m in messages])
+            offered.append([t["function"]["name"] for t in tools or []])
+            return replies.pop(0)
+        return chat
+
+    reads = [{"name": "DJ booth: the DJ's face (1.6 m up)", "at": [0, 1.61, 3], "facing": "stage", "lux": 140,
+              "from": [{"light": 3, "lux": 120}, {"light": "x"}, {"light": 4, "lux": 20}]},
+             {"name": "dance floor (floor, middle)", "at": [0, 0.01, 8], "facing": "up", "lux": 64.6, "from": []},
+             "not a reading", {"name": "bad", "lux": "lots"}]
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        saved = cfg.DATA
+        cfg.DATA = tmp
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR 4ch", qty=2)
+            spots = [{"name": "the DJ", "x": 0, "z": 3, "y": 1.6, "facing": "stage"}]
+            chat = scripted([
+                {"content": "", "tool_calls": [tool("do", action="select_all"), tool("measure_light", spots=spots)]},
+                {"content": "The DJ gets about 140 lux - enough for the stream."},
+            ])
+            r = assistant.run_turn(e, "is the DJ lit enough for the stream?", session="lux", chat=chat, can_see=True)
+            check("it asks for readings: the turn pauses, saying where to measure",
+                  r.get("need_light") and not r.get("need_view") and r.get("turn") and r.get("spots") == spots,
+                  json.dumps(r)[:240])
+            check("measure_light is offered to a screen with a 3D", "measure_light" in offered[0], str(offered[0]))
+            r2 = assistant.resume_turn(e, r["turn"], None, chat=chat, light=reads)
+            ans = next((m for m in seen[1] if m["role"] == "tool" and m.get("name") == "measure_light"), None)
+            got = json.loads(ans["content"]) if ans else {}
+            check("the readings come back as the tool's answer, checked (bad ones left out)",
+                  got.get("ok") and [x["lux"] for x in got.get("lux", [])] == [140, 65]
+                  and got["lux"][0]["from"] == [{"light": 3, "lux": 120}, {"light": 4, "lux": 20}], json.dumps(got)[:300])
+            check("...and the turn finishes with the reply", r2.get("ok") and "140 lux" in r2.get("reply", ""), json.dumps(r2)[:200])
+            e.act("blind", state=False, keep=True)
+            chat = scripted([{"content": "", "tool_calls": [tool("measure_light")]}, {"content": "I can't measure from here."}])
+            r = assistant.run_turn(e, "how bright is the stage?", session="lux2", chat=chat)
+            check("without a 3D on the screen it isn't offered and doesn't pause",
+                  "measure_light" not in offered[-2] and r.get("ok") and not r.get("need_light"), json.dumps(r)[:200])
+            chat = scripted([{"content": "", "tool_calls": [tool("measure_light"), tool("see_3d")]}, {"content": "Done."}])
+            r = assistant.run_turn(e, "check the light", session="lux3", chat=chat, can_see=True)
+            check("a reading and a picture asked together: one pause for both",
+                  r.get("need_light") and r.get("need_view"), json.dumps(r)[:200])
+            r2 = assistant.resume_turn(e, r["turn"], "data:image/jpeg;base64," + "A" * 64, chat=chat, light=[])
+            last = seen[-1]
+            names = [m.get("name") for m in last if m["role"] == "tool"]
+            check("...both answered (a reading that couldn't be taken says so), then the picture",
+                  "measure_light" in names and "see_3d" in names and isinstance(last[-1]["content"], list)
+                  and r2.get("ok"), str(names))
+        finally:
+            e.shutdown()
+            cfg.DATA = saved
+    cj = (ROOT / "web" / "app" / "copilot.js").read_text(encoding="utf-8")
+    check("the copilot measures in the 3D when the AI asks", "r.need_light" in cj and "luxReport(" in cj and "light }" in cj, "")
 
 
 def test_ai_operator() -> None:
@@ -3504,9 +3663,9 @@ def test_usb_dmx() -> None:
 def test_3d_detail() -> None:
     """The 3D's detail (A9 step 2): gobos soften out of focus and with
     frost, a prism splits the pool and the gobo into three, gobo shafts in
-    the haze, shiny floors mirror the lenses (per floor type), quality named
-    High / Medium / Low with Low leaving the detail out; a light whose file
-    names gobo slots but has no pictures gets a drawn gobo per slot."""
+    the haze, shiny floors mirror the lenses (per floor type), one quality
+    (the best, the detail always drawn); a light whose file names gobo slots
+    but has no pictures gets a drawn gobo per slot."""
     print("3D detail: focus, frost, prism, gobo shafts, reflections")
     from app import engine as eng
     from app import fixlib
@@ -3516,29 +3675,32 @@ def test_3d_detail() -> None:
     sj = stage_js()
     vj = (st / "venue.js").read_text(encoding="utf-8")
     dj = dialogs_js()
+    lg = (st / "lightgrid.js").read_text(encoding="utf-8")
     check("each light carries blur (focus, frost) and prism to the shaders",
-          "uLook" in mj and "LIGHTS.uLook.value[i].set(l.blur" in sj and "L.beam.focus" in sj and "L.beam.prism" in sj, "")
+          "uLook" in mj + (st / "beams.js").read_text(encoding="utf-8") and "L[o + 13] = l.blur || 0; L[o + 14] = l.prism || 0" in lg and "L.beam.focus" in sj and "L.beam.prism" in sj, "")
     check("gobos soften, a prism makes its copies (one look at the picture a pixel)",
-          "const goboMask = (id, uv0, look, detail)" in mj and "mix(goboShape(id, uv), 0.55" in mj and "float(6.2831853).div(n)" in mj, "")
+          "const goboMask = (id, uv0, look)" in mj and "mix(goboShape(id, uv), 0.55" in mj and "float(6.2831853).div(n)" in mj, "")
+    bj = (st / "beams.js").read_text(encoding="utf-8")
     check("gobo shafts in the haze: the beam shader shows the same picture",
-          "a.mulAssign(goboMask(u.uGobo, uv, vec4(u.uLook.xyz, 0), detail).mul(0.95).add(0.2))" in mj and "u.uGobo.value = goboId" in sj, "")
+          "lit.mulAssign(goboMask(u.uGobo, uv, vec4(u.uLook.xyz, 0)))" in bj and "v.uGobo.value = goboId" in sj, "")
     check("shiny floors mirror the lenses, by floor type",
           "reflect(normalize(wp.sub(cameraPosition)), N)" in mj and "FLOOR_SHEEN" in vj and "black: 1" in vj and "grass: 0" in vj, "")
-    check("Low leaves the detail out (the shaders are built without it), Medium and High draw it",
-          "if (!detail) return goboShape(id, uv0)" in mj and "m.userData.detail(DETAIL.on)" in mj
-          and 'setDetail(this.scene, this.options.quality !== "fast")' in sj, "")
+    check("one quality: the detail always drawn, nothing left to switch it off (no simpler beams)",
+          "DETAIL" not in mj and "setDetail" not in sj and "userData.detail" not in mj + bj
+          and "beamMaterial" not in mj + sj and "_adapt(" not in sj, "")
     stage_dir = ROOT / "web" / "js" / "stage"
     check("the 3D runs on three.js's WebGPU renderer, no WebGL renderer or GLSL left",
-          "new THREE.WebGPURenderer(rendererOpts(" in sj and "new THREE.RenderPipeline(renderer)" in sj
+          "new THREE.WebGPURenderer(rendererOpts(" in sj and "new THREE.RenderPipeline(this.renderer)" in sj
           and not any("WebGLRenderer" in f.read_text(encoding="utf-8") or "ShaderMaterial(" in f.read_text(encoding="utf-8")
                       for f in stage_dir.glob("*.js")), "")
     check("a browser whose WebGPU can't run it (or has none) gets the same renderer on WebGL 2",
           'tex.createView({ swizzle: "rgba" })' in sj and "forceWebGL: true" in sj and "export const GPU_DEVICE = await probeWebGPU()" in sj, "")
     check("fog, CO2, flame and confetti are sprites (WebGPU points are one pixel)",
           "new THREE.Sprite(m)" in (stage_dir / "sfx.js").read_text(encoding="utf-8"), "")
-    check("quality is named Max / Medium / Low, Max the standard",
-          "High: sharpest" in dj and "Medium: adapts" in dj and "Low: older laptops" in dj
-          and '|| "high"; }' in dj and 'pref("quality", "high")' in (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8"), "")
+    check("no quality to choose: Settings says the 3D always draws at its best, an older desk's choice is dropped",
+          "The 3D always draws at its best" in dj and "haze.quality" not in dj and "Medium:" not in dj
+          and "quality" not in (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+          and "delete this.options.quality" in sj, "")
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         db = tmp / "f.db"
@@ -3696,7 +3858,8 @@ def test_real_light_look() -> None:
     check("the 3D reads the look: facets, turns, shake, scroll, split, strobe kinds",
           all(k in sj for k in ("lk.prism", "lk.prot", "lk.grot", "lk.gshake", "lk.gscroll", "lk.cscroll", "lk.split", "lk.smode")), "")
     check("prisms of any facet count, linear prisms, and half beams in the shader",
-          "float(6.2831853).div(n)" in mj and "a linear prism" in mj and "look.w.greaterThan(0.5)" in mj and "uColor2" in mj, "")
+          "float(6.2831853).div(n)" in mj and "a linear prism" in mj and "look.w.greaterThan(0.5)" in mj
+          and "uColor2" in (ROOT / "web" / "js" / "stage" / "beams.js").read_text(encoding="utf-8"), "")
     check("each head of a multi-head model can pan", "sk.cells.push({ pan: p, tilt: t, lens })" in mo and "c.pan.rotation.y" in sj, "")
 
 
@@ -5660,8 +5823,8 @@ console.log(JSON.stringify(out));
 def test_sweep3_fixes() -> None:
     """Sweep 3: the actions that had no test of their own, and its fixes -
     127.0.0.1 is this computer (no false network warning), a rebuilt room
-    keeps the lights on its new rigging, the 3D's auto quality counts very
-    slow frames, the Output choices aren't cut off, the groups fold."""
+    keeps the lights on its new rigging, the 3D never lowers its quality on
+    a slow computer, the Output choices aren't cut off, the groups fold."""
     print("Sweep 3: the untested actions; loopback, rebuilt rooms, slow 3D")
     from app import engine as eng, netif
     lan = [{"name": "eth", "ip": "192.0.2.2", "mask": "255.255.255.0"}]
@@ -5726,8 +5889,11 @@ def test_sweep3_fixes() -> None:
         finally:
             e.shutdown()
     st = stage_js()
-    check("3D auto quality counts very slow frames (not only < 200 ms) and goes below half",
-          "dt > 2000" in st and "MIN = 0.35" in st and "q.lite" in st)
+    check("the 3D never lowers its quality by itself (a slow computer shows fewer pictures, not simpler ones)",
+          "_adapt" not in st and "q.lite" not in st and "screenRatio()" in st)
+    check("...and a computer slow over every picture leaves the page time between them (the desk's buttons answer)",
+          "this._slow = took > 250 ? this._slow + 1 : 0;" in st and "if (t < this._restUntil) return;" in st
+          and "this._slow >= 3 ? performance.now() + Math.min(took, 2000) : 0" in st)
     dl = dialogs_js()
     css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
     check("Output's choices have room (not cut off)", "out-grid" in dl and ".out-grid" in css)
@@ -5870,6 +6036,33 @@ console.log(JSON.stringify({ av: V.pickFormat((m) => true, true), plain: V.pickF
               and not (got.get("noav") or {}).get("audio"), str(got))
     vr = (ROOT / "web" / "app" / "videorec.js").read_text(encoding="utf-8")
     check("...the timeline's music is added to the recording", "timelineAudioStream" in vr and "addTrack" in vr)
+    # the best quality: noted while it plays, drawn frame by frame (stagecheck plays a film back)
+    mr = (ROOT / "web" / "app" / "movierender.js").read_text(encoding="utf-8")
+    check("...or the best: noted while it plays, then drawn frame by frame and encoded with the music",
+          'value: "best"' in vr and "new ShowNotes(stage)" in vr and "renderFilm(stage, notes" in vr and "timelineMusic()" in vr
+          and "stage.beginFilm(W, H)" in mr and "stage.filmFrame(base + t)" in mr and "new VideoEncoder(" in mr
+          and "new AudioEncoder(" in mr and "stage.endFilm()" in mr, "")
+    vend = ROOT / "web" / "vendor" / "muxers"
+    check("...its muxers kept with their licences", all((vend / f).exists() for f in
+          ("mp4-muxer.mjs", "webm-muxer.mjs", "LICENSE-mp4-muxer.txt", "LICENSE-webm-muxer.txt", "README.txt")), "")
+    # VR (stagecheck walks it with an emulated headset)
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    vr = (ROOT / "web" / "js" / "stage" / "vr.js").read_text(encoding="utf-8")
+    check("The 3D's >> menu walks round in VR when there's a headset (and says what it needs when not)",
+          '"Walk round in VR"' in sp and "vrSupported()" in sp and "stage.enterVR(" in sp and "haze.renderer" in sp
+          and 'requestSession("immersive-vr"' in vr and 'setReferenceSpaceType("local-floor")' in vr, "")
+    # step 8: the stand-ins' lenses, the makers' bodies signed in right there
+    mo = (ROOT / "web" / "js" / "stage" / "models.js").read_text(encoding="utf-8")
+    lg = (ROOT / "web" / "js" / "stage" / "lensglass.js").read_text(encoding="utf-8")
+    check("A stand-in's lens is coated glass (an LED cell its die, a Fresnel its rings), lit brightest at its source",
+          'lensMaterial("cell")' in mo and 'lensMaterial("fresnel")' in mo and "emissiveMap: look.emissiveMap" in mo
+          and 'kind === "cell"' in lg and 'kind === "fresnel"' in lg, "")
+    check("...and the makers' own bodies ask for the GDTF Share sign-in right there",
+          'import("./gdtfsignin.js")' in sp and "realBodies(true)" in sp, "")
+    iw = ROOT / "tools" / "vendor" / "iwer"
+    check("...the headset the checks emulate is kept with its licence, for the checks only (not in the desk's web folder)",
+          all((iw / f).exists() for f in ("iwer.module.min.js", "LICENSE.txt", "README.txt"))
+          and not (ROOT / "web" / "vendor" / "iwer").exists(), "")
 
 
 def test_sweep3_adds_c() -> None:
@@ -9977,6 +10170,13 @@ def test_screen_sizes() -> None:
           and "--topbar-h: calc(46px * var(--ctl))" in css, "")
     uc = (ROOT / "tools" / "uicheck.mjs").read_text(encoding="utf-8")
     check("the screen check takes whole screens (2560x1440)", '.split("x").map(Number)' in uc, "")
+    # the checks see the desk as it opens (the 3D has a window of its own,
+    # opened from Palettes -> 3D view), not the old 3D inside the desk
+    check("the screen checks open the desk as it opens and the 3D in its own window (Palettes -> 3D view)",
+          "await p.goto(BASE);" in uc and 'p.waitForEvent("popup"' in uc and 'p.click("button.dv-3d"' in uc
+          and "IN_3D.has(name)" in uc and 'w3.goto(BASE + "?window=stage")' in (ROOT / "tools" / "vischeck.mjs").read_text(encoding="utf-8")
+          and not any("3d=1" in (ROOT / "tools" / f).read_text(encoding="utf-8")
+                      for f in ("uicheck.mjs", "vischeck.mjs", "pixcheck.mjs", "oddcheck_ui.mjs")), "")
 
 
 def test_desktop_frame() -> None:
@@ -10000,8 +10200,8 @@ def test_desktop_frame() -> None:
     check("the 3D window comes to the front, and can be kept on top", "win.moveTop();" in mj and "win.focus();" in mj
           and '"Keep the 3D view on top"' in mj and 'setAlwaysOnTop(!!on, "floating")' in mj, "")
     mn = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
-    check("a setting changed in one window reaches the others (3D quality, look, Gig mode)",
-          'window.addEventListener("storage"' in mn and 'e.key === "haze.quality"' in mn and 'e.key === "haze.theme"' in mn, "")
+    check("a setting changed in one window reaches the others (calm flashing, look, Gig mode)",
+          'window.addEventListener("storage"' in mn and 'e.key === "haze.calm"' in mn and 'e.key === "haze.theme"' in mn, "")
 
     ic = (ROOT / "web" / "app" / "icons.js").read_text(encoding="utf-8")
     dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
@@ -10059,9 +10259,9 @@ def test_council_fixes() -> None:
           and (ROOT / "tools" / "safetycheck.mjs").exists(), "")
 
     mn = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
-    check("the 3D starts at High: a quality saved before it was the standard goes back to High once",
-          'localStorage.getItem("haze.qualityV") !== "2"' in mn and 'localStorage.setItem("haze.quality", "high");' in mn
-          and 'localStorage.setItem("haze.qualityV", "2")' in (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8"), "")
+    check("one quality, the best: a quality an older desk saved (Low, Medium) goes",
+          'localStorage.removeItem("haze.quality")' in mn and 'localStorage.removeItem("haze.qualityV")' in mn
+          and "haze.quality" not in (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8"), "")
 
 
 
@@ -12463,3 +12663,66 @@ def test_phone_hold_lease() -> None:
             check("...a normal let-go ends the lease", not e.__dict__.get("quick_leases"), e.__dict__.get("quick_leases"))
         finally:
             e.shutdown()
+
+
+def test_light_output() -> None:
+    """How bright a light is in the 3D: lumens and lens angles from its fixture file (QLC+ and OFL),
+    an estimate from its wattage and kind when the file says nothing, the operator's correction per
+    model (output_set - every head of it), back to the file (clear); the snapshot carries it to the 3D."""
+    from app import engine as eng_mod
+    from app import fixlib
+    aura = fixlib.physical("qlc:Martin/Martin-MAC-Aura.qxf")
+    check("a QLC+ file's lumens and lens angles are read", aura.get("lm") == 3850 and aura.get("lens") == [11.0, 58.0], aura)
+    par = fixlib.physical("ofl:eurolite/led-par-56-tcl.json")
+    check("an OFL file's power and lens are read", par.get("watts") == 45 and par.get("lens") == [14.0, 14.0], par)
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("add_heads", query="LED PAR", qty=2)
+            p = e.snapshot()["patch"][0].get("photo") or {}
+            check("every light tells the 3D its light output", p.get("lm", 0) > 0 and p.get("lm_from") in ("file", "estimate"), p)
+            got = e.act("output_get", head=1)
+            check("output_get says where its lumens come from", got.get("photo", {}).get("lm") == p.get("lm") and "lumens" in got.get("summary", ""), got)
+            e.act("output_set", head=1, lumens=4200, beam=18)
+            p2 = e.snapshot()["patch"][1]["photo"]
+            check("a correction applies to every head of the model", p2.get("lm") == 4200 and p2.get("lm_from") == "yours" and p2.get("beam") == 18, p2)
+            bad = e.act("output_set", head=1, lumens=5)
+            check("lumens out of range are refused", not bad.get("ok", True) or "error" in bad, bad)
+            e.act("output_set", head=1, clear=True)
+            p3 = e.snapshot()["patch"][1]["photo"]
+            check("cleared: back to the fixture file (or the estimate)", p3.get("lm") == p.get("lm") and p3.get("lm_from") == p.get("lm_from") and "beam" not in p3, p3)
+        finally:
+            e.shutdown()
+
+
+def test_haze_area() -> None:
+    """A haze area (Arrange -> + More): a part of the room where the 3D's haze is thicker - nothing
+    solid; its thickness kept between a hint and a cloud; not written into an MVR for another app."""
+    from app import engine as eng_mod
+    from app import mvr
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            r = e.act("venue_add", item={"kind": "haze", "name": "By the DJ", "x": 0, "z": 3, "w": 4, "d": 4, "h": 3})
+            hz = next((o for o in e.venue.get("objects") or [] if o.get("kind") == "haze"), None)
+            check("a haze area can be added, thicker by 0.6 to start", bool(r.get("id")) and hz is not None and hz.get("density") == 0.6, hz)
+            e.act("venue_update", id=hz["id"], changes={"density": 3})
+            hz2 = next(o for o in e.venue["objects"] if o["kind"] == "haze")
+            check("...its thickness stays between a hint and a cloud", hz2.get("density") == 1.0, hz2)
+            data = mvr.write(e.patch, list(e.venue.get("rigging") or []), {}, "show", list(e.venue.get("objects") or []))
+            import io
+            import zipfile
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                xml = zf.read("GeneralSceneDescription.xml").decode("utf-8")
+            check("...and it isn't written into an MVR (nothing solid for another app to draw)",
+                  "By the DJ" not in xml and "SceneObject" in xml, "the room's other objects go, the haze area doesn't")
+        finally:
+            e.shutdown()
+

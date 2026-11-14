@@ -127,3 +127,5 @@ Haze.lnk
 # the screen check's report and screenshots (node tools/uicheck.mjs screencheck)
 screencheck/
 uicheck-out/
+# the 3D check's pictures (node tools/stagecheck.mjs)
+stagecheck/

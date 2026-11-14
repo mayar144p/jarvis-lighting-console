@@ -100,7 +100,7 @@ UNDO_EXCLUDED = frozenset({
     "playback_release", "playback_release_all", "set_output", "follow_set", "locate",
     # calibrating a fixture model's speed is library setup, and the test
     # moves restore themselves
-    "motion_set", "motion_test", "motion_test_end", "motion_get",
+    "motion_set", "motion_test", "motion_test_end", "motion_get", "output_set", "output_get",
     # special effects are performed, not edited: never an undo step
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload", "fx_heater",
     "fx_status", "remember_open", "own_strobe", "light_test", "light_tested", "zero_dark", "colour_cal", "teach_slots",
@@ -138,7 +138,7 @@ READY_ERROR_WINDOW_S = 60.0
 
 # Queries: they change nothing, so they do not make clients reload.
 _READ_ONLY = frozenset({"show_templates", "status", "line_up_marks", "timecode_ltc", "fx_available", "get_limits", "cue_info", "pad_info",
-                        "export_patch", "venue_info", "motion_get",
+                        "export_patch", "venue_info", "motion_get", "output_get",
                         "fx_status", "ready_check", "show_versions", "show_export", "show_files", "rdm_compare",
                         "backup", "backup_now", "backup_shows", "hue", "hue_find", "hue_lights", "hue_flash",
                         "venue_preview", "step_capture", "rig_pieces", "rig_report", "paperwork", "colour_cal_get"})
@@ -705,7 +705,7 @@ ACTIONS = (
     "aim_at", "timeline_set", "timeline_track", "timeline_clip",
     "timeline_from_playback", "timeline_play", "timeline_pause",
     "timeline_stop", "timeline_seek",
-    "motion_set", "motion_test", "motion_test_end", "motion_get",
+    "motion_set", "motion_test", "motion_test_end", "motion_get", "output_set", "output_get",
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload",
     "fx_status", "quick_fx_defaults", "remember_open", "own_strobe", "light_test", "light_tested", "zero_dark",
     "speed_master", "aim_spot", "nudge", "move_range", "floor_safe",

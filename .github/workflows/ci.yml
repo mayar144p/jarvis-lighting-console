@@ -88,6 +88,8 @@ jobs:
         run: node tools/remotecheck.mjs
       - name: The desk and the phone show the same (a long run of presses from both)
         run: node tools/synccheck.mjs
+      - name: What the 3D draws (pools, beams in haze, gobos, colours, both eyes in VR - read back pixel by pixel)
+        run: node tools/stagecheck.mjs
       - name: NDI video in and out (a stand-in NDI runtime, built here, and a stand-in desktop link)
         run: |
           npm install --no-save --no-package-lock --prefix "$RUNNER_TEMP/koffi" koffi@3.3.2
@@ -97,7 +99,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: screen-check
-          path: screencheck
+          path: |
+            screencheck
+            stagecheck
 
   lint:
     runs-on: ubuntu-latest

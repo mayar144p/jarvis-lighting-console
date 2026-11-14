@@ -15,6 +15,7 @@
 // meshes replaces this for its heads (see gdtf.js); the interface is the
 // same.
 import * as THREE from "three";
+import { lensLook } from "./lensglass.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
@@ -60,11 +61,14 @@ function steel() {
 }
 
 // The lens is per head: its emissive colour is the light it is putting out.
-function lensMaterial() {
+// Dark it is coated glass (an LED cell shows its die, a Fresnel its rings:
+// lensglass.js), not a black hole; lit, brightest where the source is.
+function lensMaterial(kind = "glass") {
+  const look = lensLook(kind);
   return new THREE.MeshStandardMaterial({
-    color: 0x05070a, roughness: 0.08, metalness: 0.2,
-    emissive: new THREE.Color(0, 0, 0), emissiveIntensity: 1,
-    envMapIntensity: 1.2,
+    color: look.map ? 0xffffff : 0x05070a, map: look.map, roughness: 0.1, metalness: 0.15,
+    emissive: new THREE.Color(0, 0, 0), emissiveIntensity: 1, emissiveMap: look.emissiveMap,
+    envMapIntensity: 1.1,
   });
 }
 
@@ -354,7 +358,7 @@ function multiHead(body, n) {
     const ring = cyl(R * 1.06, R * 1.06, 0.008, trim(body.style), 24);
     ring.position.y = len * 0.55;
     t.add(ring);
-    const lens = lensMaterial();
+    const lens = lensMaterial("cell");
     const l = disc(R * 0.78, lens, 24);
     l.position.y = len * 0.6 - 0.003;
     t.add(l);
@@ -380,7 +384,7 @@ function movingWash(body, family) {
     [R, 0], [R * 1.02, front - 0.02], [R * 0.98, front],
   ], H);
   sk.tilt.add(shell);
-  const lens = lensMaterial();
+  const lens = lensMaterial("cell");
   sk.lenses.push(lens);
   const fam = String(family || "");
   if (/spiider/.test(fam)) {
@@ -417,7 +421,7 @@ function movingBar(body) {
   const bar = rbox(len, 0.14, 0.12, 0.02, H);
   bar.position.y = 0;
   sk.tilt.add(bar);
-  const lens = lensMaterial();
+  const lens = lensMaterial("cell");
   sk.lenses.push(lens);
   // whole lenses per zone: a 3-zone bar draws 6, two a zone
   const z = Math.max(1, body.cells || 1);
@@ -480,7 +484,7 @@ function ledPar(body) {
     plate.position.set(R + 0.002, 0.0, 0);
     sk.tilt.add(plate);
   }
-  const lens = lensMaterial();
+  const lens = lensMaterial("cell");
   sk.lenses.push(lens);
   lensFace(sk.tilt, 0.078, R * 0.88, body.cells > 1 ? body.cells : 12, lens);
   sk.emitters.push(emitter(sk.tilt, 0.08, R * 0.8));
@@ -577,7 +581,7 @@ function fresnel(body) {
   const box = rbox(0.28, 0.26, 0.28, 0.04, H);
   box.position.y = -0.02;
   sk.tilt.add(box);
-  const lens = lensMaterial();
+  const lens = lensMaterial("fresnel");
   sk.lenses.push(lens);
   for (let i = 0; i < 4; i++) {                        // fresnel steps
     const ring = new THREE.Mesh(new THREE.RingGeometry(0.03 + i * 0.026, 0.05 + i * 0.026, 36), lens);
@@ -631,7 +635,7 @@ function panel(body, w, d, cells, cellR) {
       sk.tilt.add(grip);
     }
   }
-  const lens = lensMaterial();
+  const lens = lensMaterial("cell");
   sk.lenses.push(lens);
   const nx = Math.max(1, Math.round(Math.sqrt(cells * w / d)));
   const nz = Math.max(1, Math.ceil(cells / nx));
@@ -692,7 +696,7 @@ function batten(body) {
     fin.position.set(0, 0.035 - bh - 0.005, -bd / 2 + (i + 1) * bd / (v.fins + 1));
     sk.tilt.add(fin);
   }
-  const lens = lensMaterial();
+  const lens = lensMaterial("cell");
   sk.lenses.push(lens);
   // square LED cells, or round lenses
   const geo = v.shape === "round"
@@ -873,7 +877,7 @@ function comboBar(body) {
   sk.tilt.position.y = 0.08;
   const H = housing(body.style);
   sk.tilt.add(rbox(len, 0.09, 0.1, 0.012, H));
-  const lens = lensMaterial();
+  const lens = lensMaterial("cell");
   sk.lenses.push(lens);
   for (const x of [-0.42, -0.3, -0.18, 0.18, 0.3, 0.42]) {   // the LED heads
     const l = disc(0.04, lens);

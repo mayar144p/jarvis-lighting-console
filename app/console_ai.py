@@ -43,7 +43,7 @@ DENY_ACTIONS = frozenset({
     "song_save", "songs_import", "song_load", "song_rename", "song_delete", "song_link", "song_follow",
     "standby", "standby_take", "standby_stop", "stand_in",
     "venue_save", "venue_open", "venue_delete",
-    "motion_set", "motion_test", "motion_test_end", "motion_get",
+    "motion_set", "motion_test", "motion_test_end", "motion_get", "output_set", "output_get",
     "fx_arm", "fx_fire", "fx_fog", "fx_laser", "fx_kill", "fx_reload", "fx_status",
     "quick_fx_defaults", "remember_open", "own_strobe", "light_test", "light_tested", "zero_dark",
     "import_show",

@@ -94,11 +94,24 @@ await act("venue_template", { name: "club" });
 const GPU = process.env.CHECKS_GPU === "1";
 const browser = await chromium.launch({ executablePath: exe, headless: !GPU,
   args: GPU ? ["--ignore-gpu-blocklist"] : ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
-const p = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });   // (the desk and the 3D window)
+const p = await ctx.newPage();
 const errors = [];
 p.on("pageerror", (e) => errors.push(String(e.message || e)));
 p.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource/.test(m.text())) errors.push("console: " + m.text().slice(0, 200)); });
-await p.addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.people", "0"); localStorage.setItem("haze.quality", "fast"); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ } });
+await p.context().addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.people", "0"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ } });
+// The desk as it opens (no 3D inside it) and the 3D in a window of its own
+// (?window=stage), as the desktop app has it - its own window, its own
+// process: the desk is pressed, the 3D window read and photographed.
+let w3 = null;
+async function open3d() {
+  if (w3 && !w3.isClosed()) await w3.close();
+  w3 = await p.context().newPage();
+  await w3.setViewportSize({ width: 1280, height: 720 });
+  w3.on("pageerror", (e) => errors.push("3D window: " + String(e.message || e)));
+  w3.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource/.test(m.text())) errors.push("3D window console: " + m.text().slice(0, 200)); });
+  await w3.goto(BASE + "?window=stage");
+}
 let patch = [];
 let tag = "";                       // the brand, in front of every finding
 
@@ -116,7 +129,8 @@ async function build(rig) {
     const r = fid ? await act("add_heads", { fixture_id: fid, qty }) : { error: inst.error || "not installed" };
     check(r.ok && (r.heads || []).length === qty, `${tag}${qty} x ${it.name} patched`, r.error || "");
   }
-  await p.goto(BASE + "?3d=1");
+  await p.goto(BASE);
+  await open3d();
   patch = [];
   for (let i = 0; i < 40 && !patch.length; i++) {
     await sleep(500);
@@ -128,17 +142,17 @@ async function build(rig) {
   console.log(`  ${patch.length} lights`);
   if (!BRANDS) check(patch.length >= (process.env.BIG_RIG ? 120 : 20), "the whole test rig is patched", String(patch.length));
   for (let i = 0; i < 60; i++) {
-    const n = await p.evaluate(() => (window.hazeStage && window.hazeStage.fixtures ? window.hazeStage.fixtures.size : 0));
+    const n = await w3.evaluate(() => (window.hazeStage && window.hazeStage.fixtures ? window.hazeStage.fixtures.size : 0));
     if (n >= patch.length) break;
     await sleep(500);
   }
-  check(await p.evaluate(() => window.hazeStage.fixtures.size) === patch.length, `${tag}every light is in the 3D view`,
-    `${await p.evaluate(() => window.hazeStage.fixtures.size)} of ${patch.length}`);
+  check(await w3.evaluate(() => window.hazeStage.fixtures.size) === patch.length, `${tag}every light is in the 3D view`,
+    `${await w3.evaluate(() => window.hazeStage.fixtures.size)} of ${patch.length}`);
 }
 
 // what each layer says, per light
 const feed = async () => Object.fromEntries(((await getj("api/console/look")).heads || []).map((r) => [r.n, r]));
-const view = () => p.evaluate(() => {
+const view = () => w3.evaluate(() => {
   const out = {};
   for (const [head, inst] of window.hazeStage.fixtures) {
     const L = inst.cur || {}, T = inst.to || {}, sk = inst.sk || {}, m = inst.motor, body = inst.data.body || {};
@@ -170,6 +184,16 @@ const nearC = (a, b, tol = 0.02) => a && b && a.every((x, i) => near(x, b[i], to
 // layer checks for every light; `touched` = the lights the step changed
 async function layers(step, settleMs = 1600) {
   await sleep(settleMs);
+  // two pictures drawn after the wait (the 3D, at its one quality, is slow
+  // to draw in software: its last picture can be from mid-fade)
+  await w3.evaluate(async () => {
+    const st = window.hazeStage, end = performance.now() + 30000;
+    for (let n = 0; n < 2 && performance.now() < end; n++) {
+      const last = st.lastRender;
+      st.dirty = true;
+      while (st.lastRender === last && performance.now() < end) await new Promise((r) => setTimeout(r, 30));
+    }
+  });
   const F = await feed(), V = await view();
   let bad = 0;
   const note = (what, detail) => { if (bad++ < 6) check(false, `${tag}${step}: ${what}`, detail); };
@@ -196,7 +220,11 @@ const click = async (sel, what) => {
   try { await p.click(sel, { timeout: 20000 }); return true; } catch (e) { check(false, `${tag}click ${what || sel}`, String(e.message).split("\n")[0]); return false; }
 };
 const clickText = (sel, text) => click(`${sel}:has-text("${text}")`, text);
-const shot = (name) => p.screenshot({ path: join(outDir, name + ".png") });
+// the 3D window (name.png) and the desk (name-desk.png)
+const shot = async (name) => {
+  await w3.screenshot({ path: join(outDir, name + ".png") });
+  await p.screenshot({ path: join(outDir, name + "-desk.png") });
+};
 const lights = (V) => Object.entries(V).filter(([, v]) => v.cls === "light").map(([h]) => +h);
 const roles = (h) => (patch.find((x) => x.head_no === +h) || {}).map || [];
 // a light that can make red (RGB, or CMY): a wheel's slots vary by model
@@ -251,7 +279,7 @@ async function fit(rig) {
       // each colour cell (a pixel bar's pixels, a multi-head light's heads)
       // is coloured on its own in the 3D
       const reds = hd.map.filter((r) => r === "red").length;
-      const cells = await p.evaluate((n) => {
+      const cells = await w3.evaluate((n) => {
         const i = window.hazeStage.fixtures.get(n);
         if (!i) return -1;
         const sk = i.sk;
@@ -402,7 +430,8 @@ async function steps() {
   if (tinted.length) check(moved.length > tinted.length / 3, `${tag}the rainbow moves the colours over time`, `${moved.length} of ${tinted.length} changed`);
   // the 3D follows a moving effect: its target is the look the page was sent
   // at that moment (read together, so the effect can't move in between)
-  const liveBad = await p.evaluate(async () => {
+  // (in the 3D window: its own copy of the desk's looks, beside its 3D)
+  const liveBad = await w3.evaluate(async () => {
     const looks = (await import("/app/store.js")).state.looks || {};
     const bad = [];
     for (const [head, inst] of window.hazeStage.fixtures) {
@@ -445,10 +474,13 @@ async function steps() {
   console.log("9. Undo from the keyboard");
   const undoDepth = () => p.evaluate(async () => (((await import("/app/store.js")).state.snap || {}).undo || {}).depth || 0);
   const depth = await undoDepth();
-  await p.mouse.click(700, 400);                 // focus the page, not a field
+  await p.bringToFront();                        // the desk, not a field in it
+  await p.evaluate(() => { if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur(); });
   await p.keyboard.press("Control+z");
-  await sleep(800);
-  check(depth > 0 && await undoDepth() < depth, `${tag}Ctrl+Z undoes a step`, `${depth} -> ${await undoDepth()}`);
+  // (as soon as the page has handled it: a slow 3D keeps the page busy)
+  let after = depth;
+  for (let i = 0; i < 40 && after >= depth; i++) { await sleep(200); after = await undoDepth(); }
+  check(depth > 0 && after < depth, `${tag}Ctrl+Z undoes a step`, `${depth} -> ${after}`);
   await layers("after undo");
 
   if (BRANDS) await effects();

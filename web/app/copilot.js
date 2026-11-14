@@ -173,6 +173,18 @@ async function viewShot() {
   } catch (e) { return null; }
 }
 
+// light readings in lux (measure_light): once the lights have got where the
+// AI sent them (a head still moving would be read on its way)
+async function lightReadings(spots) {
+  try {
+    const m = await stagePanel();
+    const st = m && m.getStage();
+    if (!st || !st.luxReport) return null;
+    for (let i = 0; i < 30 && st.lightsSettled && !st.lightsSettled(); i++) await new Promise((ok) => setTimeout(ok, 100));
+    return st.luxReport(Array.isArray(spots) ? spots : null);
+  } catch (e) { return null; }
+}
+
 function setAttached(url) {
   attached = url;
   const el = $("#ai-att");
@@ -206,12 +218,14 @@ async function assist(text) {
     const image = attached || ($("#ai-see").checked ? await viewShot() : null);
     setAttached(null);
     let r = await post("/api/console/assistant", { message: text, session, image, preview: true, can_see: !!(window.hazeStage && !window.hazeStage.failed), screen: screenContext() });
-    // the AI asked to see its changes: let the 3D draw them, then send a picture
-    while (r.ok && r.need_view) {
-      thinking.firstChild.textContent = "Looking at the 3D…";
+    // the AI asked to see its changes (a picture) or to measure the light
+    // (lux readings): let the 3D take them in, then send what it asked for
+    while (r.ok && (r.need_view || r.need_light)) {
+      thinking.firstChild.textContent = r.need_light ? "Measuring the light…" : "Looking at the 3D…";
       await new Promise((ok) => setTimeout(ok, 900));
-      const shot = await viewShot().catch(() => null);
-      r = await post("/api/console/assistant", { resume: r.turn, image: shot });
+      const shot = r.need_view ? await viewShot().catch(() => null) : null;
+      const light = r.need_light ? await lightReadings(r.spots).catch(() => null) : null;
+      r = await post("/api/console/assistant", { resume: r.turn, image: shot, light });
     }
     clearInterval(tick);
     thinking.remove();

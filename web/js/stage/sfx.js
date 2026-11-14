@@ -7,25 +7,29 @@
 // with a colour+alpha each, one pool per effect head - soft round puffs for
 // fog, CO2 and flame, crisp bits of paper for confetti; a laser is a set of
 // additive line segments fanned around the beam axis by its pattern, size
-// and rotation channels.
+// and rotation channels.  CO2, fog and confetti are lit by the beams round
+// them (materials.js scatterAt): a CO2 jet fired through a red beam glows
+// red, confetti flashes in the colours it falls through; flame and sparks
+// make their own light.
 import * as THREE from "three";
-import { instancedBufferAttribute, uv, length, smoothstep, float } from "three/tsl";
+import { instancedBufferAttribute, uv, length, smoothstep, float, varying } from "three/tsl";
+import { scatterAt } from "./materials.js";
 
 const CONFETTI = [0xff3b6b, 0xffd23b, 0x3bb8ff, 0x62ff8a, 0xff8a1a, 0xb45cff, 0xffffff];
 
 const KINDS = {
   confetti: { n: 1400, rate: 420, life: [4, 6.5], speed: [6.5, 9.5], spread: 0.32, gravity: -3.2, drag: 1.4,
-    size: 0.11, additive: false, flutter: 1.2, floor: true },
+    size: 0.11, additive: false, flutter: 1.2, floor: true, lit: 0.5 },
   // (half the puffs, each a little thicker: CO2 fired on every beat kept
   // the screen too busy to send the next press on time)
   co2: { n: 450, rate: 260, life: [0.45, 0.95], speed: [9, 12], spread: 0.07, gravity: 0.8, drag: 2.4,
-    size: 0.6, additive: false, alpha: 0.4, colour: [0.92, 0.95, 1] },
+    size: 0.6, additive: false, alpha: 0.4, colour: [0.92, 0.95, 1], lit: 0.08 },
   flame: { n: 700, rate: 420, life: [0.3, 0.65], speed: [4.5, 6.5], spread: 0.12, gravity: 2, drag: 1.2,
     size: 0.55, additive: true, alpha: 0.9, fire: true },
   spark: { n: 900, rate: 520, life: [0.7, 1.4], speed: [3.8, 5.6], spread: 0.14, gravity: -7, drag: 0.35,
     size: 0.06, additive: true, alpha: 1, colour: [1, 0.78, 0.35] },
   atmos: { n: 500, rate: 70, life: [5, 8], speed: [1.4, 2.4], spread: 0.45, gravity: 0.08, drag: 0.7,
-    size: 1.6, additive: false, alpha: 0.11, colour: [0.8, 0.82, 0.86] },
+    size: 1.6, additive: false, alpha: 0.11, colour: [0.8, 0.82, 0.86], lit: 0.08 },
 };
 KINDS.sfx = KINDS.spark;
 
@@ -51,10 +55,12 @@ class Pool {
       blending: k.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
     });
     m.size = k.size;
-    m.positionNode = instancedBufferAttribute(this.posAttr);
+    const at = instancedBufferAttribute(this.posAttr);
+    m.positionNode = at;
     const c = instancedBufferAttribute(this.colAttr);
     const r = length(uv().sub(0.5)).mul(2);
-    m.colorNode = c.rgb;
+    // lit by the beams round it (worked out per particle, not per pixel)
+    m.colorNode = k.lit ? c.rgb.mul(varying(scatterAt(at)).mul(k.lit)) : c.rgb;
     m.opacityNode = c.a.mul(k.floor ? float(1) : smoothstep(0.25, 1, r).oneMinus());
     this.points = new THREE.Sprite(m);
     this.points.count = this.n;

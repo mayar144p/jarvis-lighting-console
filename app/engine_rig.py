@@ -937,12 +937,18 @@ class RigMixin:
 
     def _a_venue_room(self, width=None, depth=None, height=None, back=None,
                       ceiling=None, floor=None, wall_colour=None,
-                      outline=None, name=None, **_):
+                      outline=None, name=None, sky=None, sky_turn=None, **_):
+        """The room's size, shape and surfaces; `sky` over a room with no
+        roof (ceiling "none"): night, city, dusk, overcast, day, or
+        "picture:upload:<id>"; `sky_turn` turns it (degrees)."""
         v = venue_mod.normalise(self.venue)
         room = dict(v["room"])
+        if sky is not None and str(sky) not in venue_mod.SKIES and not str(sky).startswith("picture:"):
+            raise ValueError(f"the sky is one of {', '.join(venue_mod.SKIES)} (or a 360-degree picture)")
         for key, val in (("width", width), ("depth", depth), ("height", height),
                          ("back", back), ("ceiling", ceiling), ("floor", floor),
-                         ("wall_colour", wall_colour), ("outline", outline)):
+                         ("wall_colour", wall_colour), ("outline", outline),
+                         ("sky", sky), ("sky_turn", sky_turn)):
             if val is not None:
                 room[key] = val
         v["room"] = room
@@ -958,6 +964,10 @@ class RigMixin:
         pulled = venue_mod.fit_inside(v)
         self._set_venue_doc(v)
         w, d, h = venue_mod.dims(v)
+        if sky is not None and all(x is None for x in (width, depth, height, back, ceiling, floor, wall_colour, outline)):
+            sk = v["room"]["sky"]
+            where = "" if v["room"]["ceiling"] == "none" else " (it shows over a room with no roof)"
+            return self._venue_result(f"the sky: {'your 360-degree picture' if sk.startswith('picture:') else sk}{where}")
         return self._venue_result(f"room {w:g} x {d:g} x {h:g} m"
                                   + (f"; moved {pulled} piece(s) of rigging back inside" if pulled else ""))
 

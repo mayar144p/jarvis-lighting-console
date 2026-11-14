@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import copy
 import math
+import re
 
 VERSION = 2
 
@@ -25,7 +26,12 @@ OBJECT_KINDS = ("dj_booth", "bar", "speaker", "sub", "pillar", "screen",
                 "drape", "panels",
                 # club furniture: a half-round bar, tables, VIP seating
                 "bar_curve", "high_table", "half_table", "couch", "vip_booth",
-                "armchair", "stool", "rope", "plant")
+                "armchair", "stool", "rope", "plant",
+                # a part of the room where the haze is thicker (the 3D only:
+                # nothing solid, beams pass through it)
+                "haze",
+                # a video projector: throws a picture or a clip onto the room
+                "projector")
 # half-round pieces: `w` across their straight side, `d` how far the
 # counter / seat reaches in from the curve; at rot 0 the curve is on the
 # far side (+z), the open side towards the stage (a booth's seats face it)
@@ -34,7 +40,8 @@ CURVED = ("bar_curve", "vip_booth", "half_table")
 OBJECT_SIZE = {"mark": (0.4, 0.4, 0.02), "bar_curve": (6.0, 0.8, 1.1), "high_table": (0.7, 0.7, 1.1),
                "half_table": (1.2, 0.6, 0.75), "couch": (2.2, 0.9, 0.8), "vip_booth": (2.6, 0.6, 0.95),
                "armchair": (0.9, 0.85, 0.8), "stool": (0.4, 0.4, 0.75), "rope": (5.0, 0.3, 1.0),
-               "plant": (0.6, 0.6, 1.6), "table": (1.6, 1.6, 0.75), "bar": (6.0, 0.8, 1.1)}
+               "plant": (0.6, 0.6, 1.6), "table": (1.6, 1.6, 0.75), "bar": (6.0, 0.8, 1.1),
+               "haze": (4.0, 4.0, 3.0), "projector": (0.5, 0.45, 0.22)}
 DRAPE_GREY = "#6e7076"          # a pro visualiser's grey: drapes and the stage deck
 DECK_GREY = "#55575d"
 ZONE_KINDS = ("dancefloor", "standing", "seating", "bar", "dj", "foh",
@@ -43,6 +50,9 @@ ZONE_KINDS = ("dancefloor", "standing", "seating", "bar", "dj", "foh",
               # app/engine_zones.py holds every light off it
               "keepout")
 CEILINGS = ("flat", "open", "none")
+# the sky over a venue with no roof (web/js/stage/sky.js); or the
+# operator's own 360-degree photo, "picture:upload:<id>" / "picture:<link>"
+SKIES = ("night", "city", "dusk", "overcast", "day")
 CROWD_STYLES = ("simple", "varied")
 
 # Default cross-section of each rig kind (m), and whether lights on it hang.
@@ -174,6 +184,8 @@ def _clean_room(raw: dict) -> dict:
         "floor": _text(raw.get("floor"), "concrete", 20),
         "wall_colour": _colour(raw.get("wall_colour"), "#3a3d45"),
         "areas": _clean_areas(raw.get("areas")),
+        "sky": _sky(raw.get("sky")),
+        "sky_turn": round(_num(raw.get("sky_turn"), 0.0, -3600, 3600) % 360, 1),
     }
     if room["outline"]:
         # A traced room: its box is the outline's extent.
@@ -184,6 +196,18 @@ def _clean_room(raw: dict) -> dict:
                      "back": round(min(zs), 3),
                      "cx": round((max(xs) + min(xs)) / 2, 3)})
     return room
+
+
+def _sky(value) -> str:
+    """The sky (SKIES), or a 360-degree picture kept on the desk or by link."""
+    s = str(value or "").strip()
+    if s in SKIES:
+        return s
+    if s.startswith("picture:"):
+        ref = s[len("picture:"):]
+        if re.fullmatch(r"upload:[A-Za-z0-9_-]{1,64}", ref) or re.fullmatch(r"https?://[^\s\"'<>]{1,280}", ref):
+            return s
+    return "night"
 
 
 def _clean_stage(raw) -> dict | None:
@@ -251,14 +275,25 @@ def _clean_object(raw: dict, v: dict) -> dict | None:
     })
     if not item["colour"]:
         del item["colour"]
-    if item["kind"] in ("screen", "panels"):
-        # what the LED screen shows: the rig's colours, nothing, or a clip
+    if item["kind"] in ("screen", "panels", "projector"):
+        # what the LED screen (or the projector) shows: the rig's colours, nothing, or a clip
         c = _text(raw.get("content"), "rig", 300)
         # (ndi:<source>: live video from the network, shown by the desktop app)
         item["content"] = c if c in ("rig", "off") or c.startswith(("clip:", "image:", "ndi:")) else "rig"
+    if item["kind"] == "projector":
+        # how bright (lumens), how wide it throws (the distance over the
+        # picture's width), the picture's shape, and how far it tips up (+)
+        # or down (-)
+        item["lm"] = round(_num(raw.get("lm"), 10000, 300, 60000))
+        item["throw"] = round(_num(raw.get("throw"), 1.6, 0.3, 8.0), 2)
+        item["aspect"] = round(_num(raw.get("aspect"), 16 / 9, 1.0, 3.0), 3)
+        item["tilt"] = round(_num(raw.get("tilt"), 0, -89, 89), 1)
     if item["kind"] == "drape":
         # a pleated curtain: `w` wide, `h` high, folds `fold` m apart, `d` deep
         item["fold"] = round(_num(raw.get("fold"), 0.4, 0.1, 2.0), 3)
+    if item["kind"] == "haze":
+        # how much thicker the haze is in there (0.05 a hint .. 1 a cloud)
+        item["density"] = round(_num(raw.get("density"), 0.6, 0.05, 1.0), 2)
     if item["kind"] in CURVED:
         # how much of a circle: 180 a half-round, up to 300 nearly closed
         item["arc"] = round(_num(raw.get("arc"), 180, 60, 300), 1)

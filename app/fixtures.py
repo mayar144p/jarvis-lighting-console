@@ -1141,6 +1141,36 @@ def set_motion(db_path: Path, manufacturer: str, model: str,
     return {"pan_s": pan_s, "tilt_s": tilt_s}
 
 
+def _output_table(conn) -> None:
+    conn.execute("CREATE TABLE IF NOT EXISTS light_output (manufacturer TEXT NOT NULL,"
+                 " model TEXT NOT NULL, lm REAL, beam REAL,"
+                 " PRIMARY KEY (manufacturer, model))")
+
+
+def get_output(db_path: Path, manufacturer: str, model: str) -> dict | None:
+    """A fixture model's light output as the operator corrected it for the
+    3D: lumens and / or the beam angle (degrees), or None."""
+    with db(db_path) as conn:
+        _output_table(conn)
+        row = conn.execute("SELECT lm, beam FROM light_output WHERE manufacturer = ?"
+                           " AND model = ?", (manufacturer or "", model or "")).fetchone()
+    return {"lm": row["lm"], "beam": row["beam"]} if row else None
+
+
+def set_output(db_path: Path, manufacturer: str, model: str,
+               lm: float | None, beam: float | None) -> dict | None:
+    """Store (or with both None, forget) a model's corrected light output."""
+    with db(db_path) as conn:
+        _output_table(conn)
+        if lm is None and beam is None:
+            conn.execute("DELETE FROM light_output WHERE manufacturer = ? AND model = ?",
+                         (manufacturer or "", model or ""))
+            return None
+        conn.execute("INSERT OR REPLACE INTO light_output (manufacturer, model, lm, beam)"
+                     " VALUES (?,?,?,?)", (manufacturer or "", model or "", lm, beam))
+    return {"lm": lm, "beam": beam}
+
+
 def list_modes(db_path: Path, fixture_id: int) -> list[dict]:
     """Every mode of one fixture: id, name, footprint, and channel labels.
 

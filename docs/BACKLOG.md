@@ -230,6 +230,235 @@ whoever picks it up starts from the diagnosis, not from scratch.
 
 Dropped for now (maybe later): the phone room scan.
 
+## A18. The 3D view, better than the other visualisers (agreed 2026-11-13)
+
+Asked: compared with Capture, Depence, Vectorworks Vision, WYSIWYG,
+grandMA3 3D, MagicVis and the DJ apps, make Haze's 3D the better option.
+The audit (Zyped show and the 124-light test rig): beams were see-through
+shells (no hot core, no brighter looking into them, gobos painted on the
+shell, cut flat where the centre line hit, through people and truss);
+brightness came from the beam angle only; 121 lit lights, 153 beams, only
+32 reached the floor and 8 cast shadows; no bounce, no reflections; a
+film-style colour curve turned bright red orange and green yellow; fast
+strobes ran at the wrong speed (30 pictures a second, sampled); one haze
+number for the room.  Kept: the fixtures, motors, gobos from the files,
+the room, crowd, effects, screens, NDI - the lighting part is rebuilt.
+
+1. **(DONE) A measuring stick:** tools/stagecheck.mjs (CI) - small fixed
+   scenes handed to the real 3D code and read back pixel by pixel; a look
+   book of a club scene saved to judge changes by eye.  It found a bug at
+   once: the drawn "rings" gobo (and the petals' fade) never showed - a
+   shader value first worked out inside another pattern's branch.
+2. **(DONE) Colour-true picture, exposure, strobes:** the old film curve's
+   contrast now works on each colour's brightest channel, so the hue and
+   saturation the desk sent are kept (stagecheck: red, green, deep blue and
+   amber pools within 3 degrees, dim and bright); only far past white does
+   a colour run to white.  Exposure slider (stops, the lights untouched).
+   Strobes counted from everything since the last picture, and the 3D draws
+   every picture while one strobes: 2-30 Hz flash exactly that many times a
+   second at 60 pictures a second, faster ones every other picture; random
+   strobes keep their dice.  Calm flashing (Settings -> Screen & 3D): a
+   steady glow, under three changes a second.  No auto-exposure on purpose:
+   it would brighten a fade-out and hide it.
+3. **(DONE) Real beams** (web/js/stage/beams.js, Medium and High): the
+   room is drawn first with its depth; each beam's closed cone then only
+   marks pixels, and per pixel the line of sight is cut against the real
+   cone (maths, not the mesh), ended at the room's depth, and the haze's
+   scattered light added up along it (8-24 steps, fewer through a narrow
+   beam): the beam's light thinned by its spread (bright at the lens),
+   forward scattering (Henyey-Greenstein, g 0.35), the same gobo / prism /
+   split as the floor, a drifting 3D haze texture, the shadow picture of
+   the brightest beams.  Drawn at half size, stretched back with the depth
+   as a guide; FXAA on High replaces 4x multisampling (the depth must be
+   readable).  Low keeps the old beams.  Found on the way: every shadow was
+   on the wrong side of its light on WebGL 2 (three.js already turns
+   render-target pictures over there; shadows.js turned them again), and a
+   view set while the camera was still flying was overridden.  stagecheck:
+   brightest at the lens, brighter looking into the beam, gobo shafts in the
+   air, a balcony stopping half a beam with its shadow in the haze, a
+   slanting beam reaching the floor all round.
+4. **(DONE) Every light lights the room:** lumens and lens angles read
+   from the fixture files (QLC+ Bulb / Lens, OFL physical; about a third of
+   the files give lumens, most give watts) or estimated from watts and kind,
+   corrected per model (Light output in the 3D…, output_get / output_set,
+   kept in the fixture database like movement speed).  A pool's light is
+   the output spread over the beam (narrower = brighter) and falls with the
+   distance squared.  The 32-brightest list is gone: every light goes into
+   a grid over the floor plan (web/js/stage/lightgrid.js, data textures)
+   and each point lights from its cell only - 120 downlights, 120 pools,
+   and faster than before (fewer lights per pixel).  16 shadow pictures on
+   High (6 Medium), soft for washes, crisp for spots, kept by their light
+   and redrawn only when a light moves or the room changes; a light inside
+   a box (under the deck) is shadowed from where its beam comes out.  The
+   brightest 12 pools bounce (their colour times the surface's) and the LED
+   screens glow onto the room.  stagecheck: lumens, narrow vs wide, 120
+   pools, 16 / 6 shadows, no redraw at rest, a red wall reddening the floor,
+   a red screen lighting the floor; behave: the dialog; selftest: the files
+   and output_set.
+5. **(DONE) Mirror floors** (web/js/stage/reflect.js): Medium and High,
+   a shiny floor (black, tiles, wood, concrete - by its sheen), the camera
+   above it: the room is drawn again from a camera turned over at the floor
+   (High half size, Medium a quarter), the beams in haze into that view
+   with its own depth (8 steps), mipmapped; the floor's shader reads its
+   point there, a blurrier level the rougher the floor, Fresnel-weighted.
+   Found while checking it: a picture that was only cleared kept its old
+   blurry levels - a rough floor showed a beam that was gone (now drawn
+   empty, so they're made again).  stagecheck: the beam in a black floor,
+   none in carpet or on Low, gone when the light is.
+6. **(DONE) Atmosphere:** Haze -> Auto (web/js/stage/atmos.js): the room's
+   haze is what the rig's hazers make - each at full fills 400 m3 a minute
+   (a small room fills faster), the room's haze halves in five minutes once
+   they stop; a cloud rolls out of each running hazer's nozzle (up to four,
+   to the beams as soft blobs) and thins in seconds after; the slider is the
+   most there can be, its label the live amount; no hazer in the rig: the
+   slider as before.  Haze areas: a venue object ("haze", density 0.05-1,
+   nothing solid: no beam stops on it, no shadow, not in the MVR or the
+   plot), soft-edged boxes in the beams' haze (up to four).  CO2, fog and
+   confetti are lit by the light grid at each particle (materials.js
+   scatterAt) - a CO2 jet glows the colour of the beam it's fired through;
+   flames and sparks keep their own light.  stagecheck: the room fills and
+   settles, a haze area shows the beam only in it, Auto clear / full /
+   a cloud round a running hazer, CO2 red in a red beam; selftest: the area.
+7. **(DONE) Pro tools:** a light map (lux), sky pictures, projectors, a
+   movie render, VR.
+   - **(DONE) The light map** (web/js/stage/luxmap.js, >> -> Light map
+     (lux)): every surface and person in false colour by the lux the rig
+     puts on it (log scale, 0 to 5,000, contour lines at each step), the
+     beams in the air hidden, a key with the reading where the pointer is.
+     The surfaces' shader sums the rig's direct light it already works out
+     (luminance of colour x output / distance squared x angle, with gobos and
+     shadows); the computer's side does the same sum for a point (the same
+     light list, gobos read from the atlas, blocked by anything solid).  The
+     AI's measure_light pauses the turn like see_3d: the screen's 3D reads
+     the stage, a face on it, the DJ and each zone (or the spots it names),
+     after the heads have got there, and answers with the lux and the
+     lights giving most of it.  stagecheck: the photometric lux under a
+     3000 lm 30 degree light within 3 %, the distance squared, nothing
+     facing away / outside the beam / under a slab, the map's colour for
+     that lux on screen, beams gone and back, people white and back;
+     webgpucheck: the map the same on WebGPU; selftest: the AI's pause,
+     readings checked, picture and reading together.
+   - **(DONE) Skies** (web/js/stage/sky.js, Settings -> Venue -> Sky): over
+     a venue with no roof, drawn behind everything (and in a shiny floor):
+     night with stars (a pixel or two at any screen size), a city night,
+     sunset (the glow behind the stage, deep blue high up), overcast,
+     daylight (the sun behind the audience), or the operator's own 360
+     photo (kept on the desk, or a web link; nothing else); Turn moves it.
+     Each sky lights the field and takes a fixed exposure of its own (day
+     -2.5 stops, its sky and light that much brighter), so the rig's beams
+     and pools show as little as they really do at noon - not an automatic
+     exposure, a fade-out still fades.  The glow follows that exposure (a
+     bright sky glowed all over).  venue_room takes sky / sky_turn (the AI
+     too); the outdoor grass runs on past the field.  stagecheck: night dark
+     with stars, day blue and lighting the field with a red pool all but
+     gone, sunset warm low and blue high, a photo as the sky, no sky indoors
+     or in the line drawings; selftest: the kinds, pictures checked, turn.
+   - **(DONE) Projectors** (web/js/stage/projectors.js, Arrange -> + More ->
+     Projector): a venue object that shows what an LED screen can (the rig's
+     colours, a clip or picture kept on the desk or by link, NDI) thrown onto
+     the room.  Each is a light in the rig's light list with gobo id 200 + k
+     and its picture as PROJ.tex[k] (up to four): the surfaces read the
+     picture's colour inside its rectangle (rx, ry in the light grid's spare
+     texels), so it lands on anything, with shadows, in the light map
+     (the meter weighs it by the picture's average), and in haze as a
+     pyramid of its colours (beams.js uProj / uRect).  Lumens over the
+     picture's solid angle (4 asin(sin a sin b)); throw ratio, aspect, tilt.
+     Found on the way: a colour picked in If branches of a plain helper lost
+     what was done with it afterwards (the picture filled the round beam) -
+     select instead, and a check that would have caught it; and a projector
+     vanished because its object's tag was overwritten after building.
+     stagecheck: four coloured quarters land the right way up and round,
+     nothing beside or above the picture, the meter counts it, a beam in
+     haze, off is off; webgpucheck: the same with a projector on WebGPU;
+     selftest: its settings kept real, in the MVR.
+   - **(DONE) The best-quality film** (web/app/movierender.js, Record a
+     video -> Quality -> Best): two passes.  The show plays once while the
+     3D notes each light's look when it changes and the camera when it
+     moves; then the 3D draws every picture on a clock of its own (stage
+     now(), _tick, beginFilm / filmLooks / filmFrame / endFilm: W x H, High,
+     no automatic lowering, the desk's live looks held until it ends, a
+     screen's clip seeked to each picture) and WebCodecs encodes it (H.264
+     in an MP4, else VP9 / VP8 in a WebM; mp4-muxer / webm-muxer vendored,
+     MIT) with the timeline's music (AAC or Opus) from where it starts.
+     Progress with time left and Cancel.  Found on the way: a WebGPU
+     canvas can't be read back once drawn (the film came out black) - on
+     WebGPU the picture is drawn into a texture of its own and read back,
+     by way of a 2D canvas so the encoder tags it as ordinary video colour.
+     stagecheck: one second at 10 pictures a second - played back, red
+     early and blue after half a second, the music in it, the 3D back as it
+     was; webgpucheck: a film from each backend, not blank, the same
+     picture (not upside down); tried through the dialog: 5 s noted, 156
+     pictures drawn, a WebM saved.
+   - **(DONE) VR** (web/js/stage/vr.js, >> -> Walk round in VR): WebXR
+     immersive-vr on the WebGL 2 path (a WebGPU backend needs the
+     session's "webgpu" feature: when the browser hasn't it, the desk
+     offers to switch the 3D to WebGL 2 and reload).  The camera hangs on
+     a rig at the dance floor (standingSpot) facing the stage; local-floor
+     puts the eye at the wearer's height; the left stick walks the way the
+     head looks, the right one snap-turns 30 degrees, inside the room.  The
+     headset draws the scene straight (the simpler beams, no mirror, the
+     true-colour curve as a custom tone mapping).  Found on the way:
+     three.js takes the animation loop set when the session starts - set
+     after, the head pose never came (eyes at the floor).  stagecheck, with
+     Meta's IWER emulating a Quest 3 (tools/vendor/iwer, the checks only):
+     drawn on the headset's clock, the eye at 1.6 m on the dance floor,
+     walking, turning, facing a stage off to one side, the 3D back after.
+8. **(DONE) Fixture looks:** the stand-in bodies were already built for
+   what each light is (yoke and head, cans, cells, cups, a base display);
+   what read badly was the lens - a flat black disc, the light a hole.  Now
+   (web/js/stage/lensglass.js) an unlit lens is coated glass with a lighter
+   rim and the room's light in it, an LED cell shows its die, a Fresnel its
+   rings; lit, an emissive map makes each cell brightest at its die.  The
+   makers' own bodies and gobos (GDTF Share) no longer send the operator off
+   to Add lights to sign in: the 3D asks for the gdtf-share.com sign-in
+   right there (web/app/gdtfsignin.js) and carries on.  stagecheck: an LED
+   PAR's lens is a die under glass glowing brightest at the die, the dark
+   face shows its cells, lit it glows with its cells telling apart (and
+   close-ups of the stand-ins for the look book); behave: not signed in, the
+   sign-in box comes up, says what it needs, cancels cleanly.
+
+9. **(DONE 2026-11-14) One quality, the best, everywhere** (asked: "remove
+   the simpler ones, keep it always high quality ... regardless of pc
+   specs").  The Low / Medium choice (Settings -> Screen & 3D), the
+   automatic lowering on a slow computer (`_adapt`: resolution down to
+   35 %, the surface detail off) and the simpler cone beams are gone, with
+   the detail switch in the shaders (`DETAIL`, `setDetail`).  Every view
+   draws the same: the screen's own sharpness (up to 2 pixels a point, and
+   again when the window moves to a sharper screen), every beam as light in
+   the haze (24 steps), 16 shadow pictures, 12 bounced pools, the mirror
+   floor at half size, the glow, FXAA.  Found on the way: High had never
+   had its smooth edges or its full sharpness unless the quality was
+   changed by hand (the pipeline started without FXAA at 1.5 pixels a
+   point; nothing changed it back).  An older desk's saved quality is
+   dropped at start; `setOptions({quality})` is ignored.
+   **VR at full quality:** each eye is drawn as the screen is (stage.js
+   `_presentEyes` / `_view`): the headset's eye as a camera of its own (its
+   lopsided view and its near / far from its projection), the mirror's
+   camera given the same view turned over left for right (reflect.js:
+   checked numerically - every floor point the eye sees lands where the
+   mirror looks), the pipeline's pictures at the eye's size (three.js's
+   `_setXRLayerSize`, put back after), its last step into that eye's half
+   of the headset's picture (viewport and scissor).  Each eye has its own
+   pipeline: the glow is worked out once a picture per pipeline.  The
+   headset's coarser edges (foveation) are off.  VR draws with WebGL 2:
+   WebGPU's VR gives each eye a picture of its own (an array), so the desk
+   offers to switch, as before.  stagecheck reads each eye's picture back
+   from the emulated Quest 3 (its stereo on): the beam in the haze in each
+   eye (and gone with the haze), two mirrors a picture; the look book keeps
+   the two eyes (25-vr-both-eyes.png).  The UI checks no longer ask for Low
+   (they draw the 3D at its one quality); fpscheck measures the one;
+   vischeck waits for a picture drawn after each change, and for Ctrl+Z to
+   land, rather than a fixed time (software drawing at full quality takes
+   longer a picture).  What the old lowering protected - the desk's own
+   buttons on a computer with no graphics card - stays without a simpler
+   picture: after three pictures in a row that took a quarter of a second
+   or more, the page gets as long again (two seconds at most) before the
+   next (`_loop`; one slow picture while shaders are made doesn't count;
+   films and VR draw every picture).  Found by the nightly screen check
+   (three widths, software drawing): at 1920 three clicks timed out once
+   the 3D drew at its one quality.  The guide also says how to keep the
+   desk quick on such a computer: the 3D in its own window.
+
 ## A17. NDI video in and out (2026-11-12) - DONE (a real NDI source still to try)
 
 **Done:** the desktop app talks to the NDI runtime the operator installs

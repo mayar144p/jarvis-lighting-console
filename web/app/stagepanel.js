@@ -6,9 +6,35 @@ import { modelDefs } from "./real3d.js";
 import { initVenuePanel } from "./venuepanel.js";
 import { state, on, emit, patch } from "./store.js";
 import { run, select } from "./actions.js";
-import { $, $$, menu, promptBox, toast } from "./ui.js";
+import { $, $$, menu, promptBox, toast, confirmBox } from "./ui.js";
 import { atPointer, rowMenu } from "./fixtures.js";
 import { openVideoDialog, stopVideo, recording } from "./videorec.js";
+import { toggleLightMap, lightMapOn } from "./lightmap.js";
+import { vrSupported } from "/js/stage/vr.js";
+
+// a VR headset this browser can use (asked once, and again when one is plugged in)
+let vrOK = false;
+const askVR = () => vrSupported().then((ok) => { vrOK = ok; });
+askVR();
+try { if (navigator.xr) navigator.xr.addEventListener("devicechange", askVR); } catch (e) { /* no WebXR */ }
+
+/** Into the headset: the 3D's room, rig and lights live, walked with the
+ *  sticks.  Where this browser's VR needs the 3D on WebGL 2, it offers to
+ *  switch (and reload). */
+async function startVR() {
+  if (stage.xrOn) { stage.exitVR(); return; }
+  try {
+    await stage.enterVR(() => toast("Out of VR", "", 2500));
+    toast("In VR: the left stick walks the way you look, the right one turns you. The headset's menu button leaves.", "", 7000);
+  } catch (e) {
+    if (e && e.webgl) {
+      const ok = await confirmBox("VR needs WebGL 2",
+        "This browser's VR works with the 3D drawn by WebGL 2. Draw the 3D with WebGL 2 from now on and reload it? Then choose Walk round in VR again.",
+        { ok: "Switch and reload" });
+      if (ok) { try { localStorage.setItem("haze.renderer", "webgl"); } catch (err) { /* private */ } location.reload(); }
+    } else toast("VR couldn't start: " + ((e && e.message) || e), "bad", 7000);
+  }
+}
 
 let stage = null;
 let rigSig = "";
@@ -23,6 +49,7 @@ function fixturesFor(p) {
     x: +h.x || 0, y: +h.y || 0, z: +h.z || 0, body: h.body || null,
     stance: h.stance || null, hang: h.hang || null, mount: h.mount || null, rot: h.rot || null, gobos: h.gobos || null, gobos2: h.gobos2 || null,
     yaw: +h.yaw || 0,                      // which way its base faces (turns with its truss)
+    photo: h.photo || null,                // its light output and lens (lumens, degrees) for the 3D
   }));
 }
 
@@ -54,7 +81,7 @@ function syncRig() {
   }
   const p = patch();
   const sig = JSON.stringify([p.map((h) => [h.head_no, h.model, h.mode, h.kind, h.x, h.y, h.z,
-    h.body && h.body.type, h.stance, h.hang, h.rot, h.yaw]), state.snap.venue]);
+    h.body && h.body.type, h.stance, h.hang, h.rot, h.yaw, h.photo]), state.snap.venue]);
   if (sig !== rigSig) {
     rigSig = sig;
     stage.setRig({ fixtures: fixturesFor(p), venue: state.snap.venue || {} });
@@ -153,8 +180,35 @@ export function initStage() {
   const keep = (key, value) => { try { localStorage.setItem("haze." + key, value); } catch (e) { /* ignore */ } };
   const house = $("#house");
   house.value = pref("house", house.value);
-  stage.setOptions({ house: +house.value, quality: pref("quality", "high") });
+  stage.setOptions({ house: +house.value });
   house.addEventListener("input", () => { stage.setOptions({ house: +house.value }); keep("house", house.value); });
+  // the picture's exposure (stops): double-click puts it back to the middle
+  // Auto haze: the haze follows the hazers in the rig (the label shows how much there is now)
+  const autoBtn = $("#haze-auto");
+  if (autoBtn) {
+    const auto = pref("hazeAuto", "0") === "1";
+    autoBtn.classList.toggle("on", auto);
+    stage.setOptions({ hazeAuto: auto });
+    autoBtn.addEventListener("click", () => {
+      const now = !autoBtn.classList.contains("on");
+      autoBtn.classList.toggle("on", now);
+      stage.setOptions({ hazeAuto: now });
+      keep("hazeAuto", now ? "1" : "0");
+    });
+    const label = $("#haze-label");
+    setInterval(() => {
+      if (document.hidden || !label) return;
+      const t = stage.options.hazeAuto && stage._hasHazers ? `Haze ${Math.round(stage.hazeLevel() * 100)}%` : "Haze";
+      if (label.textContent !== t) label.textContent = t;
+    }, 700);
+  }
+  const exposure = $("#exposure");
+  if (exposure) {
+    exposure.value = pref("exposure", "0");
+    stage.setOptions({ exposure: +exposure.value, calm: pref("calm", "0") === "1" });
+    exposure.addEventListener("input", () => { stage.setOptions({ exposure: +exposure.value }); keep("exposure", exposure.value); });
+    exposure.addEventListener("dblclick", () => { exposure.value = "0"; stage.setOptions({ exposure: 0 }); keep("exposure", "0"); });
+  }
   const toggle = (id, key, dflt) => {
     const btn = $(id);
     const on = pref(key, dflt ? "1" : "0") === "1";
@@ -246,13 +300,20 @@ function crowdMenu(btn, keep) {
 /** Each light model's real body from GDTF Share (the maker's 3D model,
  *  and its own gobo pictures); the profile and its channels stay exactly
  *  as they are. */
-export async function realBodies() {
+export async function realBodies(again = false) {
   toast("Looking the rig up on GDTF Share…", "", 4000);
   const d = await post("/api/gdtf/bodies", {}).catch((e) => ({ error: e.message }));
   if (d.error) {
-    toast(d.code === "no_session" || d.code === "unauthorized"
-      ? "Sign in to GDTF Share first: Add lights → GDTF Share (a free gdtf-share.com account)"
-      : d.error, "bad", 7000);
+    if ((d.code === "no_session" || d.code === "unauthorized") && !again) {
+      // sign in right here, then go on (a free gdtf-share.com account)
+      const { gdtfSignIn } = await import("./gdtfsignin.js");
+      const ok = await gdtfSignIn(d.code === "unauthorized"
+        ? "Your GDTF Share session has ended. Sign in again and the desk fetches the makers' own 3D bodies and gobos for the lights that need them."
+        : "The makers' own 3D bodies and gobos come from their GDTF files on GDTF Share. Sign in and the desk fetches them for the lights that need them.");
+      if (ok) return realBodies(true);
+      return;
+    }
+    toast(d.error, "bad", 7000);
     return;
   }
   const got = (d.done || []).filter((x) => x.ok), miss = (d.done || []).filter((x) => !x.ok);
@@ -376,6 +437,11 @@ function viewsMenu(btn) {
     } },
     { label: recording() ? "■ Stop recording" : "Record a video…", hint: recording() ? "and save it" : "the 3D view for the client (MP4)",
       run: () => (recording() ? stopVideo() : openVideoDialog(stage)) },
+    { label: lightMapOn(stage) ? "✓ Light map (lux)" : "Light map (lux)", hint: "how much light lands where",
+      run: () => toggleLightMap(stage) },
+    { label: stage.xrOn ? "Leave VR" : "Walk round in VR", disabled: !vrOK && !stage.xrOn,
+      hint: vrOK || stage.xrOn ? "a headset: the room, the rig and the lights, live" : "needs a VR headset and a browser with VR (Chrome / Edge with a PC headset, a headset's own browser)",
+      run: startVR },
     { label: "The makers' 3D bodies and gobos", hint: "from GDTF Share, for the 3D only", run: realBodies },
     "-",
     ...cams.map((c) => ({ label: "★ " + c.name, run: () => stage.setCamera({ pos: c.pos, target: c.target }) })),

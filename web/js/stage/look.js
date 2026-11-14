@@ -111,13 +111,7 @@ export const TRAVEL = {
   scanner: [0.35, 0.3],                      // a mirror, not a head: very quick
 };
 
-/**
- * One axis of a moving head's motor: accelerates, cruises at the
- * fixture's top speed (slowed by its speed channel), and brakes into the
- * target - instead of snapping there in a tenth of a second.  Positions
- * are the look's 0..1 across the axis's travel.
- */
-/** How much light a strobing lamp lets out right now (1 = steady): a
+/** How much light a strobing lamp lets out at one instant (1 = steady): a
  *  plain strobe flashes, a pulse breathes, a ramp opens or closes, a
  *  random strobe flashes when its dice say so (each light its own). */
 export function flash(hz, mode, time, seed) {
@@ -128,13 +122,76 @@ export function flash(hz, mode, time, seed) {
     case "pulse": return 0.5 - 0.5 * Math.cos(f * 2 * Math.PI);
     case "ramp_up": return f;
     case "ramp_down": return 1 - f;
-    case "random": {
-      const k = Math.sin((Math.floor(t) + seed * 7.13) * 12.9898) * 43758.5453;
-      return k - Math.floor(k) > 0.55 && f < 0.3 ? 1 : 0;
-    }
-    default: return f > 0.3 ? 0 : 1;
+    case "random": return dice(Math.floor(t), seed) && f < FLASH_ON ? 1 : 0;
+    default: return f > FLASH_ON ? 0 : 1;
   }
 }
+
+const FLASH_ON = 0.3;                      // a plain flash: lit for the first 30 % of each period
+
+/** A random strobe's dice for period k: does it flash this time? */
+function dice(k, seed) {
+  const x = Math.sin((k + seed * 7.13) * 12.9898) * 43758.5453;
+  return x - Math.floor(x) > 0.55;
+}
+
+/**
+ * How much light a strobing lamp lets out in the picture drawn now, from
+ * everything it did since the last picture (t0 .. t1, seconds) - so a
+ * strobe runs at its real speed however fast the pictures come.  Reading
+ * the lamp only at the instant of each picture got the speed wrong: at 30
+ * pictures a second a 20 Hz strobe flickered at 10 Hz and a 30 Hz one
+ * looked steady.  Now:
+ *   - every flash shows in at least one picture (none falls between two);
+ *   - two flashes never melt into one long glow while there is a picture
+ *     to spare between them, so up to half the pictures a second the
+ *     number of flashes a second is exactly the strobe's;
+ *   - faster than that it flickers every other picture - the fastest any
+ *     screen can show;
+ *   - a pulse or a ramp faster than that shows its average.
+ * `state` is the light's memory between pictures ({on}).  `calm`: the
+ * picture never flashes - a steady glow with a slow shimmer, for anyone who
+ * must not watch flashing (the real lights are untouched).
+ */
+export function strobeLevel(hz, mode, t0, t1, seed, state, calm = false) {
+  if (!(hz > 0)) { state.on = false; return 1; }
+  if (calm) {
+    // well under three changes a second (the safe limit for flashing)
+    state.on = false;
+    return 0.62 + 0.13 * Math.sin(t1 * 2 * Math.PI * 1.2 + seed);
+  }
+  const dt = Math.min(0.25, Math.max(1e-4, t1 - (t0 === undefined || t0 === null ? t1 - 1 / 60 : t0)));
+  const per = hz * dt;                         // flashes per picture
+  if (mode === "pulse" || mode === "ramp_up" || mode === "ramp_down") {
+    state.on = false;
+    if (per < 0.5) return flash(hz, mode, t1, seed);
+    let s = 0;
+    for (let i = 0; i < 8; i++) s += flash(hz, mode, t1 - dt * (i + 0.5) / 8, seed);
+    return s / 8;
+  }
+  const random = mode === "random";
+  // a flash at least every other picture: lit every other picture (the
+  // fastest a screen shows); a random strobe keeps its dice, never lit
+  // twice in a row
+  if (per >= 0.5 && !random) { state.on = !state.on; return state.on ? 1 : 0; }
+  const k0 = Math.floor((t1 - dt) * hz), k1 = Math.floor(t1 * hz);
+  const phase = t1 * hz - k1;
+  // a flash began since the last picture (a random strobe: one its dice let through)
+  let began = false;
+  for (let k = k0 + 1; k <= k1 && k <= k0 + 12; k++) if (!random || dice(k, seed)) { began = true; break; }
+  const lit = phase < FLASH_ON && (!random || dice(k1, seed));
+  let on = began || lit;
+  if (per >= 0.5 && state.on) on = false;
+  state.on = on;
+  return on ? 1 : 0;
+}
+
+/**
+ * One axis of a moving head's motor: accelerates, cruises at the
+ * fixture's top speed (slowed by its speed channel), and brakes into the
+ * target - instead of snapping there in a tenth of a second.  Positions
+ * are the look's 0..1 across the axis's travel.
+ */
 
 /** An angle for a turning part: indexed {at: degrees}, spinning {spin:
  *  turns a second}, or the plain reading when the file said nothing. */

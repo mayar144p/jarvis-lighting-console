@@ -75,6 +75,9 @@ outdoor stage) and resizes the room.
 
 * **House lights** (bottom right of the stage) make the room visible with the
   rig dark. Walls between you and the stage are cut away automatically.
+* **Exposure** (next to House and Haze) brightens or darkens the picture, the
+  way a camera's exposure does; the lights themselves don't change.
+  Double-click it to put it back to the middle.
 * **Rigging**: truss, pipes, towers, ladders, tripod stands and floor bases.
   New lights place themselves by type: movers and washes on the trusses,
   PARs and bars on the stage lip. A light on a truss is *mounted*, so moving
@@ -86,6 +89,45 @@ outdoor stage) and resizes the room.
 * **Views ▾**: front, sides, back, plan and whole room. There's also eye level
   from the crowd, the DJ's view, and **through the selected light** along its
   beam, the way you would check a focus. Save any view by name.
+
+### Haze in the 3D
+
+The **Haze** slider (next to House and Exposure) sets how thick the haze is,
+so the beams show in the air.
+
+* **Auto**: the haze follows the hazers in your rig. While the desk runs a
+  hazer the room fills (faster in a small room), thickest in a cloud that
+  rolls out from the hazer at first; when it stops, the cloud thins in
+  seconds and the room's haze settles over minutes. The slider is then the
+  most haze there can be, and its label shows how much there is now. Off
+  (the usual for programming), the slider sets the haze. A rig with no hazer
+  keeps the slider's haze either way.
+* **Haze area** (Arrange → + More): a part of the room where the haze is
+  thicker - under a balcony, round the DJ, by the smoke machine. Nothing
+  solid: the beams show it. Its box shows only while arranging; **Thicker**
+  sets how much.
+
+### The sky over an outdoor stage
+
+A venue with no roof (the **Outdoor** template, or a room with no ceiling)
+has the sky over it. **Settings → Venue → Sky**: night with stars, a city
+night (an orange glow, few stars), a sunset, overcast or daylight - or your
+own 360° photo of the real place (a wide panorama, twice as wide as it is
+high). The sky lights the field too: at night the beams own the dark; in
+daylight the lights hardly show, which is worth seeing before an early slot.
+**Turn it** moves where the sun sets, or which way your photo faces.
+
+### Projectors
+
+Arrange → **+ More** → **Projector (throws a video or picture)** puts a video
+projector in the room, at the back pointing at the stage. Select it to set
+what it shows - the same choices as an LED screen: the rig's colours, a clip
+or a picture from this computer or a link, or live video (NDI) - and its
+**Lumens**, **Throw** (the distance over the picture's width: at 1.6 a
+picture 3.75 m wide from 6 m), **Tilt°** and the picture's shape. Turn it
+with Rotate. Its picture lands on whatever is in front of it - a cyc, a
+drape, the stage, the crowd - with the shadows of what stands in the way,
+shows in haze as a beam of its own colours, and counts in the light map.
 
 ### Arrange mode
 
@@ -128,10 +170,52 @@ physically is and who made it:
 * **GDTF geometry.** When the profile came from a GDTF file with models, the
   real meshes (3DS, GLB, STL, OBJ) replace the procedural body, with the yoke
   and head as the file's own pivots.
-* **Light.** Beams are volumetric cones driven by the live output: colour,
-  intensity, zoom, pan/tilt, gobo and strobe, lighting the floor, the flown
-  truss and the performers, with bloom and optional haze. A lens that looks
-  straight at the camera draws a thin flare streak, as a camera sees it.
+* **Light.** Beams are driven by the live output: colour, intensity, zoom,
+  pan/tilt, gobo and strobe, lighting the floor, the flown truss and the
+  performers, with bloom and optional haze. A lens that looks straight at
+  the camera draws a thin flare streak, as a camera sees it.
+* **Beams in haze** are light in the air, worked out along your line of
+  sight: brightest at the lens and fading as the beam spreads, brighter when
+  it points at you, with the gobo and the prism making real shafts that match
+  the pattern on the floor. A beam stops exactly where
+  it meets anything solid - a person, the truss, a balcony, a wall at any
+  angle - and the brightest lights leave a shadow in the haze behind what
+  stands in them. The haze drifts slowly.
+* **Real light output.** How bright a light's beam and pool are comes from
+  how much light it really puts out (lumens) and its lens: a small LED PAR
+  next to a big spot looks like it does in the room, and the same light in a
+  narrower beam makes a brighter pool. The numbers come from the fixture's
+  file when it has them; otherwise the desk estimates from its wattage and
+  kind. To correct them from the maker's data sheet, right-click the light →
+  **Light output in the 3D…** (it applies to every light of that model;
+  **Back to the fixture file** undoes it).
+* **Every light lands.** A rig of hundreds of lights puts every pool on the
+  floor, the walls, the truss and the crowd - not just the brightest few.
+  The brightest 16 cast shadows: soft from washes, crisp from spots and
+  profiles. Their shadow pictures are only redrawn when a
+  light moves, so a rig holding its position costs nothing extra.
+* **Light bounces.** The brightest pools light the room back in their
+  colour times the surface's: a red wash on a white wall turns the floor in
+  front of it red; a black floor sends little back. LED screens light what's
+  in front of them with what they show.
+* **CO2, fog and confetti in the light.** A CO2 jet fired through a red beam
+  glows red, fog takes the colours of the beams in it, confetti flashes in the
+  colours it falls through.
+* **Mirror floors.** A black dance floor, tiles or polished concrete shows
+  the beams, the lenses, the truss and the screens reflected in it - sharp in
+  a black floor, softer in concrete, stronger at a glancing angle than looking
+  straight down (the floor is set in Settings → Venue).
+* **True colour.** The colour you pick on the desk is the colour on the
+  screen, dim or bright: bright red stays red, green stays green. Only far
+  brighter than the screen's white - a lens, the core of a narrow beam - does
+  a colour run to white, as it does to a camera and to the eye.
+* **Strobes at their real speed.** While a light strobes the 3D draws every
+  picture the screen can show and counts the flashes, so a 10 Hz strobe
+  flashes ten times a second. Faster than half the screen's pictures a second
+  (30 on most screens) it flickers as fast as the screen can.
+  **Settings → Screen & 3D → Calm flashing** shows strobes as a slow shimmer
+  instead, for anyone who mustn't watch flashing light; the real lights
+  strobe as programmed.
 * **Gobos.** A light's own gobo pictures are projected for the slot its gobo
   channel is in. They come from its fixture file; when that file has none,
   from the same light in the other library (the two often describe one light,
@@ -143,16 +227,66 @@ physically is and who made it:
 * **Effect bars** (PARs, derbys, strobes and a laser on one bar) are drawn
   as the bar they are; the desk still treats them as a laser, so the laser
   part needs ARM.
+* **Lenses.** A dark light's lens is coated glass, not a black hole: an LED
+  light's cells each show the little die under their lens, a Fresnel shows
+  its rings. Lit, each cell glows brightest at its die.
+* **The makers' own 3D.** A light drawn as a stand-in says so (the
+  **Placeholder 3D** chip on the 3D view). Click it, or the 3D view's **>>**
+  menu → **The makers' 3D bodies and gobos**, and the desk fetches each
+  model's GDTF from GDTF Share - its real body and gobos, for the 3D only.
+  Not signed in, it asks for your gdtf-share.com sign-in right there (a free
+  account; the password stays in this app's memory only).
 * The fixture picker shows the same 3D model before you patch anything.
-* **Smooth on ordinary laptops.** Fixture parts and truss are merged into a few
-  draw calls, and the crowd is lit per vertex. The view only redraws when
-  something changes. The 3D starts at **High** quality (sharpest, eight beams
-  cast shadows). On an older laptop, **Settings → Screen & 3D → Quality:
-  Medium** lowers the resolution when frames run long and wins it back when
-  there is headroom; **Low** drops the shadows.
+* **Always at its best.** The 3D has one quality, the best, on every
+  computer, and never lowers it by itself: sharp at the screen's own
+  resolution, every beam as light in the haze, sixteen lights casting
+  shadows, mirror floors, the glow round bright light and smooth edges - on
+  the screen, in films and in VR. A slower computer shows fewer pictures a
+  second, never a simpler picture: one that takes a quarter of a second or
+  more over every picture waits as long again (up to two seconds) before the
+  next, so the desk's own buttons still answer. Fixture parts and truss are merged into a few draw
+  calls, and the view only redraws when something changes. On a computer
+  that struggles, keep the 3D in its own window (Settings → Screen & 3D →
+  **Open the 3D window**, and untick showing it in the desk's window): the
+  desk's own buttons stay quick however long a picture takes.
 
 Views: <kbd>1</kbd>–<kbd>6</kbd> (front, house left, house right, back, plan,
 whole room), <kbd>F</kbd> to frame the selection.
+
+### The light map (how much light lands where)
+
+The 3D view's **>>** menu → **Light map (lux)** paints every surface and
+person by how much light the rig puts on it, in lux: dark blue for none,
+then blue, green, yellow, orange and red to pink for the brightest. The key
+on the left says how many lux each colour is, and thin lines mark each step,
+like the lines on a map. Point at the floor, a wall, the stage or a person
+to read the lux there. It counts each light's real output, its beam and
+gobo, the distance and the angle, and anything solid in the way - not the
+house lights. The beams in the air go while it's on; the × on the key (or
+the menu again) turns it off.
+
+A rough guide: a club dance floor 20-200 lux, a bar 50-150, a stage wash
+500-1500, a face on camera 300-1000 (TV 1000 or more).
+
+With an AI key, ask the copilot "is the DJ lit enough for the stream?": it
+measures the stage, a face on it, the DJ and each zone, and can set the
+lights to suit.
+
+### Walk round in VR
+
+With a VR headset, the 3D view's **>>** menu → **Walk round in VR** puts you
+in the room: on the dance floor at your own height, facing the stage, the
+rig and every light live as the desk sends them. The left stick walks the
+way you look, a flick of the right one turns you 30 degrees; you stay inside
+the room. The headset's menu button (or the menu entry again) leaves.
+
+It needs a headset this computer's browser can use - a Quest with Link or
+Air Link, SteamVR or Windows Mixed Reality with Chrome or Edge - or a
+headset's own browser. Each eye sees the whole picture the screen does: the
+beams as light in the haze, the shadows, the mirror floor, the glow and the
+same colours, sharp to the edges of the lenses. VR draws the 3D with WebGL 2:
+when the 3D is on WebGPU the desk offers to switch it and reload, then choose
+**Walk round in VR** again.
 
 ### Quick buttons
 
@@ -607,6 +741,16 @@ MP4), named after the show. Only the 3D picture is filmed, not the desk
 around it, and the real lights needn't be connected - program at home, send
 the client the video. Playing the timeline, its music goes in the video too.
 A slow computer films smoother at Small.
+
+**Quality → Best: drawn frame by frame** makes the film the way a renderer
+does: the show plays once while the desk notes every look and where the
+camera is (the button on the 3D view says NOTING), then the 3D draws every
+picture at full quality - High, every shadow - taking as long as each
+takes, and saves the video (MP4 where the computer can make one, else WebM)
+with the timeline's music. It's smooth on any computer: a slow one just
+takes longer (the progress shows how long is left; Cancel stops it). Full
+HD, 4K or small, at 30 or 60 pictures a second (60 shows fast strobes as
+they are).
 
 ### Workspaces
 

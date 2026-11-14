@@ -45,15 +45,16 @@ touched):
 | `gigcheck.py` | a whole gig, then save, reload, compare (CI) | <1 s |
 | `oddcheck.py` | odd inputs: empty rig, 15,000 nonsense values (each action from the same small show), 520 lights, corrupt shows and autosaves, a restart, Undo all the way (CI) | ~1 min |
 | `libsweep.py [--all-modes]` | every library light (and every mode: 8,093) x Full, Blackout, colour, gobo, move, Locate, effects, SFX - DMX vs 3D | ~3 min |
-| `uicheck.mjs [--big]` | every screen and dialog at 1280 / 1440 / 1920: spills, tiny or off-screen controls, page errors; `--big` with the 20-light test rig (`BIG_RIG=1` for all 124) | ~20 min |
+| `uicheck.mjs [--big]` | every screen and dialog at 1280 / 1440 / 1920: spills, tiny or off-screen controls, page errors - the desk as it opens (no 3D inside it), the 3D's toolbar and venue editor in the 3D's own window, opened from Palettes -> 3D view; `--big` with the 20-light test rig (`BIG_RIG=1` for all 124) | ~20 min |
 | `lookcheck.py [name]` | every channel of the test rig's lights stepped through every range its file lists: the 3D shows what the words say (prism facets and turn, gobo shake / turn / scroll, split colours, strobe kinds) (CI) | <1 s |
-| `vischeck.mjs` | 20 real lights (one of each model; `BIG_RIG=1` for 124) programmed through the screen: DMX, the 3D's targets and the drawn models agree for every light | ~5 min |
+| `vischeck.mjs` | 20 real lights (one of each model; `BIG_RIG=1` for 124) programmed through the desk, read in the 3D's own window: DMX, the 3D's targets and the drawn models agree for every light (pictures of both windows) | ~5 min |
 | `brands.py [--brand X \| --product "words"] --check` | the top 20 brands, 15 products each (effects machines first): libsweep's checks plus "fire / lasers only when armed", even with their channels programmed | ~4 min |
 | `vischeck.mjs --brands \| --brand X \| --product "words"` | the same rigs through the screen, one brand at a time, plus the effects: disarmed nothing fires; armed, fire / fog / laser show in the 3D; KILL stops them | ~3 min a brand |
 | `oddcheck_ui.mjs` | two browsers on one desk; the server dropping out and coming back | ~1 min |
 | `frametiming.py` | DMX on a steady 40 Hz with a big rig and three screens (CI) | 5 s |
-| `webgpucheck.mjs` | the 3D on real WebGPU inside the desktop app: it starts, draws with no errors, and draws the same picture as its WebGL 2 fallback (`cd desktop && npm install` first) | ~1 min |
-| `fpscheck.mjs` | how smooth the 3D runs with the 20-light test rig (`BIG_RIG=1` for 124) all lit and moving, at High / Medium / Low (`CHECKS_GPU=1` for your graphics card) | ~2 min |
+| `stagecheck.mjs [--only name]` | what the 3D DRAWS, read back pixel by pixel from small fixed scenes: a pool where a light points and none when it's dark, the beam in haze and not without, every gobo pattern breaking the pool up, red / green / blue lighting the floor in that colour, one quality (an older desk's saved Low / Medium changes nothing); the light map's lux against the photometry, skies, projectors, a film drawn frame by frame and played back, VR on an emulated headset (Meta's IWER, tools/vendor/iwer - the checks only) with each eye's picture read back; saves a look book of a club scene (stagecheck/) to judge a change by eye (CI) | ~12 min |
+| `webgpucheck.mjs` | the 3D on real WebGPU inside the desktop app: it starts, draws with no errors, and draws the same picture as its WebGL 2 fallback - the rig, the light map, a sky with a projector, a best-quality film from each (`cd desktop && npm install` first) | ~3 min |
+| `fpscheck.mjs` | how smooth the 3D runs with the 20-light test rig (`BIG_RIG=1` for 124) all lit and moving, at its one quality (`CHECKS_GPU=1` for your graphics card) | ~2 min |
 | `desktopcheck.mjs` | the desktop app: engine hidden on a private port and key, Show mode's windows each show their part, Ctrl+R / F5 don't reload, closing stops the engine (`cd desktop && npm install` first) | ~1 min |
 
 The browser checks need Node and Playwright.  `docs/REAL_LIGHT_CHECKLIST.md`
