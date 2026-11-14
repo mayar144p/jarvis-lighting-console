@@ -73,6 +73,9 @@ async function scene(mode) {
     const v = JSON.parse(JSON.stringify(st.built.venue));
     v.room.ceiling = "none";
     v.room.sky = "dusk";
+    // and a projector throwing the rig's colours onto the stage (its own path in the shaders)
+    v.objects = [...(v.objects || []), { id: "pjx", kind: "projector", x: 0, y: 3, z: 12, w: 0.5, d: 0.45, h: 0.22, rot: 180,
+      content: "rig", lm: 20000, throw: 1.4, aspect: 1.778, tilt: 0 }];
     st.buildVenue(v, []);
   });
   await sleep(2500);
@@ -114,7 +117,7 @@ check("WebGPU draws a picture (not blank)", d.bright > 8 && d.bright < 200, d.br
 check("WebGPU and WebGL 2 draw the same picture (beams, gobos, pools, shadows)", d.mean < 4, `mean difference ${d.mean.toFixed(2)} / 255`);
 check("the light map draws on WebGPU, the same as on WebGL 2", lux.bright > 8 && lux.mean < 4,
   `mean difference ${lux.mean.toFixed(2)} / 255, brightness ${lux.bright.toFixed(1)}`);
-check("an outdoor sky draws on WebGPU, the same as on WebGL 2", sky.bright > 8 && sky.mean < 4,
+check("an outdoor sky (and a projector) draws on WebGPU, the same as on WebGL 2", sky.bright > 8 && sky.mean < 4,
   `mean difference ${sky.mean.toFixed(2)} / 255, brightness ${sky.bright.toFixed(1)}`);
 console.log(`pictures in ${OUT}`);
 console.log(fails ? `${fails} failed` : "all ok");

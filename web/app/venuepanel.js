@@ -35,6 +35,7 @@ const OBJECT_ADD = [
   ["stool", "Bar stool"], ["rope", "VIP rope and posts"], ["plant", "Plant"],
   "-",
   ["haze", "Haze area (thicker haze here)"],
+  ["projector", "Projector (throws a video or picture)"],
 ];
 const CURVED = new Set(["bar_curve", "vip_booth", "half_table"]);
 // a pro desk's hang types: [value, name, what it means]
@@ -100,6 +101,9 @@ function defaults(kind) {
     case "rope": return { x, z, w: 5, d: 0.3, h: 1.0 };
     case "plant": return { x, z, w: 0.6, d: 0.6, h: 1.6 };
     case "haze": return { x, z, w: 4, d: 4, h: Math.min(3, H), density: 0.6 };
+    // a projector at the back of the room, throwing onto the stage
+    case "projector": return { x, z: r2(Math.max(z, stage.room.z1 - 2)), w: 0.5, d: 0.45, h: 0.22, y: r2(Math.min(3, H - 0.5)), rot: 180,
+      content: "rig", lm: 10000, throw: 1.6, aspect: r2(16 / 9 * 1000) / 1000, tilt: 0 };
     default: return { x, z };
   }
 }
@@ -477,7 +481,8 @@ function renderInspector(sel) {
         return c;
       })()),
       CURVED.has(o.kind) ? h("p.muted.small", "W is across its straight side; D how deep the counter or seat is.") : null,
-      o.kind === "screen" ? screenContent(o, upd) : null,
+      o.kind === "screen" || o.kind === "projector" ? screenContent(o, upd) : null,
+      o.kind === "projector" ? projectorFields(o, upd) : null,
       h("p.muted.small", "Shift+click other objects or rigging to line them up."),
       h("div.row-btns", copiesBtn(s.id, o.kind.replace("_", " "), "x"), del(s.id, o.kind === "mark" ? "mark" : "object")));
   } else if (s.type === "zone") {
@@ -518,6 +523,28 @@ function renderInspector(sel) {
         h("button.btn.small.danger", { onclick: () => { run("venue_underlay", { remove: true }); editor.select(null); } }, "Remove")));
   }
   box.replaceChildren(...body.filter(Boolean));
+}
+
+// A projector: how bright, how wide it throws (the distance over the
+// picture's width), the picture's shape, and how far it tips up or down.
+// It points the way Rotate turns it; what it shows is chosen above.
+const ASPECTS = [[16 / 9, "16:9 (HD video)"], [16 / 10, "16:10"], [4 / 3, "4:3"], [21 / 9, "21:9 (wide)"], [1, "Square"]];
+function projectorFields(o, upd) {
+  const shape = h("select.select.small", { "aria-label": "Picture shape" },
+    ...ASPECTS.map(([a, label]) => h("option", { value: String(a) }, label)));
+  const near = ASPECTS.reduce((b, x) => (Math.abs(x[0] - (o.aspect || 16 / 9)) < Math.abs(b[0] - (o.aspect || 16 / 9)) ? x : b), ASPECTS[0]);
+  shape.value = String(near[0]);
+  shape.addEventListener("change", () => upd({ aspect: +shape.value }));
+  const dist = 6, wide = r2(dist / (o.throw || 1.6));
+  return h("div",
+    h("div.vi-row",
+      field("Lumens", num(o.lm || 10000, (v) => upd({ lm: v }), { min: 300, max: 60000, step: 500 })),
+      field("Throw", num(o.throw || 1.6, (v) => upd({ throw: v }), { min: 0.3, max: 8, step: 0.1 })),
+      field("Tilt°", num(o.tilt || 0, (v) => upd({ tilt: v }), { min: -89, max: 89, step: 5 }))),
+    field("Picture", shape),
+    h("p.muted.small", `Throw: the distance over the picture's width (${o.throw || 1.6}: ${wide} m wide from ${dist} m). `
+      + "It throws the way Rotate points it, Tilt tips it up (+) or down (-). Its picture lands on whatever is in front of it, "
+      + "with the shadows of what stands in the way, and shows in haze."));
 }
 
 // What an LED screen shows: the lights (a live mirror of the rig's colours),

@@ -175,6 +175,7 @@ export function luxAt(lights, p, n, { blocked = null, atlas = null, why = false 
     let spot = smooth(l.cosO, l.cosI, c);
     const lam = Math.max(0, -(n.x * Lx + n.y * Ly + n.z * Lz) / Math.max(d, 1e-4));
     if (spot * lam <= 1e-5) continue;
+    let tint = 1;
     if ((l.gobo || 0) > 0.5 || Math.abs(l.prism || 0) > 0.5 || (l.side || 0) > 0.5) {
       // the point in the beam's own frame, -1..1 across it (as the shader)
       const dx = l.dir.x, dy = l.dir.y, dz = l.dir.z;
@@ -187,15 +188,21 @@ export function luxAt(lights, p, n, { blocked = null, atlas = null, why = false 
       const tanO = Math.sqrt(Math.max(1 - l.cosO * l.cosO, 1e-5)) / l.cosO;
       const k = Math.max(along * tanO, 1e-4);
       const u0 = (Lx * rx + Ly * ry + Lz * rz) / k, v0 = (Lx * vx + Ly * vy + Lz * vz) / k;
-      const cs = Math.cos(l.rot || 0), sn = Math.sin(l.rot || 0);
-      spot *= goboMask(l.gobo || 0, cs * u0 + sn * v0, -sn * u0 + cs * v0, l.blur || 0, l.prism || 0, l.prot || 0, l.side || 0, atlas);
-      if (spot <= 1e-5) continue;
+      if (l.gobo > 199.5) {
+        // a projector: inside its picture, as bright as the picture is on average
+        if (Math.abs(u0) > (l.rx || 1) || Math.abs(v0) > (l.ry || 1)) continue;
+        tint = l.tint ?? 1;
+      } else {
+        const cs = Math.cos(l.rot || 0), sn = Math.sin(l.rot || 0);
+        spot *= goboMask(l.gobo || 0, cs * u0 + sn * v0, -sn * u0 + cs * v0, l.blur || 0, l.prism || 0, l.prot || 0, l.side || 0, atlas);
+      }
+      if (spot * tint <= 1e-5) continue;
     }
     if (blocked) {
       dir.x = Lx / d; dir.y = Ly / d; dir.z = Lz / d;
       if (blocked(l.pos, dir, d) < d - 0.05) continue;           // something solid in the way
     }
-    const lum = 0.2126 * l.r + 0.7152 * l.g + 0.0722 * l.b;
+    const lum = (0.2126 * l.r + 0.7152 * l.g + 0.0722 * l.b) * tint;
     const lux = lum * spot * lam / (d2 + 0.09) * CD_PER_UNIT;
     total += lux;
     if (by && lux > 0) by.set(l.head, (by.get(l.head) || 0) + lux);

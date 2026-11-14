@@ -714,6 +714,57 @@ add("sky", async () => {
   check("the line drawings have no sky (it comes back after)", wire[0] && wire[1], JSON.stringify(wire));
 });
 
+// A projector throws its picture onto the wall in front of it: the right
+// way up and round (four coloured quarters land where they should), none
+// outside it, the light meter counting it, a beam of it in haze; off, none.
+add("projector", async () => {
+  const pic = await sc(() => {
+    const c = document.createElement("canvas");
+    c.width = 64; c.height = 36;
+    const g = c.getContext("2d");
+    g.fillStyle = "#ff0000"; g.fillRect(0, 0, 32, 18);       // top left red
+    g.fillStyle = "#00ff00"; g.fillRect(32, 0, 32, 18);      // top right green
+    g.fillStyle = "#0000ff"; g.fillRect(0, 18, 32, 18);      // bottom left blue
+    g.fillStyle = "#ffffff"; g.fillRect(32, 18, 32, 18);     // bottom right white
+    return c.toDataURL("image/png");
+  });
+  const throwOnWall = async (content, haze = 0) => {
+    await sc(async ([content, haze]) => {
+      const S = window.SC;
+      await S.scene({ venue: S.room(10, 12, 5, { objects: [{ id: "pj", kind: "projector", x: 0, y: 2.4, z: 10, w: 0.5, d: 0.45, h: 0.22, rot: 180,
+        content, lm: 12000, throw: 2, aspect: 16 / 9, tilt: 0 }] }),
+        fixtures: [], looks: {}, options: { haze, quality: "high", house: 0, people: false },
+        camera: { pos: [0, 2.6, 11.6], target: [0, 2.6, 0] } });
+      await new Promise((ok) => setTimeout(ok, 600));
+      await S.settle(4);
+    }, [content, haze]);
+    await shot();
+  };
+  await throwOnWall("image:" + pic);
+  save("22-projector");
+  // the picture on the back wall (z = 0): 10 m away at a throw of 2, 5 m wide, 2.8 m high
+  const q = async (x, y) => rgb(await at(x, y, 0.02), 3);
+  const [tl, tr, bl, br] = [await q(-1.2, 3.1), await q(1.2, 3.1), await q(-1.2, 1.8), await q(1.2, 1.8)];
+  // (beside it, and above it: inside the round beam round its corners, not in the picture)
+  const out = Math.max(await lum(await at(4.2, 2.6, 0.02), 3), await lum(await at(0, 4.3, 0.02), 3));
+  const reads = await sc(() => {
+    const V = window.SC.THREE.Vector3;
+    return { mid: window.stage.luxAt(new V(0, 2.5, 0.02), new V(0, 0, 1)), side: window.stage.luxAt(new V(4.3, 2.5, 0.02), new V(0, 0, 1)) };
+  });
+  const is = (c, r, g, b) => (r ? c[0] > 60 : c[0] < c[1] * 0.5 + 8 || c[0] < c[2] * 0.5 + 8) && (g ? c[1] > 60 : true) && (b ? c[2] > 60 : true);
+  check("a projector throws its picture the right way up and round", is(tl, 1, 0, 0) && tl[0] > tl[1] * 2 && tl[0] > tl[2] * 2
+    && tr[1] > tr[0] * 2 && tr[1] > tr[2] * 2 && bl[2] > bl[0] * 2 && bl[2] > bl[1] * 1.5 && Math.min(...br) > 80,
+    `top ${tl.map((v) => v.toFixed(0))} | ${tr.map((v) => v.toFixed(0))}, bottom ${bl.map((v) => v.toFixed(0))} | ${br.map((v) => v.toFixed(0))}`);
+  check("...nothing outside its picture", out < 8, out.toFixed(1));
+  check("...and the light meter counts it (nothing beside it)", reads.mid > 20 && reads.side < 1, `${reads.mid.toFixed(0)} lux / ${reads.side.toFixed(1)}`);
+  await throwOnWall("image:" + pic, 0.7);
+  const beam = await sc(() => window.stage.projectors.list.map((p) => p.beam.vol.visible));
+  check("in haze (Medium, High) its beam shows", beam[0] === true, JSON.stringify(beam));
+  await throwOnWall("off");
+  const dark = await lum(await at(-1.2, 3.1, 0.02), 3);
+  check("switched off (shows nothing), no picture", dark < 8, dark.toFixed(1));
+});
+
 // The colour on the desk is the colour on the screen: a pool keeps the
 // hue the desk sent, dim or bright (the old film curve turned bright red
 // orange and green yellow).

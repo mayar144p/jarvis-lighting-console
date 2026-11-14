@@ -86,7 +86,8 @@ export class LightGrid {
       L[o + 4] = l.dir.x; L[o + 5] = l.dir.y; L[o + 6] = l.dir.z; L[o + 7] = l.cosI;
       L[o + 8] = l.r; L[o + 9] = l.g; L[o + 10] = l.b; L[o + 11] = l.gobo || 0;
       L[o + 12] = l.rot || 0; L[o + 13] = l.blur || 0; L[o + 14] = l.prism || 0; L[o + 15] = l.prot || 0;
-      L[o + 16] = l.side || 0; L[o + 17] = l.slot === undefined || l.slot === null ? -1 : l.slot; L[o + 18] = 0; L[o + 19] = 0;
+      // (a projector: its picture's half size across and up, in the beam's units)
+      L[o + 16] = l.side || 0; L[o + 17] = l.slot === undefined || l.slot === null ? -1 : l.slot; L[o + 18] = l.rx || 0; L[o + 19] = l.ry || 0;
     }
     GRID.lights.needsUpdate = true;
     GRID.cells.needsUpdate = true;

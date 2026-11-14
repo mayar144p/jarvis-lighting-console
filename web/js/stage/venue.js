@@ -566,6 +566,30 @@ function buildObject(o, M) {
   const { w, d, h } = o;
   const custom = o.colour ? surfaceMaterial(new THREE.Color(o.colour).getHex()) : null;
   switch (o.kind) {
+    case "projector": {
+      // a video projector: a body, a lens on its front (+z), and what it
+      // shows on a hidden face (the picture projectors.js throws; the same
+      // sources as an LED screen).  The lens tips up by `tilt` degrees.
+      const bw = Math.max(0.25, w), bh = Math.max(0.12, h), bd = Math.max(0.2, d);
+      add(new THREE.BoxGeometry(bw, bh, bd).translate(0, bh / 2, 0), custom || M.black);
+      const lensAt = new THREE.Vector3(bw * 0.22, bh * 0.5, bd / 2);
+      const barrel = add(new THREE.CylinderGeometry(bh * 0.28, bh * 0.32, 0.08, 20).rotateX(Math.PI / 2)
+        .translate(lensAt.x, lensAt.y, lensAt.z + 0.04), M.steel);
+      barrel.userData.lens = true;
+      const lens = new THREE.Object3D();
+      lens.position.set(lensAt.x, lensAt.y, lensAt.z + 0.09);
+      lens.rotation.x = -(o.tilt || 0) * DEG;
+      lens.userData.projectorLens = true;
+      g.add(lens);
+      const content = o.content || "rig";
+      const aspect = o.aspect || 16 / 9;
+      const face = new THREE.Mesh(new THREE.PlaneGeometry(0.01, 0.01 / aspect), content === "off" ? M.screen : screenMaterial(content, aspect));
+      face.visible = false;
+      if (content !== "off") face.userData.screen = { content, aspect, projector: true };
+      g.add(face);
+      g.userData.projector = { o, lens, mat: face.material };
+      break;
+    }
     case "haze": {
       // where the haze is thicker: nothing to see in the room (the beams
       // show it), a faint dashed box while arranging, picked by its box
@@ -728,7 +752,7 @@ function buildObject(o, M) {
     }
   }
   g.traverse((m) => { if (m.isMesh) m.userData = { ...m.userData, venueId: o.id, venueKind: o.kind }; });
-  g.userData = { venueId: o.id, venueKind: o.kind };
+  g.userData = { ...g.userData, venueId: o.id, venueKind: o.kind };
   return g;
 }
 
@@ -1076,9 +1100,11 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
     items.set(r.id, g);
     group.add(g);
   }
+  const projectors = [];
   for (const o of v.objects || []) {
     const g = buildObject(o, M);
     if (o.kind !== "mark" && o.kind !== "haze") casts(g);
+    if (g.userData.projector) projectors.push(g.userData.projector);
     items.set(o.id, g);
     group.add(g);
   }
@@ -1140,7 +1166,7 @@ export function buildVenue(venueIn, fixtures, opts = {}) {
   // the floor mirrors the room (reflect.js) by how shiny it is
   const mirror = { sheen: FLOOR_SHEEN[v.room.floor] ?? 0.35, hide: [floor, apron] };
   return { group, venue: v, room: R, planes, segments, boxes: [...blockers(v), ...areaBoxes], walls, ceiling, zones, people,
-    crowdCount: crowd.userData.count || 0, items, stageFront, underlay, outline, screens, albedo, mirror };
+    crowdCount: crowd.userData.count || 0, items, stageFront, underlay, outline, screens, albedo, mirror, projectors };
 }
 
 /** Let go of what a built room's screens play: NDI feeds stop, clips pause. */

@@ -117,6 +117,18 @@ high). The sky lights the field too: at night the beams own the dark; in
 daylight the lights hardly show, which is worth seeing before an early slot.
 **Turn it** moves where the sun sets, or which way your photo faces.
 
+### Projectors
+
+Arrange → **+ More** → **Projector (throws a video or picture)** puts a video
+projector in the room, at the back pointing at the stage. Select it to set
+what it shows - the same choices as an LED screen: the rig's colours, a clip
+or a picture from this computer or a link, or live video (NDI) - and its
+**Lumens**, **Throw** (the distance over the picture's width: at 1.6 a
+picture 3.75 m wide from 6 m), **Tilt°** and the picture's shape. Turn it
+with Rotate. Its picture lands on whatever is in front of it - a cyc, a
+drape, the stage, the crowd - with the shadows of what stands in the way,
+shows in haze as a beam of its own colours, and counts in the light map.
+
 ### Arrange mode
 
 *Where:* Set up → Arrange the room

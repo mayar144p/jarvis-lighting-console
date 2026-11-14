@@ -353,6 +353,24 @@ the room, crowd, effects, screens, NDI - the lighting part is rebuilt.
      with stars, day blue and lighting the field with a red pool all but
      gone, sunset warm low and blue high, a photo as the sky, no sky indoors
      or in the line drawings; selftest: the kinds, pictures checked, turn.
+   - **(DONE) Projectors** (web/js/stage/projectors.js, Arrange -> + More ->
+     Projector): a venue object that shows what an LED screen can (the rig's
+     colours, a clip or picture kept on the desk or by link, NDI) thrown onto
+     the room.  Each is a light in the rig's light list with gobo id 200 + k
+     and its picture as PROJ.tex[k] (up to four): the surfaces read the
+     picture's colour inside its rectangle (rx, ry in the light grid's spare
+     texels), so it lands on anything, with shadows, in the light map
+     (the meter weighs it by the picture's average), and in haze as a
+     pyramid of its colours (beams.js uProj / uRect).  Lumens over the
+     picture's solid angle (4 asin(sin a sin b)); throw ratio, aspect, tilt.
+     Found on the way: a colour picked in If branches of a plain helper lost
+     what was done with it afterwards (the picture filled the round beam) -
+     select instead, and a check that would have caught it; and a projector
+     vanished because its object's tag was overwritten after building.
+     stagecheck: four coloured quarters land the right way up and round,
+     nothing beside or above the picture, the meter counts it, a beam in
+     haze, off is off; webgpucheck: the same with a projector on WebGPU;
+     selftest: its settings kept real, in the MVR.
 8. Fixture looks: better stand-in models, real ones from GDTF Share.
 
 ## A17. NDI video in and out (2026-11-12) - DONE (a real NDI source still to try)

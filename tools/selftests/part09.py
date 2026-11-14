@@ -2610,6 +2610,45 @@ def test_venue_sky() -> None:
           "skyRow(v)" in sj and "Your own 360° picture…" in sj and "sky_turn" in sj, "")
 
 
+def test_projector_object() -> None:
+    """A projector (Arrange -> + More): shows what an LED screen can, thrown
+    onto the room - its lumens, throw, picture shape and tilt kept within
+    what real ones do; a device in the MVR like any other."""
+    import io
+    import zipfile
+    from app import mvr
+    from app import engine as eng_mod
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            e.act("venue_template", name="club")
+            r = e.act("venue_add", item={"kind": "projector", "name": "FOH projector", "x": 0, "z": 9, "y": 3, "rot": 180})
+            o = next((x for x in e.venue["objects"] if x["kind"] == "projector"), {})
+            check("a projector can be added: the rig's colours, 10,000 lm, a throw of 1.6, 16:9, level",
+                  r.get("ok") and o.get("content") == "rig" and o.get("lm") == 10000 and o.get("throw") == 1.6
+                  and o.get("aspect") == 1.778 and o.get("tilt") == 0, str(o))
+            e.act("venue_update", id=o["id"], changes={"lm": 999999, "throw": 0.01, "aspect": 9, "tilt": 120, "content": "javascript:x"})
+            o2 = next(x for x in e.venue["objects"] if x["kind"] == "projector")
+            check("...kept to what real ones do (300-60,000 lm, a throw of 0.3-8, tilt within 89 degrees), a bad source the rig's",
+                  o2["lm"] == 60000 and o2["throw"] == 0.3 and o2["aspect"] == 3.0 and o2["tilt"] == 89 and o2["content"] == "rig", str(o2))
+            e.act("venue_update", id=o["id"], changes={"content": "clip:upload:abc123", "tilt": -12})
+            o3 = next(x for x in e.venue["objects"] if x["kind"] == "projector")
+            check("...a clip kept on the desk, tipped down", o3["content"] == "clip:upload:abc123" and o3["tilt"] == -12, str(o3))
+            data = mvr.write(e.patch, list(e.venue.get("rigging") or []), {}, "show", list(e.venue.get("objects") or []))
+            with zipfile.ZipFile(io.BytesIO(data)) as zf:
+                xml = zf.read("GeneralSceneDescription.xml").decode("utf-8")
+            check("...and it goes into an MVR (a real device in the room)", "FOH projector" in xml, "")
+        finally:
+            e.shutdown()
+    vp = (ROOT / "web" / "app" / "venuepanel.js").read_text(encoding="utf-8")
+    check("Arrange -> + More has it, with its lumens, throw, tilt, picture shape and what it shows",
+          '["projector", "Projector (throws a video or picture)"]' in vp and "projectorFields(o, upd)" in vp
+          and 'o.kind === "projector" ? screenContent(o, upd)' in vp, "")
+
+
 def test_ai_measures_light() -> None:
     """The assistant can measure the light (measure_light): the turn pauses,
     the screen's 3D takes the readings (lux, the lights giving most of it),

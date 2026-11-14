@@ -16,6 +16,7 @@ import { buildFixture } from "./models.js";
 import { buildGdtf } from "./gdtf.js";
 import { buildVenue, hitDistance, cutaway, releaseScreens, mediaUrlFor } from "./venue.js";
 import { skyNode, skyLight, pictureLight } from "./sky.js";
+import { Projectors } from "./projectors.js";
 import { ndiOffer, ndiOut, ndiSender, ndiSendFrame, ndiOnOut } from "../ndi.js";
 
 /** The room's four sides written on the floor (Arrange, Zones): the DJ /
@@ -259,6 +260,7 @@ export class Stage {
     // the beams in haze (Medium and High): their own scene, drawn after the
     // room into a half-size picture of their own (beams.js)
     this.beamScene = new THREE.Scene();
+    this.projectors = new Projectors(this.beamScene);   // video thrown onto the room (projectors.js)
 
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
@@ -304,6 +306,7 @@ export class Stage {
       people: this.options.people, zones: this.options.zones,
       loadUnderlay: this.opts.loadUnderlay, onChange: () => { this.dirty = true; } });
     this.built = built;
+    this.projectors.setRoom(built);
     this._shadowRoom++;
     this.venueGroup.add(built.group);
     this._wireDirty = true;
@@ -784,7 +787,16 @@ export class Stage {
     this.rigGroup.updateMatrixWorld(true);
     this._wireSegs = null;
     for (const inst of this.fixtures.values()) this._updateBeams(inst, time, lights);
+    this._projectorLights(lights);
     this._uploadLights(lights);
+  }
+
+  /** The projectors as lights, with the rig's (projectors.js). */
+  _projectorLights(lights) {
+    this.projectors.update(lights, {
+      hit: (o, d, cap) => hitDistance(this.planes, this.boxes, o, d, cap, this.segments),
+      haze: this._hazeNow(), volumetric: this._volumetric(), lightMap: !!this.options.lightMap,
+    });
   }
 
   /** The floor's height at (x, z): the stage deck there, else the floor. */
@@ -1633,12 +1645,17 @@ export class Stage {
     this._stepHaze(dtS);
     this.sfxBusy = this.sfx.update(dtS, time, this.fixtures,
       (o, d) => hitDistance(this.planes, this.boxes, o, d, 30, this.segments));
+    this._projectorLights(lights);
     this._uploadLights(lights);
     // a beam whose light has a shadow picture is dark in the haze behind
     // what stands in it
     const nShadow = LIGHTS.uShadowCount.value;
     for (const inst of this.fixtures.values()) {
       for (const b of inst.beams) b.vol.material.uniforms.uShadow.value = b.shadowSlot >= 0 && b.shadowSlot < nShadow ? b.shadowSlot : -1;
+    }
+    for (const pj of this.projectors.list) {
+      const b = pj.beam;
+      b.vol.material.uniforms.uShadow.value = b.shadowSlot >= 0 && b.shadowSlot < nShadow ? b.shadowSlot : -1;
     }
     this._drawScreens(now);
 
@@ -1954,7 +1971,8 @@ export class Stage {
     this._scrLast = now;
     if (now - (this._glowLast || 0) > 250) {
       this._glowLast = now;
-      this._screenGlow = list.map((m) => this._screenLight(m)).filter(Boolean);
+      this._screenGlow = list.filter((m) => !m.userData.screen.projector).map((m) => this._screenLight(m)).filter(Boolean);
+      this.projectors.sample();
     }
     const heads = [...this.fixtures.values()].sort((a, b) => a.head - b.head);
     const tiles = [];

@@ -106,6 +106,28 @@ export const REFL = {
   levels: uniform(5),                        // the blurriest level a rough floor reads
 };
 
+// The projectors' pictures (projectors.js): a projector is a light whose
+// gobo id is 200 + k, its picture PROJ.tex[k] - the surfaces and the haze
+// read its colours where a gobo would only let light through.
+export const MAX_PROJ = 4;
+export const PROJ = { black: BLACK, tex: Array.from({ length: MAX_PROJ }, () => texture(BLACK)) };
+
+/** The colour projector `k` throws at `uv` (0..1 across its picture, the
+ *  right way up).  (A plain look-up at full size: it runs inside the loop
+ *  over the lights, where the screen's derivatives aren't to be had.  And
+ *  picked with select, not a variable set in If branches: from a plain
+ *  function like this one, what was done with that variable afterwards was
+ *  lost - the picture filled the round beam, past its rectangle.) */
+export const projSample = (k, uv) => {
+  const at = (i) => PROJ.tex[i].sample(uv).level(0).rgb;
+  return select(k.lessThan(0.5), at(0), select(k.lessThan(1.5), at(1), select(k.lessThan(2.5), at(2), at(3))));
+};
+
+/** Inside a projector's picture: 1 within its rectangle (rx, ry: its half
+ *  size in the beam's own units), a pixel's softness at the edge. */
+export const inRect = (uv, rx, ry) => smoothstep(0.985, 1.0, abs(uv.x.div(rx))).oneMinus()
+  .mul(smoothstep(0.985, 1.0, abs(uv.y.div(ry))).oneMinus());
+
 export const GRID_W = 64;
 export const INDEX_W = 512, INDEX_H = 128;
 export const GRID = {
@@ -384,6 +406,7 @@ const surfaceLight = (albedo, grid, sheen, detail, mirror = false) => Fn(() => {
     const t2 = textureLoad(GRID.lights, ivec2(2, li)).toVar();
     const t3 = textureLoad(GRID.lights, ivec2(3, li)).toVar();
     const t4 = textureLoad(GRID.lights, ivec2(4, li)).toVar();
+    const tint = vec3(1).toVar();                 // a projector's picture here
     If(t2.w.greaterThan(0.5).or(abs(t3.z).greaterThan(0.5)).or(t4.x.greaterThan(0.5)), () => {
       const dir = t1.xyz;
       const up = select(abs(dir.y).lessThan(0.99), vec3(0, 1, 0), vec3(1, 0, 0));
@@ -391,9 +414,15 @@ const surfaceLight = (albedo, grid, sheen, detail, mirror = false) => Fn(() => {
       const u2 = cross(rt, dir);
       const tanO = sqrt(max(t0.w.mul(t0.w).oneMinus(), 1e-5)).div(t0.w);
       const uv0 = vec2(dot(L, rt), dot(L, u2)).div(max(along.mul(tanO), 1e-4));
-      const cs = cos(t3.x), sn = sin(t3.x);
-      const uv = vec2(cs.mul(uv0.x).add(sn.mul(uv0.y)), sn.negate().mul(uv0.x).add(cs.mul(uv0.y)));
-      spot.mulAssign(goboMask(t2.w, uv, vec4(t3.y, t3.z, t3.w, t4.x), detail));
+      If(t2.w.greaterThan(199.5), () => {
+        // a projector: its picture, inside its rectangle
+        const r = vec2(uv0.x.div(t4.z), uv0.y.div(t4.w));
+        tint.assign(projSample(t2.w.sub(200), r.mul(0.5).add(0.5)).mul(inRect(uv0, t4.z, t4.w)));
+      }).Else(() => {
+        const cs = cos(t3.x), sn = sin(t3.x);
+        const uv = vec2(cs.mul(uv0.x).add(sn.mul(uv0.y)), sn.negate().mul(uv0.x).add(cs.mul(uv0.y)));
+        spot.mulAssign(goboMask(t2.w, uv, vec4(t3.y, t3.z, t3.w, t4.x), detail));
+      });
     });
     const lam = max(dot(N, Ld.negate()), 0).toVar();
     // the light spreads as it travels (a lens isn't a point: never infinite)
@@ -402,7 +431,7 @@ const surfaceLight = (albedo, grid, sheen, detail, mirror = false) => Fn(() => {
     If(slot.greaterThanEqual(0).and(spot.mul(lam).greaterThan(0.0005)), () => {
       spot.mulAssign(shadowAt(slot, wp));
     });
-    const col = t2.xyz;
+    const col = t2.xyz.mul(tint);
     const lands = col.mul(spot).mul(lam).mul(att).toVar();
     light.addAssign(lands);
     lux.addAssign(dot(lands, LUMA));

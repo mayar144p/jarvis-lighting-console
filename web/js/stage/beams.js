@@ -28,7 +28,7 @@ import {
   screenUV, screenCoordinate, interleavedGradientNoise, select, smoothstep, mix, max, min, abs,
   sqrt, pow, dot, normalize, length, clamp, floor, fract, cos, sin,
 } from "three/tsl";
-import { LIGHTS, goboMask, shadowTap } from "./materials.js";
+import { LIGHTS, goboMask, shadowTap, projSample, inRect } from "./materials.js";
 
 // ------------------------------------------------------------------ shared
 // A plain depth texture until the room's first picture exists.
@@ -229,9 +229,15 @@ const light = (u, detail) => Fn(() => {
       If(u.uShadow.greaterThanEqual(0), () => {
         lit.mulAssign(shadowTap(u.uShadow, P));
       });
-      // half one colour, half the other (a split colour wheel)
-      const tint = mix(vec3(u.uColor), vec3(u.uColor2), select(side.and(uv0.x.lessThan(0)), float(1), float(0)));
-      sum.addAssign(tint.mul(lit));
+      If(u.uProj.greaterThan(-0.5), () => {
+        // a projector in haze: a pyramid of its picture's own colours
+        const r = vec2(uv0.x.div(u.uRect.x), uv0.y.div(u.uRect.y));
+        sum.addAssign(projSample(u.uProj, r.mul(0.5).add(0.5)).mul(inRect(uv0, u.uRect.x, u.uRect.y)).mul(lit));
+      }).Else(() => {
+        // half one colour, half the other (a split colour wheel)
+        const tint = mix(vec3(u.uColor), vec3(u.uColor2), select(side.and(uv0.x.lessThan(0)), float(1), float(0)));
+        sum.addAssign(tint.mul(lit));
+      });
     });
     out.assign(sum.mul(dt).mul(u.uPower).mul(VOL.gain));
   });
@@ -252,6 +258,8 @@ export function volumeBeamMaterial() {
     uPower: uniform(0), uSoft: uniform(0.7), uHaze: uniform(0.6), uFade: uniform(0),
     uGobo: uniform(0), uGoboRot: uniform(0), uLook: uniform(new THREE.Vector4()),
     uShadow: uniform(-1, "int"),
+    // a projector's beam (projectors.js): which picture (-1 none) and its rectangle
+    uProj: uniform(-1), uRect: uniform(new THREE.Vector2(1, 1)),
   };
   const u = m.uniforms;
   // the cylinder becomes the cone (a touch wider: the mesh's flat sides
