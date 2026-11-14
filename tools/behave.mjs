@@ -373,6 +373,22 @@ await b3.close();
 await act("output_set", { head: 3, clear: true });
 await closeModals();
 
+// -- The makers' 3D bodies: not signed in to GDTF Share, the 3D asks right there --
+console.log("The makers' 3D bodies (GDTF Share sign-in)");
+await closeModals();
+const bodiesRun = p.evaluate(() => import("/app/stagepanel.js").then((m) => m.realBodies()));
+let signTxt = "";
+for (let i = 0; i < 20 && !/Sign in to GDTF Share/.test(signTxt); i++) { await sleep(300); signTxt = await p.locator(".modal").last().innerText().catch(() => ""); }
+const signBox = p.locator(".modal").last();
+check("not signed in, the 3D's real bodies ask for a GDTF Share sign-in right there",
+  /Sign in to GDTF Share/.test(signTxt) && /gdtf-share\.com/.test(signTxt) && (await signBox.locator("input[type=password]").count()) === 1, signTxt.slice(0, 240));
+await signBox.locator("button", { hasText: /^Sign in$/ }).click(); await sleep(400);
+check("...signing in with nothing typed says what it needs", /user and password/.test(await signBox.innerText().catch(() => "")), "");
+await signBox.locator("button", { hasText: "Cancel" }).click(); await sleep(400);
+const ranOut = await Promise.race([bodiesRun.then(() => "done"), sleep(3000).then(() => "stuck")]);
+check("...cancelled, it stops there", ranOut === "done" && (await p.locator(".modal").count()) === 0, ranOut);
+await closeModals();
+
 const laid = await p.evaluate(() => import("/app/guidecard.js").then((m) => {
   const v = m.replyView("Lines the real lights up with the desk.\n1. Set up → **Line up with the real lights…**\n2. Nudge it onto the mark, press **It's on the mark ✓**\n- tip: *Fine* for the last bit");
   return { steps: v.querySelectorAll(".gc-step").length, names: v.querySelectorAll(".gc-ui").length, seps: v.querySelectorAll(".gc-sep").length,

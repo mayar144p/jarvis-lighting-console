@@ -300,13 +300,20 @@ function crowdMenu(btn, keep) {
 /** Each light model's real body from GDTF Share (the maker's 3D model,
  *  and its own gobo pictures); the profile and its channels stay exactly
  *  as they are. */
-export async function realBodies() {
+export async function realBodies(again = false) {
   toast("Looking the rig up on GDTF Share…", "", 4000);
   const d = await post("/api/gdtf/bodies", {}).catch((e) => ({ error: e.message }));
   if (d.error) {
-    toast(d.code === "no_session" || d.code === "unauthorized"
-      ? "Sign in to GDTF Share first: Add lights → GDTF Share (a free gdtf-share.com account)"
-      : d.error, "bad", 7000);
+    if ((d.code === "no_session" || d.code === "unauthorized") && !again) {
+      // sign in right here, then go on (a free gdtf-share.com account)
+      const { gdtfSignIn } = await import("./gdtfsignin.js");
+      const ok = await gdtfSignIn(d.code === "unauthorized"
+        ? "Your GDTF Share session has ended. Sign in again and the desk fetches the makers' own 3D bodies and gobos for the lights that need them."
+        : "The makers' own 3D bodies and gobos come from their GDTF files on GDTF Share. Sign in and the desk fetches them for the lights that need them.");
+      if (ok) return realBodies(true);
+      return;
+    }
+    toast(d.error, "bad", 7000);
     return;
   }
   const got = (d.done || []).filter((x) => x.ok), miss = (d.done || []).filter((x) => !x.ok);

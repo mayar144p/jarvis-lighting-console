@@ -6045,6 +6045,14 @@ console.log(JSON.stringify({ av: V.pickFormat((m) => true, true), plain: V.pickF
     check("The 3D's >> menu walks round in VR when there's a headset (and says what it needs when not)",
           '"Walk round in VR"' in sp and "vrSupported()" in sp and "stage.enterVR(" in sp and "haze.renderer" in sp
           and 'requestSession("immersive-vr"' in vr and 'setReferenceSpaceType("local-floor")' in vr, "")
+    # step 8: the stand-ins' lenses, the makers' bodies signed in right there
+    mo = (ROOT / "web" / "js" / "stage" / "models.js").read_text(encoding="utf-8")
+    lg = (ROOT / "web" / "js" / "stage" / "lensglass.js").read_text(encoding="utf-8")
+    check("A stand-in's lens is coated glass (an LED cell its die, a Fresnel its rings), lit brightest at its source",
+          'lensMaterial("cell")' in mo and 'lensMaterial("fresnel")' in mo and "emissiveMap: look.emissiveMap" in mo
+          and 'kind === "cell"' in lg and 'kind === "fresnel"' in lg, "")
+    check("...and the makers' own bodies ask for the GDTF Share sign-in right there",
+          'import("./gdtfsignin.js")' in sp and "realBodies(true)" in sp, "")
     iw = ROOT / "tools" / "vendor" / "iwer"
     check("...the headset the checks emulate is kept with its licence, for the checks only (not in the desk's web folder)",
           all((iw / f).exists() for f in ("iwer.module.min.js", "LICENSE.txt", "README.txt"))

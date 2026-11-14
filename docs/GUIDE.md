@@ -228,6 +228,15 @@ physically is and who made it:
 * **Effect bars** (PARs, derbys, strobes and a laser on one bar) are drawn
   as the bar they are; the desk still treats them as a laser, so the laser
   part needs ARM.
+* **Lenses.** A dark light's lens is coated glass, not a black hole: an LED
+  light's cells each show the little die under their lens, a Fresnel shows
+  its rings. Lit, each cell glows brightest at its die.
+* **The makers' own 3D.** A light drawn as a stand-in says so (the
+  **Placeholder 3D** chip on the 3D view). Click it, or the 3D view's **>>**
+  menu → **The makers' 3D bodies and gobos**, and the desk fetches each
+  model's GDTF from GDTF Share - its real body and gobos, for the 3D only.
+  Not signed in, it asks for your gdtf-share.com sign-in right there (a free
+  account; the password stays in this app's memory only).
 * The fixture picker shows the same 3D model before you patch anything.
 * **Smooth on ordinary laptops.** Fixture parts and truss are merged into a few
   draw calls, and the crowd is lit per vertex. The view only redraws when

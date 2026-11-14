@@ -920,6 +920,69 @@ add("vr", async () => {
     && r.after.cam.every((v, i) => Math.abs(v - r.before[i]) < 1e-6), JSON.stringify(r.after));
 });
 
+// The stand-in bodies (step 8): a dark light's lens is coated glass with
+// its LED cells and dies showing, not a black hole; lit, each cell glows.
+add("fixturelooks", async () => {
+  const face = async (a) => {
+    await sc(async (a) => {
+      const S = window.SC;
+      await S.scene({ venue: S.room(8, 10, 4),
+        fixtures: [{ head_no: 1, model: "P", body: S.body("par", 25), x: 0, y: 1.0, z: 6, stance: "stand", kind: "floor", rot: [0, 0] }],
+        looks: { 1: { hex: "#ffd0a0", a } }, options: { haze: 0, quality: "high", house: 0.9, people: false, bloom: false },
+        camera: { pos: [0, 1.15, 7.0], target: [0, 1.1, 6] } });
+    }, a);
+    await shot();
+    return sc(() => {
+      const v = [];
+      for (let y = 100; y <= 200; y += 3) for (let x = 190; x <= 290; x += 3) v.push(window.SC.lum(x, y, 0));
+      const m = v.reduce((s, b) => s + b, 0) / v.length;
+      return { max: +Math.max(...v).toFixed(1), mean: +m.toFixed(1), std: +Math.sqrt(v.reduce((s, b) => s + (b - m) ** 2, 0) / v.length).toFixed(1) };
+    });
+  };
+  const dark = await face(0);
+  save("23-led-par-dark");
+  // the lens itself: an LED's die under coated glass, and its glow brightest at the die
+  const lens = await sc(() => {
+    const inst = window.stage.fixtures.get(1);
+    const l = inst && inst.sk.lenses[0];
+    if (!l || !l.map || !l.map.image || !l.emissiveMap) return { none: true };
+    const px = (img, x, y) => { const d = img.getContext("2d").getImageData(x, y, 1, 1).data; return d[0] + d[1] + d[2]; };
+    const im = l.map.image, gl = l.emissiveMap.image;
+    return { die: px(im, im.width / 2, im.height / 2), glass: px(im, im.width * 0.72, im.height / 2),
+      glowMid: px(gl, gl.width / 2, gl.height / 2), glowEdge: px(gl, gl.width - 3, gl.height / 2) };
+  });
+  check("an LED PAR's lens: the die under coated glass, its glow brightest at the die", !lens.none && lens.die > lens.glass + 150
+    && lens.glowMid > lens.glowEdge + 200, JSON.stringify(lens));
+  const lit = await face(0.3);
+  save("24-led-par-lit");
+  check("a dark LED PAR shows its cells and their dies (coated glass, not a black hole)", dark.max > 40 && dark.std > 5, JSON.stringify(dark));
+  check("...lit, it glows, its cells still telling apart", lit.mean > dark.mean + 60 && lit.std > 8, `${JSON.stringify(lit)} vs dark ${JSON.stringify(dark)}`);
+});
+
+add("closeups", async () => {
+  // (the stand-in bodies, for the look book: judged by eye, not a check)
+  const types = ["moving_spot", "moving_wash", "moving_beam", "par", "profile", "bar", "strobe", "blinder", "wash_panel", "moving_bar"];
+  await sc(async (types) => {
+    const S = window.SC;
+    const fixtures = types.map((type, i) => ({ head_no: i + 1, model: type, body: S.body(type, 20, type === "bar" ? { cells: 8 } : type === "moving_bar" ? { cells: 6 } : {}),
+      x: -4.5 + i * 1.0, y: 1.0, z: 6, stance: "stand", kind: "floor", rot: S.body(type, 20).moving ? null : [0, 0] }));
+    const looks = Object.fromEntries(types.map((_, i) => [i + 1, { hex: "#ffffff", a: 0.0, ...(S.body(types[i], 20).moving ? { pan: 0.5, tilt: 0.3 } : {}) }]));
+    await S.scene({ venue: S.room(12, 12, 5), fixtures, looks, options: { haze: 0, quality: "high", house: 0.9, people: false },
+      camera: { pos: [0, 2.2, 12.5], target: [0, 1.1, 6] } });
+  }, types);
+  const big = await sc(async () => { await window.SC.settle(3); return window.stage.photo(1800); });
+  writeFileSync(join(OUT, "lookbook-4-fixtures.png"), Buffer.from(big.split(",")[1], "base64"));
+  // closer, and lit a little: the lens glows brightest where its source is
+  const lit = await sc(async (types) => {
+    const S = window.SC;
+    S.setLooks(Object.fromEntries(types.map((ty, i) => [i + 1, { hex: "#ffd0a0", a: 0.25, ...(S.body(ty, 20).moving ? { pan: 0.5, tilt: 0.3 } : {}) }])));
+    window.stage.setCamera({ pos: [-1.1, 1.25, 7.4], target: [-1.0, 1.05, 6] });
+    await S.settle(4);
+    return window.stage.photo(1800);
+  }, types);
+  writeFileSync(join(OUT, "lookbook-5-fixtures-lit.png"), Buffer.from(lit.split(",")[1], "base64"));
+});
+
 // The colour on the desk is the colour on the screen: a pool keeps the
 // hue the desk sent, dim or bright (the old film curve turned bright red
 // orange and green yellow).

@@ -403,7 +403,19 @@ the room, crowd, effects, screens, NDI - the lighting part is rebuilt.
      Meta's IWER emulating a Quest 3 (tools/vendor/iwer, the checks only):
      drawn on the headset's clock, the eye at 1.6 m on the dance floor,
      walking, turning, facing a stage off to one side, the 3D back after.
-8. Fixture looks: better stand-in models, real ones from GDTF Share.
+8. **(DONE) Fixture looks:** the stand-in bodies were already built for
+   what each light is (yoke and head, cans, cells, cups, a base display);
+   what read badly was the lens - a flat black disc, the light a hole.  Now
+   (web/js/stage/lensglass.js) an unlit lens is coated glass with a lighter
+   rim and the room's light in it, an LED cell shows its die, a Fresnel its
+   rings; lit, an emissive map makes each cell brightest at its die.  The
+   makers' own bodies and gobos (GDTF Share) no longer send the operator off
+   to Add lights to sign in: the 3D asks for the gdtf-share.com sign-in
+   right there (web/app/gdtfsignin.js) and carries on.  stagecheck: an LED
+   PAR's lens is a die under glass glowing brightest at the die, the dark
+   face shows its cells, lit it glows with its cells telling apart (and
+   close-ups of the stand-ins for the look book); behave: not signed in, the
+   sign-in box comes up, says what it needs, cancels cleanly.
 
 ## A17. NDI video in and out (2026-11-12) - DONE (a real NDI source still to try)
 
