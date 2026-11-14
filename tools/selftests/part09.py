@@ -6039,6 +6039,16 @@ console.log(JSON.stringify({ av: V.pickFormat((m) => true, true), plain: V.pickF
     vend = ROOT / "web" / "vendor" / "muxers"
     check("...its muxers kept with their licences", all((vend / f).exists() for f in
           ("mp4-muxer.mjs", "webm-muxer.mjs", "LICENSE-mp4-muxer.txt", "LICENSE-webm-muxer.txt", "README.txt")), "")
+    # VR (stagecheck walks it with an emulated headset)
+    sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+    vr = (ROOT / "web" / "js" / "stage" / "vr.js").read_text(encoding="utf-8")
+    check("The 3D's >> menu walks round in VR when there's a headset (and says what it needs when not)",
+          '"Walk round in VR"' in sp and "vrSupported()" in sp and "stage.enterVR(" in sp and "haze.renderer" in sp
+          and 'requestSession("immersive-vr"' in vr and 'setReferenceSpaceType("local-floor")' in vr, "")
+    iw = ROOT / "tools" / "vendor" / "iwer"
+    check("...the headset the checks emulate is kept with its licence, for the checks only (not in the desk's web folder)",
+          all((iw / f).exists() for f in ("iwer.module.min.js", "LICENSE.txt", "README.txt"))
+          and not (ROOT / "web" / "vendor" / "iwer").exists(), "")
 
 
 def test_sweep3_adds_c() -> None:

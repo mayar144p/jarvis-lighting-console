@@ -319,8 +319,8 @@ the room, crowd, effects, screens, NDI - the lighting part is rebuilt.
    flames and sparks keep their own light.  stagecheck: the room fills and
    settles, a haze area shows the beam only in it, Auto clear / full /
    a cloud round a running hazer, CO2 red in a red beam; selftest: the area.
-7. Pro tools: a light map (lux), sky pictures, projectors, a movie render,
-   VR.
+7. **(DONE) Pro tools:** a light map (lux), sky pictures, projectors, a
+   movie render, VR.
    - **(DONE) The light map** (web/js/stage/luxmap.js, >> -> Light map
      (lux)): every surface and person in false colour by the lux the rig
      puts on it (log scale, 0 to 5,000, contour lines at each step), the
@@ -389,6 +389,20 @@ the room, crowd, effects, screens, NDI - the lighting part is rebuilt.
      was; webgpucheck: a film from each backend, not blank, the same
      picture (not upside down); tried through the dialog: 5 s noted, 156
      pictures drawn, a WebM saved.
+   - **(DONE) VR** (web/js/stage/vr.js, >> -> Walk round in VR): WebXR
+     immersive-vr on the WebGL 2 path (a WebGPU backend needs the
+     session's "webgpu" feature: when the browser hasn't it, the desk
+     offers to switch the 3D to WebGL 2 and reload).  The camera hangs on
+     a rig at the dance floor (standingSpot) facing the stage; local-floor
+     puts the eye at the wearer's height; the left stick walks the way the
+     head looks, the right one snap-turns 30 degrees, inside the room.  The
+     headset draws the scene straight (the simpler beams, no mirror, the
+     true-colour curve as a custom tone mapping).  Found on the way:
+     three.js takes the animation loop set when the session starts - set
+     after, the head pose never came (eyes at the floor).  stagecheck, with
+     Meta's IWER emulating a Quest 3 (tools/vendor/iwer, the checks only):
+     drawn on the headset's clock, the eye at 1.6 m on the dance floor,
+     walking, turning, facing a stage off to one side, the 3D back after.
 8. Fixture looks: better stand-in models, real ones from GDTF Share.
 
 ## A17. NDI video in and out (2026-11-12) - DONE (a real NDI source still to try)

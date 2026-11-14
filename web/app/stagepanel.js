@@ -6,10 +6,35 @@ import { modelDefs } from "./real3d.js";
 import { initVenuePanel } from "./venuepanel.js";
 import { state, on, emit, patch } from "./store.js";
 import { run, select } from "./actions.js";
-import { $, $$, menu, promptBox, toast } from "./ui.js";
+import { $, $$, menu, promptBox, toast, confirmBox } from "./ui.js";
 import { atPointer, rowMenu } from "./fixtures.js";
 import { openVideoDialog, stopVideo, recording } from "./videorec.js";
 import { toggleLightMap, lightMapOn } from "./lightmap.js";
+import { vrSupported } from "/js/stage/vr.js";
+
+// a VR headset this browser can use (asked once, and again when one is plugged in)
+let vrOK = false;
+const askVR = () => vrSupported().then((ok) => { vrOK = ok; });
+askVR();
+try { if (navigator.xr) navigator.xr.addEventListener("devicechange", askVR); } catch (e) { /* no WebXR */ }
+
+/** Into the headset: the 3D's room, rig and lights live, walked with the
+ *  sticks.  Where this browser's VR needs the 3D on WebGL 2, it offers to
+ *  switch (and reload). */
+async function startVR() {
+  if (stage.xrOn) { stage.exitVR(); return; }
+  try {
+    await stage.enterVR(() => toast("Out of VR", "", 2500));
+    toast("In VR: the left stick walks the way you look, the right one turns you. The headset's menu button leaves.", "", 7000);
+  } catch (e) {
+    if (e && e.webgl) {
+      const ok = await confirmBox("VR needs WebGL 2",
+        "This browser's VR works with the 3D drawn by WebGL 2. Draw the 3D with WebGL 2 from now on and reload it? Then choose Walk round in VR again.",
+        { ok: "Switch and reload" });
+      if (ok) { try { localStorage.setItem("haze.renderer", "webgl"); } catch (err) { /* private */ } location.reload(); }
+    } else toast("VR couldn't start: " + ((e && e.message) || e), "bad", 7000);
+  }
+}
 
 let stage = null;
 let rigSig = "";
@@ -407,6 +432,9 @@ function viewsMenu(btn) {
       run: () => (recording() ? stopVideo() : openVideoDialog(stage)) },
     { label: lightMapOn(stage) ? "✓ Light map (lux)" : "Light map (lux)", hint: "how much light lands where",
       run: () => toggleLightMap(stage) },
+    { label: stage.xrOn ? "Leave VR" : "Walk round in VR", disabled: !vrOK && !stage.xrOn,
+      hint: vrOK || stage.xrOn ? "a headset: the room, the rig and the lights, live" : "needs a VR headset and a browser with VR (Chrome / Edge with a PC headset, a headset's own browser)",
+      run: startVR },
     { label: "The makers' 3D bodies and gobos", hint: "from GDTF Share, for the 3D only", run: realBodies },
     "-",
     ...cams.map((c) => ({ label: "★ " + c.name, run: () => stage.setCamera({ pos: c.pos, target: c.target }) })),

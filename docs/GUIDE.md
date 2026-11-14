@@ -258,6 +258,21 @@ With an AI key, ask the copilot "is the DJ lit enough for the stream?": it
 measures the stage, a face on it, the DJ and each zone, and can set the
 lights to suit.
 
+### Walk round in VR
+
+With a VR headset, the 3D view's **>>** menu → **Walk round in VR** puts you
+in the room: on the dance floor at your own height, facing the stage, the
+rig and every light live as the desk sends them. The left stick walks the
+way you look, a flick of the right one turns you 30 degrees; you stay inside
+the room. The headset's menu button (or the menu entry again) leaves.
+
+It needs a headset this computer's browser can use - a Quest with Link or
+Air Link, SteamVR or Windows Mixed Reality with Chrome or Edge - or a
+headset's own browser. In the headset the beams are the simpler ones and the
+floor isn't a mirror (that needs more than a headset can draw twice, once
+for each eye); the colours are the same. If the browser's VR needs the 3D
+drawn by WebGL 2, the desk offers to switch it and reload.
+
 ### Quick buttons
 
 *Where:* Buttons (bottom left)

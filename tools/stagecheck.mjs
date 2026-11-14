@@ -20,7 +20,7 @@
 // Runs its own server on scratch data (only for the page's files): the
 // scenes go to the 3D directly, so no show, patch or light feed is involved.
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -186,6 +186,9 @@ const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
 await page.route(BASE + "__stagecheck.html", (route) => route.fulfill({ status: 200, contentType: "text/html", body: PAGE }));
+// a VR headset emulated in the page (Meta's IWER, tools/vendor/iwer: the checks only)
+await page.route(BASE + "__iwer.js", (route) => route.fulfill({ status: 200, contentType: "text/javascript",
+  body: readFileSync(join(ROOT, "tools", "vendor", "iwer", "iwer.module.min.js"), "utf-8") }));
 await page.goto(BASE + "__stagecheck.html");
 try {
   await page.waitForFunction(() => window.SC_READY && window.SC.ready(), null, { timeout: 60000 });
@@ -834,6 +837,87 @@ add("film", async () => {
   check("...with the music in it", r.sound && r.opus, JSON.stringify({ sound: r.sound, opus: r.opus }));
   check("...and the 3D back as it was (its size and quality)", r.after[0] === r.before[0] && r.after[1] === r.before[1]
     && r.after[2] === r.before[2] && r.after[3] === false, JSON.stringify([r.before, r.after]));
+});
+
+// VR: on a headset (here an emulated Quest 3) you stand on the dance floor
+// at your own height, the room drawn for both eyes on the headset's clock;
+// the left stick walks the way you look, the right one turns you 30
+// degrees a flick; leaving puts the 3D back as it was.
+add("vr", async () => {
+  const r = await sc(async () => {
+    const S = window.SC, st = window.stage;
+    await S.scene({ venue: S.room(10, 12, 5, { zones: [{ id: "z1", kind: "dancefloor", name: "Dance floor", points: [[-2, 7], [2, 7], [2, 10], [-2, 10]] }] }),
+      fixtures: [{ head_no: 1, model: "A", body: S.body("par", 40), x: 0, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" }],
+      looks: { 1: { hex: "#ff0000", a: 1 } }, options: { haze: 0.6, quality: "high", house: 0.3 },
+      camera: { pos: [0, 5.2, 15.5], target: [0, 1.2, 6] } });
+    const before = st.camera.position.toArray();
+    const { XRDevice, metaQuest3 } = await import("/__iwer.js");
+    const dev = new XRDevice(metaQuest3);
+    dev.installRuntime({ forceInstall: true });
+    const out = { before };
+    const f0 = S.frames();
+    // (the emulator hands its picture over as the page's own framebuffer,
+    // null, where a headset's browser gives a framebuffer object; three.js
+    // keys a cache on it - here null goes through as the page's own)
+    const state = st.renderer.backend.state, gl = st.renderer.backend.gl;
+    const realBuffers = state.drawBuffers.bind(state);
+    state.drawBuffers = (ctx, fb) => (fb ? realBuffers(ctx, fb) : gl.drawBuffers([gl.BACK]));
+    try {
+      await st.enterVR(() => { out.ended = true; });
+    } catch (e) { return { error: String(e && e.message || e) }; }
+    const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
+    // a few pictures on the headset's clock (software drawing two eyes is slow)
+    for (let i = 0; i < 80 && S.frames() - f0 < 3; i++) await wait(100);
+    out.xr = { on: !!st.xrOn, presenting: st.renderer.xr.isPresenting, frames: S.frames() - f0, volumetric: st._volumetric() };
+    const eye = () => st.camera.getWorldPosition(new S.THREE.Vector3()).toArray().map((v) => +v.toFixed(2));
+    out.eye = eye();
+    out.rig0 = st.vr.rig.position.toArray().map((v) => +v.toFixed(2));
+    // the left stick forward for a second
+    dev.controllers.left.updateAxes("thumbstick", 0, -1);
+    await wait(1000);
+    dev.controllers.left.updateAxes("thumbstick", 0, 0);
+    await wait(200);
+    out.rig1 = st.vr.rig.position.toArray().map((v) => +v.toFixed(2));
+    // a flick of the right stick
+    const yaw0 = st.vr.rig.rotation.y;
+    dev.controllers.right.updateAxes("thumbstick", 1, 0);
+    await wait(400);
+    dev.controllers.right.updateAxes("thumbstick", 0, 0);
+    await wait(300);
+    out.turned = +((st.vr.rig.rotation.y - yaw0) * 180 / Math.PI).toFixed(1);
+    // out again
+    st.exitVR();
+    await wait(800);
+    const f1 = S.frames();
+    st.dirty = true;
+    await S.settle(2);
+    out.after = { on: !!st.xrOn, xr: st.renderer.xr.enabled, cam: st.camera.position.toArray(), parent: st.camera.parent && st.camera.parent.name, drawing: S.frames() > f1, ended: !!out.ended };
+    // a stage off to one side: you start facing it
+    await S.scene({ venue: S.room(10, 12, 5, { stage: { x: -4, z: 0, width: 4, depth: 3, height: 0.6 },
+      zones: [{ id: "z1", kind: "dancefloor", name: "Dance floor", points: [[-2, 7], [2, 7], [2, 10], [-2, 10]] }] }),
+      fixtures: [], looks: {}, options: { haze: 0.6, quality: "high" } });
+    await st.enterVR();
+    await wait(600);
+    const look = st.camera.getWorldDirection(new S.THREE.Vector3());
+    out.facing = [look.x, look.z].map((v) => +v.toFixed(2));
+    out.want = [-4 - 0, 1.5 - 8.5].map((v) => +(v / Math.hypot(4, 7)).toFixed(2));
+    st.exitVR();
+    await wait(600);
+    state.drawBuffers = realBuffers;
+    return out;
+  });
+  if (r.error) { check("VR starts on a headset", false, r.error); return; }
+  check("VR on a headset: drawn on the headset's own clock, for both eyes (the simpler beams)", r.xr.on && r.xr.presenting && r.xr.frames >= 3 && !r.xr.volumetric,
+    JSON.stringify(r.xr));
+  check("...you stand on the dance floor at your own height", Math.abs(r.eye[0]) < 0.6 && Math.abs(r.eye[2] - 8.5) < 0.8 && r.eye[1] > 1.2 && r.eye[1] < 2.0,
+    JSON.stringify(r.eye));
+  check("...the left stick walks you the way you look (towards the stage)", r.rig1[2] < r.rig0[2] - 0.6 && Math.abs(r.rig1[0] - r.rig0[0]) < 0.4,
+    `${JSON.stringify(r.rig0)} -> ${JSON.stringify(r.rig1)}`);
+  check("...a flick of the right stick turns you 30 degrees", Math.abs(Math.abs(r.turned) - 30) < 0.5, String(r.turned));
+  check("...facing the stage wherever it is", Math.abs(r.facing[0] - r.want[0]) < 0.08 && Math.abs(r.facing[1] - r.want[1]) < 0.08,
+    `${JSON.stringify(r.facing)} vs ${JSON.stringify(r.want)}`);
+  check("leaving VR puts the 3D back (its camera, its own drawing)", !r.after.on && !r.after.xr && r.after.ended && r.after.drawing
+    && r.after.cam.every((v, i) => Math.abs(v - r.before[i]) < 1e-6), JSON.stringify(r.after));
 });
 
 // The colour on the desk is the colour on the screen: a pool keeps the

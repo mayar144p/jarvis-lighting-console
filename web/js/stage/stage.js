@@ -17,6 +17,7 @@ import { buildGdtf } from "./gdtf.js";
 import { buildVenue, hitDistance, cutaway, releaseScreens, mediaUrlFor } from "./venue.js";
 import { skyNode, skyLight, pictureLight } from "./sky.js";
 import { Projectors } from "./projectors.js";
+import { VRWalk } from "./vr.js";
 import { ndiOffer, ndiOut, ndiSender, ndiSendFrame, ndiOnOut } from "../ndi.js";
 
 /** The room's four sides written on the floor (Arrange, Zones): the DJ /
@@ -881,6 +882,29 @@ export class Stage {
     });
   }
 
+  /** Where you'd stand to watch the show: the middle of the dance floor
+   *  (or the standing zone), else a few metres in front of the stage. */
+  standingSpot() {
+    const v = (this.built && this.built.venue) || {};
+    const zone = (v.zones || []).find((z) => z.kind === "dancefloor") || (v.zones || []).find((z) => z.kind === "standing");
+    const R = this.room;
+    if (zone && zone.points && zone.points.length) {
+      return { x: zone.points.reduce((a, q) => a + q[0], 0) / zone.points.length,
+        z: zone.points.reduce((a, q) => a + q[1], 0) / zone.points.length };
+    }
+    return { x: R.cx || 0, z: Math.min(R.z1 - 1, (this.stageFront || 0) + 4) };
+  }
+
+  /** Walk round the room in a VR headset (vr.js); `onEnd` when it ends.
+   *  An Error with `.webgl`: this browser's VR needs the 3D on WebGL 2. */
+  async enterVR(onEnd) {
+    if (this.walking) this.walk(false);
+    this.vr = this.vr || new VRWalk(this);
+    return this.vr.start(onEnd);
+  }
+
+  exitVR() { if (this.vr) this.vr.stop(); }
+
   /** The floor's height at (x, z): the stage deck there, else the floor. */
   _groundAt(x, z) {
     const st = this.built && this.built.venue && this.built.venue.stage;
@@ -1642,8 +1666,9 @@ export class Stage {
   _loop() {
     if (this.destroyed) return;
     this._raf = requestAnimationFrame(this._loop);
-    // a film being drawn frame by frame (movierender.js) has the 3D to itself
-    if (this.filming) return;
+    // a film being drawn frame by frame (movierender.js) has the 3D to
+    // itself; a headset (vr.js) draws on its own clock
+    if (this.filming || this.xrOn) return;
     // hidden: the window, or a workspace with no 3D view (nothing to draw)
     if (document.hidden || document.body.classList.contains("ws-nostage")) return;
     this._tick(performance.now(), false);
@@ -1835,7 +1860,7 @@ export class Stage {
   /** Beams as light in the air: Medium and High, with haze, in the 3D view
    *  (not the flat line drawings), unless auto quality is down to the bone. */
   _volumetric() {
-    return this.options.quality !== "fast" && !this.q.lite && !this.wire && !this.options.lightMap
+    return this.options.quality !== "fast" && !this.q.lite && !this.wire && !this.options.lightMap && !this.xrOn
       && (this._hazeNow() > 0.01 || VOL.areaCount.value > 0 || VOL.cloudCount.value > 0);
   }
 
@@ -1873,6 +1898,14 @@ export class Stage {
    *  the glow, the true-colour step and, on High, smooth edges. */
   _present(glow) {
     const r = this.renderer;
+    if (this.xrOn) {
+      // the headset (vr.js): both eyes straight from the scene - the simpler
+      // beams, the true colour as its tone mapping, no mirror
+      this.mirror.off();
+      r.setRenderTarget(null);
+      r.render(this.scene, this.camera);
+      return;
+    }
     this._targets();
     // (the picture's recipe depends on the quality only, never on which
     // beams are lit: a strobe would otherwise rebuild it at every flash)
@@ -1993,14 +2026,7 @@ export class Stage {
     }
     if (this.walking) return;
     this.povHead = null;
-    const v = (this.built && this.built.venue) || {};
-    const zone = (v.zones || []).find((z) => z.kind === "dancefloor") || (v.zones || []).find((z) => z.kind === "standing");
-    const R = this.room;
-    let x = (R.cx || 0), z = Math.min(R.z1 - 1, (this.stageFront || 0) + 4);
-    if (zone) {
-      x = zone.points.reduce((a, q) => a + q[0], 0) / zone.points.length;
-      z = zone.points.reduce((a, q) => a + q[1], 0) / zone.points.length;
-    }
+    const { x, z } = this.standingSpot();
     this.fly = null;
     this.camera.position.set(x, 1.7, z);
     const w = { keys: new Set(), yaw: 0, pitch: 0.12, drag: null, last: performance.now(), onEnd };
@@ -2409,7 +2435,8 @@ export class Stage {
       }
 
       // head-on lens glow
-      const toCam = this._v1.copy(this.camera.position).sub(b.origin).normalize();
+      const eye = this.xrOn ? this.camera.getWorldPosition(this._eye || (this._eye = new THREE.Vector3())) : this.camera.position;
+      const toCam = this._v1.copy(eye).sub(b.origin).normalize();
       const facing = Math.max(0, toCam.dot(b.dir));
       b.glow.visible = true;
       b.glow.position.copy(b.origin).addScaledVector(b.dir, 0.01);
