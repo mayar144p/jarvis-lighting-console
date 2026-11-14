@@ -10170,6 +10170,13 @@ def test_screen_sizes() -> None:
           and "--topbar-h: calc(46px * var(--ctl))" in css, "")
     uc = (ROOT / "tools" / "uicheck.mjs").read_text(encoding="utf-8")
     check("the screen check takes whole screens (2560x1440)", '.split("x").map(Number)' in uc, "")
+    # the checks see the desk as it opens (the 3D has a window of its own,
+    # opened from Palettes -> 3D view), not the old 3D inside the desk
+    check("the screen checks open the desk as it opens and the 3D in its own window (Palettes -> 3D view)",
+          "await p.goto(BASE);" in uc and 'p.waitForEvent("popup"' in uc and 'p.click("button.dv-3d"' in uc
+          and "IN_3D.has(name)" in uc
+          and not any("3d=1" in (ROOT / "tools" / f).read_text(encoding="utf-8")
+                      for f in ("uicheck.mjs", "pixcheck.mjs", "oddcheck_ui.mjs")), "")
 
 
 def test_desktop_frame() -> None:

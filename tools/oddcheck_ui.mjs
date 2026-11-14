@@ -90,7 +90,7 @@ const open = async (who) => {
   p.on("pageerror", (e) => errors[who].push(String(e.message || e)));
   p.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource|net::ERR|stream/.test(m.text())) errors[who].push("console: " + m.text().slice(0, 200)); });
   await p.addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.people", "0"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ } });
-  await p.goto(BASE + "?3d=1");   // (the 3D view is off by default: these steps cover it too)
+  await p.goto(BASE);              // the desk as it opens (the 3D has a window of its own)
   await sleep(1800);
   return p;
 };
