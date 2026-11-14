@@ -417,6 +417,48 @@ the room, crowd, effects, screens, NDI - the lighting part is rebuilt.
    close-ups of the stand-ins for the look book); behave: not signed in, the
    sign-in box comes up, says what it needs, cancels cleanly.
 
+9. **(DONE 2026-11-14) One quality, the best, everywhere** (asked: "remove
+   the simpler ones, keep it always high quality ... regardless of pc
+   specs").  The Low / Medium choice (Settings -> Screen & 3D), the
+   automatic lowering on a slow computer (`_adapt`: resolution down to
+   35 %, the surface detail off) and the simpler cone beams are gone, with
+   the detail switch in the shaders (`DETAIL`, `setDetail`).  Every view
+   draws the same: the screen's own sharpness (up to 2 pixels a point, and
+   again when the window moves to a sharper screen), every beam as light in
+   the haze (24 steps), 16 shadow pictures, 12 bounced pools, the mirror
+   floor at half size, the glow, FXAA.  Found on the way: High had never
+   had its smooth edges or its full sharpness unless the quality was
+   changed by hand (the pipeline started without FXAA at 1.5 pixels a
+   point; nothing changed it back).  An older desk's saved quality is
+   dropped at start; `setOptions({quality})` is ignored.
+   **VR at full quality:** each eye is drawn as the screen is (stage.js
+   `_presentEyes` / `_view`): the headset's eye as a camera of its own (its
+   lopsided view and its near / far from its projection), the mirror's
+   camera given the same view turned over left for right (reflect.js:
+   checked numerically - every floor point the eye sees lands where the
+   mirror looks), the pipeline's pictures at the eye's size (three.js's
+   `_setXRLayerSize`, put back after), its last step into that eye's half
+   of the headset's picture (viewport and scissor).  Each eye has its own
+   pipeline: the glow is worked out once a picture per pipeline.  The
+   headset's coarser edges (foveation) are off.  VR draws with WebGL 2:
+   WebGPU's VR gives each eye a picture of its own (an array), so the desk
+   offers to switch, as before.  stagecheck reads each eye's picture back
+   from the emulated Quest 3 (its stereo on): the beam in the haze in each
+   eye (and gone with the haze), two mirrors a picture; the look book keeps
+   the two eyes (25-vr-both-eyes.png).  The UI checks no longer ask for Low
+   (they draw the 3D at its one quality); fpscheck measures the one;
+   vischeck waits for a picture drawn after each change, and for Ctrl+Z to
+   land, rather than a fixed time (software drawing at full quality takes
+   longer a picture).  What the old lowering protected - the desk's own
+   buttons on a computer with no graphics card - stays without a simpler
+   picture: after three pictures in a row that took a quarter of a second
+   or more, the page gets as long again (two seconds at most) before the
+   next (`_loop`; one slow picture while shaders are made doesn't count;
+   films and VR draw every picture).  Found by the nightly screen check
+   (three widths, software drawing): at 1920 three clicks timed out once
+   the 3D drew at its one quality.  The guide also says how to keep the
+   desk quick on such a computer: the 3D in its own window.
+
 ## A17. NDI video in and out (2026-11-12) - DONE (a real NDI source still to try)
 
 **Done:** the desktop app talks to the NDI runtime the operator installs

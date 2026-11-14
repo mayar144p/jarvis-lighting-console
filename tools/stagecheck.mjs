@@ -7,7 +7,8 @@
 //   * in haze its beam shows in the air; with no haze it doesn't
 //   * a gobo breaks the pool up; an open beam is smooth
 //   * a red, green or blue light lights the floor in that colour
-//   * every quality (Low, Medium, High) draws
+//   * there is one quality, the best: an older desk's saved choice changes
+//     nothing, and VR draws the whole picture for each eye
 //
 // It also saves a "look book" - the same club scene from the house, the
 // side and the dance floor - so a change to the 3D can be judged by eye,
@@ -219,7 +220,7 @@ async function downlight({ type = "par", beam = 25, look = {}, options = {}, obj
       fixtures: [{ head_no: 1, model: "Check light", manufacturer: "", body: S.body(type, beam, body), x: 0, y: 4.5, z: 6,
         stance: "hang", rot: S.body(type, beam, body).moving ? null : [0, -90], kind: "truss" }],
       looks: { 1: { hex: "#ffffff", a: 1, ...(S.body(type, beam, body).moving ? { pan: 0.5, tilt: 0.5 } : {}), ...look } },
-      options: { haze: 0.6, quality: "high", house: 0.35, people: true, ...options },
+      options: { haze: 0.6, house: 0.35, people: true, ...options },
       camera: CAM,
     });
   }, { type, beam, look, options, objects, body, CAM });
@@ -297,11 +298,6 @@ add("haze-beam", async () => {
   await downlight({ options: { haze: 0.6 } });
   const near = await lum(await at(0, 4.0, 6), 1), far = await lum(await at(0, 0.9, 6), 1);
   check("a beam is brightest at the lens and fades as it spreads", near > far * 1.3 + 5, `near ${near.toFixed(1)} vs far ${far.toFixed(1)}`);
-  for (const q of ["auto", "fast"]) {
-    await downlight({ options: { haze: 0.6, quality: q } });
-    const b = await lum(await at(0, 2.4, 6), 2), s = await lum(await at(2.2, 2.4, 6), 2);
-    check(`${q === "auto" ? "Medium" : "Low"} quality: the beam shows in the haze`, b > s + 6, `${b.toFixed(1)} vs ${s.toFixed(1)}`);
-  }
 });
 
 add("forward", async () => {
@@ -311,7 +307,7 @@ add("forward", async () => {
       const S = window.SC;
       await S.scene({ venue: S.room(10, 12, 5),
         fixtures: [{ head_no: 1, model: "Check light", body: S.body("par", 20), x: -4, y: 2, z: 6, stance: "stand", rot: [90, 0], kind: "floor" }],
-        looks: { 1: { hex: "#ffffff", a: 1 } }, options: { haze: 0.6, quality: "high", house: 0.1, exposure: -1.5 },
+        looks: { 1: { hex: "#ffffff", a: 1 } }, options: { haze: 0.6, house: 0.1, exposure: -1.5 },
         camera: { pos, target: [-4, 2, 6] } });
     }, pos);
     await shot();
@@ -348,7 +344,7 @@ add("shafts", async () => {
 add("blocked", async () => {
   // a wide downlight, its centre and left half over a balcony 2.6 m up:
   // the right half reaches the floor; under the balcony the haze is dark
-  await downlight({ beam: 40, options: { haze: 0.8, quality: "high", shadows: true },
+  await downlight({ beam: 40, options: { haze: 0.8, shadows: true },
     objects: [{ id: "bal", kind: "balcony", x: -1.35, z: 6, w: 3, d: 3, h: 0.25, y: 2.6, rot: 0 }] });
   save("08-half-blocked");
   const open = await lum(await at(0.75, 1.0, 6.5), 2), under = await lum(await at(-0.75, 1.0, 6.5), 2);
@@ -364,7 +360,7 @@ add("slant", async () => {
     const S = window.SC;
     await S.scene({ venue: S.room(10, 14, 5),
       fixtures: [{ head_no: 1, model: "Check light", body: S.body("par", 30), x: 0, y: 4.5, z: 4, stance: "hang", rot: [0, -45], kind: "truss" }],
-      looks: { 1: { hex: "#ffffff", a: 1 } }, options: { haze: 0.8, quality: "high", house: 0.1 },
+      looks: { 1: { hex: "#ffffff", a: 1 } }, options: { haze: 0.8, house: 0.1 },
       camera: { pos: [9, 2.5, 8], target: [0, 1.5, 8] } });
   });
   await shot();
@@ -386,7 +382,7 @@ add("output", async () => {
         fixtures: [
           { head_no: 1, model: "A", body: S.body("par", a.beam), photo: { lm: a.lm, lm_from: "file" }, x: -2, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" },
           { head_no: 2, model: "B", body: S.body("par", b.beam), photo: { lm: b.lm, lm_from: "file" }, x: 2, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" }],
-        looks: { 1: { hex: "#ffffff", a: 1 }, 2: { hex: "#ffffff", a: 1 } }, options: { haze: 0, quality: "high", house: 0.1, exposure: -2 },
+        looks: { 1: { hex: "#ffffff", a: 1 }, 2: { hex: "#ffffff", a: 1 } }, options: { haze: 0, house: 0.1, exposure: -2 },
         camera: { pos: [0, 9, 13], target: [0, 0, 6] } });
     }, [a, b]);
     await shot();
@@ -411,7 +407,7 @@ add("bigrig", async () => {
       fixtures.push({ head_no: n, model: "Par", body: S.body("par", 14), x: -5.5 + i, y: 4.5, z: 2 + j, stance: "hang", rot: [0, -90], kind: "truss" });
       looks[n] = { hex: "#ffffff", a: 1 };
     }
-    await S.scene({ venue: S.room(16, 14, 5.5), fixtures, looks, options: { haze: 0, quality: "high", house: 0.05, exposure: -1, bloom: false },
+    await S.scene({ venue: S.room(16, 14, 5.5), fixtures, looks, options: { haze: 0, house: 0.05, exposure: -1, bloom: false },
       camera: { pos: [0, 18, 7.01], target: [0, 0, 7] } });
     return window.stage.lightStats;
   });
@@ -425,21 +421,11 @@ add("bigrig", async () => {
     if (c > gap + 8) lit++;
   }
   check("every light probed has its own pool on the floor", lit === probes.length, `${lit} of ${probes.length}`);
-  check("High: 16 lights cast shadows", stats.shadows === 16, String(stats.shadows));
+  check("16 lights cast shadows", stats.shadows === 16, String(stats.shadows));
   // nothing moves: the shadow pictures aren't drawn again
   const drawn = await sc(async () => { const d0 = window.stage.shadows.drawn; await window.SC.settle(4); return window.stage.shadows.drawn - d0; });
   check("the shadow pictures aren't drawn again while nothing moves", drawn === 0, `${drawn} drawn`);
-  // (Medium adapts to the computer: a slow one - software drawing here -
-  // sheds resolution and, below 60 %, the shadows; from the top, it has them)
-  await sc(() => window.stage.setOptions({ quality: "auto" }));
-  const med = await sc(async () => {
-    const s = window.stage;
-    s.q.ratio = s.q.cap; s.q.lite = false; s.q.ema = 16; s.q.slowSince = 0;
-    await window.SC.settle(1);
-    return s.lightStats.shadows;
-  });
-  check("Medium: 6 lights cast shadows", med === 6, String(med));
-  await sc(() => window.stage.setOptions({ quality: "high", exposure: 0, bloom: true }));
+  await sc(() => window.stage.setOptions({ exposure: 0, bloom: true }));
 });
 
 add("bounce", async () => {
@@ -450,7 +436,7 @@ add("bounce", async () => {
       const S = window.SC;
       await S.scene({ venue: S.room(10, 12, 5, { wall: "#f0f0f0" }),
         fixtures: [{ head_no: 1, model: "Wash", body: S.body("par", 30), x: 0, y: 2.5, z: 3, stance: "stand", rot: [180, 0], kind: "floor" }],
-        looks: { 1: { hex: "#ff0000", a: 1 } }, options: { haze: 0, quality: "high", house: 0, bounce },
+        looks: { 1: { hex: "#ff0000", a: 1 } }, options: { haze: 0, house: 0, bounce },
         camera: { pos: [0, 4, 9], target: [0, 1.2, 1] } });
     }, bounce);
     await shot();
@@ -470,7 +456,7 @@ add("screenglow", async () => {
       const S = window.SC;
       await S.scene({ venue: S.room(10, 12, 5, { objects: [{ id: "scr", kind: "screen", x: 0, z: 1, w: 4, h: 2.4, d: 0.1, y: 0.3, rot: 0, content: "rig" }] }),
         fixtures: [{ head_no: 1, model: "Par", body: S.body("par", 20), x: 4, y: 0.3, z: 10, stance: "stand", rot: [0, 90], kind: "floor" }],
-        looks: { 1: { hex: "#ff0000", a } }, options: { haze: 0, quality: "high", house: 0, bounce: true },
+        looks: { 1: { hex: "#ff0000", a } }, options: { haze: 0, house: 0, bounce: true },
         camera: { pos: [0, 3.5, 8], target: [0, 1, 1] } });
       await S.settle(12);
     }, a);
@@ -485,16 +471,16 @@ add("screenglow", async () => {
 });
 
 // Mirror floors (step 5): a black dance floor shows the beam reflected in
-// it; carpet doesn't; Low draws no mirror.
+// it; carpet doesn't.
 add("mirror", async () => {
-  const look = async (floor, mirror, quality = "high") => {
-    await sc(async ([floor, mirror, quality]) => {
+  const look = async (floor, mirror) => {
+    await sc(async ([floor, mirror]) => {
       const S = window.SC;
       await S.scene({ venue: S.room(10, 12, 5, { floor }),
         fixtures: [{ head_no: 1, model: "Spot", body: S.body("moving_spot", 14), x: 0, y: 4.5, z: 5, stance: "hang", kind: "truss" }],
-        looks: { 1: { hex: "#30a0ff", a: 1, pan: 0.5, tilt: 0.5 } }, options: { haze: 0.8, quality, house: 0.05, mirror },
+        looks: { 1: { hex: "#30a0ff", a: 1, pan: 0.5, tilt: 0.5 } }, options: { haze: 0.8, house: 0.05, mirror },
         camera: { pos: [0, 1.2, 12], target: [0, 1.2, 5] } });
-    }, [floor, mirror, quality]);
+    }, [floor, mirror]);
     await shot();
     // where the beam's lower part shows in the floor: the point mirrored under it
     return lum(await at(0, -1.0, 5), 2);
@@ -513,10 +499,7 @@ add("mirror", async () => {
   const carpet = await look("carpet", true);
   const carpetOff = await look("carpet", false);
   check("carpet doesn't", Math.abs(carpet - carpetOff) < 4, `carpet ${carpet.toFixed(1)} vs none ${carpetOff.toFixed(1)}`);
-  const low = await look("black", true, "fast");
-  const lowOff = await look("black", false, "fast");
-  check("Low draws no mirror", Math.abs(low - lowOff) < 4, `${low.toFixed(1)} vs ${lowOff.toFixed(1)}`);
-  await sc(() => window.stage.setOptions({ mirror: true, quality: "high" }));
+  await sc(() => window.stage.setOptions({ mirror: true }));
 });
 
 // Atmosphere (step 6): the haze the hazers make (Auto), haze areas, CO2
@@ -534,7 +517,7 @@ add("atmos", async () => {
   check("a hazer running for a minute fills the room with haze", sim.full > 0.2 && sim.clouds === 1, JSON.stringify(sim));
   check("...and five minutes after it stops, the haze has settled to half or less, its cloud gone", sim.after < sim.full * 0.55 && sim.cloudsAfter === 0, JSON.stringify(sim));
   // a haze area with no haze in the room: the beam shows only inside it
-  await downlight({ beam: 20, options: { haze: 0, quality: "high" }, objects: [{ id: "hz", kind: "haze", x: 0, z: 6, w: 3, d: 3, h: 2, y: 0, density: 1 }] });
+  await downlight({ beam: 20, options: { haze: 0 }, objects: [{ id: "hz", kind: "haze", x: 0, z: 6, w: 3, d: 3, h: 2, y: 0, density: 1 }] });
   save("15-haze-area");
   const inside = await lum(await at(0, 1.0, 6), 2), above = await lum(await at(0, 3.4, 6), 2);
   check("a haze area: the beam shows in it, not above it (no haze in the room)", inside > above + 10, `inside ${inside.toFixed(1)} vs above ${above.toFixed(1)}`);
@@ -546,7 +529,7 @@ add("atmos", async () => {
         fixtures: [{ head_no: 1, model: "Check light", body: S.body("par", 25), x: 0, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" },
           { head_no: 2, model: "Hazer", body: S.body("atmos", 0), x: -3, y: 0.2, z: 2, stance: "stand", kind: "floor" }],
         looks: { 1: { hex: "#ffffff", a: 1 }, 2: { hex: "#ffffff", a: 0, fx: fog ? { fog: 1 } : null } },
-        options: { haze: 1, hazeAuto: true, quality: "high", house: 0.1 }, camera: { pos: [0, 5.2, 15.5], target: [0, 1.2, 6] } });
+        options: { haze: 1, hazeAuto: true, house: 0.1 }, camera: { pos: [0, 5.2, 15.5], target: [0, 1.2, 6] } });
     }, fog);
     await shot();
   };
@@ -569,7 +552,7 @@ add("atmos", async () => {
         fixtures: [{ head_no: 1, model: "Check light", body: S.body("par", 40), x: 0, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" },
           { head_no: 2, model: "CO2", body: S.body("co2", 0), x: 0, y: 0, z: 6, stance: "stand", kind: "floor" }],
         looks: { 1: { hex: "#ff0000", a: beam ? 1 : 0 }, 2: { hex: "#ffffff", a: 0, fx: { fire: true } } },
-        options: { haze: 0, quality: "high", house: 0.4 }, camera: { pos: [0, 2.5, 12], target: [0, 2, 6] } });
+        options: { haze: 0, house: 0.4 }, camera: { pos: [0, 2.5, 12], target: [0, 2, 6] } });
       await S.settle(10);
     }, beam);
     await shot();
@@ -595,7 +578,7 @@ add("lightmap", async () => {
         { head_no: 1, model: "A", body: S.body("par", 30), photo: { lm: 3000, lm_from: "file" }, x: 0, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" },
         { head_no: 2, model: "B", body: S.body("par", 30), photo: { lm: 3000, lm_from: "file" }, x: 2.6, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" }],
       looks: { 1: { hex: "#ffffff", a: 1 }, 2: { hex: "#ffffff", a: 1 } },
-      options: { haze: 0.6, quality: "high", house: 0.35, lightMap: false },
+      options: { haze: 0.6, house: 0.35, lightMap: false },
       camera: { pos: [0, 9, 13], target: [0, 0, 6] } });
   });
   const r = await sc(() => {
@@ -665,7 +648,7 @@ add("sky", async () => {
       v.room.sky = sky;
       await S.scene({ venue: v,
         fixtures: [{ head_no: 1, model: "A", body: S.body("par", 25), photo: { lm: 3000, lm_from: "file" }, x: 0, y: 6, z: 12, stance: "hang", rot: [0, -90], kind: "truss" }],
-        looks: { 1: { hex: "#ff1010", a: 1 } }, options: { haze: 0, quality: "high", house: 0, people: false },
+        looks: { 1: { hex: "#ff1010", a: 1 } }, options: { haze: 0, house: 0, people: false },
         camera: { pos: [0, 2.2, 26], target: [0, 4.5, 4] } });
     }, [sky, ceiling]);
     await shot();
@@ -736,7 +719,7 @@ add("projector", async () => {
       const S = window.SC;
       await S.scene({ venue: S.room(10, 12, 5, { objects: [{ id: "pj", kind: "projector", x: 0, y: 2.4, z: 10, w: 0.5, d: 0.45, h: 0.22, rot: 180,
         content, lm: 12000, throw: 2, aspect: 16 / 9, tilt: 0 }] }),
-        fixtures: [], looks: {}, options: { haze, quality: "high", house: 0, people: false },
+        fixtures: [], looks: {}, options: { haze, house: 0, people: false },
         camera: { pos: [0, 2.6, 11.6], target: [0, 2.6, 0] } });
       await new Promise((ok) => setTimeout(ok, 600));
       await S.settle(4);
@@ -777,10 +760,10 @@ add("film", async () => {
     const S = window.SC, st = window.stage;
     await S.scene({ venue: S.room(10, 12, 5),
       fixtures: [{ head_no: 1, model: "A", body: S.body("par", 40), x: 0, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" }],
-      looks: { 1: { hex: "#00ff00", a: 1 } }, options: { haze: 0, quality: "medium", house: 0.2 },
+      looks: { 1: { hex: "#00ff00", a: 1 } }, options: { haze: 0, house: 0.2 },
       camera: { pos: [0, 6, 13], target: [0, 0, 6] } });
     const M = await import("/app/movierender.js");
-    const before = [st.renderer.domElement.width, st.renderer.domElement.height, st.options.quality];
+    const before = [st.renderer.domElement.width, st.renderer.domElement.height, st.q.ratio];
     // as the first pass notes them: red, then blue half a second in
     const notes = { seconds: 1.0, cams: [],
       looks: [{ t: 0, hold: 0, ch: { 1: JSON.stringify({ hex: "#ff0000", a: 1 }) } },
@@ -825,7 +808,7 @@ add("film", async () => {
     };
     const early = await grab(0.25), late = await grab(0.85);
     await S.settle(3);
-    const after = [st.renderer.domElement.width, st.renderer.domElement.height, st.options.quality, !!st.filming];
+    const after = [st.renderer.domElement.width, st.renderer.domElement.height, st.q.ratio, !!st.filming];
     return { any: any && any.codec, frames: out.frames, progress, sound: out.sound, opus: has("A_OPUS"), ebml: bytes[0] === 0x1a && bytes[1] === 0x45,
       w: v.videoWidth, h: v.videoHeight, dur: v.duration, early, late, before, after };
   });
@@ -835,55 +818,106 @@ add("film", async () => {
   check("...each look at its moment: red early, blue after half a second", r.early[0] > r.early[2] + 40 && r.late[2] > r.late[0] + 40,
     `early ${r.early.map((v) => v.toFixed(0))}, late ${r.late.map((v) => v.toFixed(0))}`);
   check("...with the music in it", r.sound && r.opus, JSON.stringify({ sound: r.sound, opus: r.opus }));
-  check("...and the 3D back as it was (its size and quality)", r.after[0] === r.before[0] && r.after[1] === r.before[1]
+  check("...and the 3D back as it was (its size and sharpness)", r.after[0] === r.before[0] && r.after[1] === r.before[1]
     && r.after[2] === r.before[2] && r.after[3] === false, JSON.stringify([r.before, r.after]));
 });
 
 // VR: on a headset (here an emulated Quest 3) you stand on the dance floor
-// at your own height, the room drawn for both eyes on the headset's clock;
-// the left stick walks the way you look, the right one turns you 30
-// degrees a flick; leaving puts the 3D back as it was.
+// at your own height, the room drawn on the headset's clock - the whole
+// picture for each eye: the beams as light in the haze, each eye its own
+// mirror floor; the left stick walks the way you look, the right one turns
+// you 30 degrees a flick; leaving puts the 3D back as it was.  (Software
+// drawing two eyes is slow: the steps wait for pictures, not for time.)
 add("vr", async () => {
+  // (the emulator sizes the page's canvas to the window when the session
+  // starts: the window the 3D's size, as a headset's picture keeps its own)
+  await page.setViewportSize({ width: W, height: H });
   const r = await sc(async () => {
     const S = window.SC, st = window.stage;
-    await S.scene({ venue: S.room(10, 12, 5, { zones: [{ id: "z1", kind: "dancefloor", name: "Dance floor", points: [[-2, 7], [2, 7], [2, 10], [-2, 10]] }] }),
+    await S.scene({ venue: S.room(10, 12, 5, { floor: "black", zones: [{ id: "z1", kind: "dancefloor", name: "Dance floor", points: [[-2, 7], [2, 7], [2, 10], [-2, 10]] }] }),
       fixtures: [{ head_no: 1, model: "A", body: S.body("par", 40), x: 0, y: 4.5, z: 6, stance: "hang", rot: [0, -90], kind: "truss" }],
-      looks: { 1: { hex: "#ff0000", a: 1 } }, options: { haze: 0.6, quality: "high", house: 0.3 },
+      looks: { 1: { hex: "#ff0000", a: 1 } }, options: { haze: 0.6, house: 0.3 },
       camera: { pos: [0, 5.2, 15.5], target: [0, 1.2, 6] } });
     const before = st.camera.position.toArray();
     const { XRDevice, metaQuest3 } = await import("/__iwer.js");
     const dev = new XRDevice(metaQuest3);
+    dev.stereoEnabled = true;                // two eyes side by side (its preview is one)
     dev.installRuntime({ forceInstall: true });
     const out = { before };
-    const f0 = S.frames();
     // (the emulator hands its picture over as the page's own framebuffer,
     // null, where a headset's browser gives a framebuffer object; three.js
     // keys a cache on it - here null goes through as the page's own)
     const state = st.renderer.backend.state, gl = st.renderer.backend.gl;
     const realBuffers = state.drawBuffers.bind(state);
     state.drawBuffers = (ctx, fb) => (fb ? realBuffers(ctx, fb) : gl.drawBuffers([gl.BACK]));
+    const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
+    const pictures = async (n, most = 300) => { const f = S.frames(); for (let i = 0; i < most && S.frames() - f < n; i++) await wait(100); return S.frames() - f; };
+    const f0 = S.frames();
     try {
       await st.enterVR(() => { out.ended = true; });
     } catch (e) { return { error: String(e && e.message || e) }; }
-    const wait = (ms) => new Promise((ok) => setTimeout(ok, ms));
-    // a few pictures on the headset's clock (software drawing two eyes is slow)
-    for (let i = 0; i < 80 && S.frames() - f0 < 3; i++) await wait(100);
+    await pictures(3);
     out.xr = { on: !!st.xrOn, presenting: st.renderer.xr.isPresenting, frames: S.frames() - f0, volumetric: st._volumetric() };
+    // each eye's picture as it is drawn (the emulator's is the page's own),
+    // and how many mirrors a picture draws
+    const eyes = async () => {
+      const real = st._presentEyes;
+      const mirror = st.mirror.render;
+      let px = null, mirrors = 0;
+      st.mirror.render = function (...a) { mirrors++; return mirror.apply(this, a); };
+      st._presentEyes = function (g) {
+        mirrors = 0;
+        real.call(this, g);
+        const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+        const prev = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING);
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+        const buf = new Uint8Array(w * h * 4);
+        gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, prev);
+        px = { w, h, buf, mirrors };
+        st._presentEyes = real;
+        st.mirror.render = mirror;
+      };
+      for (let i = 0; i < 300 && !px; i++) { st.dirty = true; await wait(100); }
+      if (!px) return null;
+      // how red each half (each eye) is: its red light over its green and blue
+      const half = (x0, x1) => {
+        let sum = 0, n = 0;
+        for (let y = 0; y < px.h; y += 2) for (let x = x0; x < x1; x += 2) {
+          const i = (y * px.w + x) * 4;
+          sum += Math.max(0, px.buf[i] - Math.max(px.buf[i + 1], px.buf[i + 2]));
+          n++;
+        }
+        return +(sum / Math.max(1, n)).toFixed(2);
+      };
+      // (the picture itself, the right way up, for the look book)
+      const cv = document.createElement("canvas");
+      cv.width = px.w; cv.height = px.h;
+      const im = cv.getContext("2d").createImageData(px.w, px.h);
+      for (let y = 0; y < px.h; y++) im.data.set(px.buf.subarray((px.h - 1 - y) * px.w * 4, (px.h - y) * px.w * 4), y * px.w * 4);
+      cv.getContext("2d").putImageData(im, 0, 0);
+      return { left: half(0, px.w >> 1), right: half(px.w >> 1, px.w), mirrors: px.mirrors, w: px.w, h: px.h, png: cv.toDataURL("image/png") };
+    };
+    out.haze = await eyes();
+    st.setOptions({ haze: 0 });
+    await pictures(1);
+    out.clear = await eyes();
+    st.setOptions({ haze: 0.6 });
     const eye = () => st.camera.getWorldPosition(new S.THREE.Vector3()).toArray().map((v) => +v.toFixed(2));
     out.eye = eye();
     out.rig0 = st.vr.rig.position.toArray().map((v) => +v.toFixed(2));
-    // the left stick forward for a second
+    // the left stick forward until it has walked you a metre (or 30 s)
     dev.controllers.left.updateAxes("thumbstick", 0, -1);
-    await wait(1000);
+    for (let i = 0; i < 300 && Math.hypot(st.vr.rig.position.x - out.rig0[0], st.vr.rig.position.z - out.rig0[2]) < 1; i++) await wait(100);
     dev.controllers.left.updateAxes("thumbstick", 0, 0);
-    await wait(200);
+    await pictures(2);
     out.rig1 = st.vr.rig.position.toArray().map((v) => +v.toFixed(2));
-    // a flick of the right stick
+    // a flick of the right stick: held until a picture has seen it
     const yaw0 = st.vr.rig.rotation.y;
     dev.controllers.right.updateAxes("thumbstick", 1, 0);
-    await wait(400);
+    for (let i = 0; i < 300 && st.vr.rig.rotation.y === yaw0; i++) await wait(100);
     dev.controllers.right.updateAxes("thumbstick", 0, 0);
-    await wait(300);
+    await pictures(2);
     out.turned = +((st.vr.rig.rotation.y - yaw0) * 180 / Math.PI).toFixed(1);
     // out again
     st.exitVR();
@@ -895,20 +929,27 @@ add("vr", async () => {
     // a stage off to one side: you start facing it
     await S.scene({ venue: S.room(10, 12, 5, { stage: { x: -4, z: 0, width: 4, depth: 3, height: 0.6 },
       zones: [{ id: "z1", kind: "dancefloor", name: "Dance floor", points: [[-2, 7], [2, 7], [2, 10], [-2, 10]] }] }),
-      fixtures: [], looks: {}, options: { haze: 0.6, quality: "high" } });
+      fixtures: [], looks: {}, options: { haze: 0.6 } });
     await st.enterVR();
-    await wait(600);
+    await pictures(2);
     const look = st.camera.getWorldDirection(new S.THREE.Vector3());
     out.facing = [look.x, look.z].map((v) => +v.toFixed(2));
     out.want = [-4 - 0, 1.5 - 8.5].map((v) => +(v / Math.hypot(4, 7)).toFixed(2));
     st.exitVR();
-    await wait(600);
+    await wait(800);
     state.drawBuffers = realBuffers;
     return out;
   });
+  await page.setViewportSize({ width: W + 20, height: H + 20 });
   if (r.error) { check("VR starts on a headset", false, r.error); return; }
-  check("VR on a headset: drawn on the headset's own clock, for both eyes (the simpler beams)", r.xr.on && r.xr.presenting && r.xr.frames >= 3 && !r.xr.volumetric,
+  if (r.haze && r.haze.png) { lastShot = r.haze.png; save("25-vr-both-eyes"); delete r.haze.png; }
+  if (r.clear) delete r.clear.png;
+  check("VR on a headset: drawn on the headset's own clock, the beams as light in the haze", r.xr.on && r.xr.presenting && r.xr.frames >= 3 && r.xr.volumetric,
     JSON.stringify(r.xr));
+  const h = r.haze || {}, c = r.clear || {};
+  check("...each eye sees the beam in the haze (and loses it when the haze goes)", r.haze && r.clear
+    && h.left > c.left + 1.5 && h.right > c.right + 1.5, JSON.stringify({ haze: r.haze, clear: r.clear }));
+  check("...each eye its own mirror floor", h.mirrors === 2, String(h.mirrors));
   check("...you stand on the dance floor at your own height", Math.abs(r.eye[0]) < 0.6 && Math.abs(r.eye[2] - 8.5) < 0.8 && r.eye[1] > 1.2 && r.eye[1] < 2.0,
     JSON.stringify(r.eye));
   check("...the left stick walks you the way you look (towards the stage)", r.rig1[2] < r.rig0[2] - 0.6 && Math.abs(r.rig1[0] - r.rig0[0]) < 0.4,
@@ -928,7 +969,7 @@ add("fixturelooks", async () => {
       const S = window.SC;
       await S.scene({ venue: S.room(8, 10, 4),
         fixtures: [{ head_no: 1, model: "P", body: S.body("par", 25), x: 0, y: 1.0, z: 6, stance: "stand", kind: "floor", rot: [0, 0] }],
-        looks: { 1: { hex: "#ffd0a0", a } }, options: { haze: 0, quality: "high", house: 0.9, people: false, bloom: false },
+        looks: { 1: { hex: "#ffd0a0", a } }, options: { haze: 0, house: 0.9, people: false, bloom: false },
         camera: { pos: [0, 1.15, 7.0], target: [0, 1.1, 6] } });
     }, a);
     await shot();
@@ -967,7 +1008,7 @@ add("closeups", async () => {
     const fixtures = types.map((type, i) => ({ head_no: i + 1, model: type, body: S.body(type, 20, type === "bar" ? { cells: 8 } : type === "moving_bar" ? { cells: 6 } : {}),
       x: -4.5 + i * 1.0, y: 1.0, z: 6, stance: "stand", kind: "floor", rot: S.body(type, 20).moving ? null : [0, 0] }));
     const looks = Object.fromEntries(types.map((_, i) => [i + 1, { hex: "#ffffff", a: 0.0, ...(S.body(types[i], 20).moving ? { pan: 0.5, tilt: 0.3 } : {}) }]));
-    await S.scene({ venue: S.room(12, 12, 5), fixtures, looks, options: { haze: 0, quality: "high", house: 0.9, people: false },
+    await S.scene({ venue: S.room(12, 12, 5), fixtures, looks, options: { haze: 0, house: 0.9, people: false },
       camera: { pos: [0, 2.2, 12.5], target: [0, 1.1, 6] } });
   }, types);
   const big = await sc(async () => { await window.SC.settle(3); return window.stage.photo(1800); });
@@ -1072,7 +1113,7 @@ add("strobe", async () => {
   // rebuild its shaders at every flash: a stutter)
   const keys = await sc(async () => {
     const seen = new Set();
-    for (let i = 0; i < 12; i++) { await window.SC.settle(1); seen.add(window.stage._postKey); }
+    for (let i = 0; i < 12; i++) { await window.SC.settle(1); seen.add(window.stage._pipe("screen").key); }
     return [...seen];
   });
   check("a strobing light never rebuilds the picture's recipe", keys.length === 1, keys.join(" / "));
@@ -1085,30 +1126,42 @@ add("strobe", async () => {
   check("a steady light: back to resting when nothing moves", steady === false, String(steady));
 });
 
+// One quality, the best, on any computer: a quality an older desk saved
+// (Low, Medium) changes nothing - the beams stay light in the haze, 16
+// lights keep their shadows, the picture stays sharp.
 add("quality", async () => {
-  for (const q of ["fast", "auto", "high"]) {
-    await downlight({ options: { haze: 0.6, quality: q } });
+  const one = async (old) => {
+    await downlight({ options: { haze: 0.6, ...(old ? { quality: old } : {}) } });
+    const b = await lum(await at(0, 2.4, 6), 2), side = await lum(await at(2.2, 2.4, 6), 2);
     const c = await lum(await at(0, 0, 6)), off = await lum(await at(3.5, 0, 9));
-    check(`${q === "fast" ? "Low" : q === "auto" ? "Medium" : "High"} quality draws the pool`, c > off * 2 + 10, `${c.toFixed(1)} vs ${off.toFixed(1)}`);
+    const st = await sc(() => ({ vol: window.stage._volumetric(), shadows: window.stage.lightStats.shadows,
+      ratio: window.stage.q.ratio, keeps: "quality" in window.stage.options }));
+    return { b, side, c, off, ...st };
+  };
+  // (the haze drifts, so the beam's brightness at one point moves a little
+  // from picture to picture: it must show, not match to the unit)
+  const best = await one(null);
+  check("the pool on the floor and the beam as light in the haze", best.c > best.off * 2 + 10 && best.b > best.side + 6 && best.vol,
+    JSON.stringify(best));
+  for (const old of ["fast", "auto"]) {
+    const r = await one(old);
+    check(`an older desk's "${old}" quality changes nothing (the beam in the haze, the shadows, the sharpness)`,
+      r.vol && !r.keeps && r.shadows === best.shadows && r.ratio === best.ratio && r.b > r.side + 6 && Math.abs(r.c - best.c) < 5,
+      JSON.stringify(r));
   }
 });
 
-// How long a picture takes at each quality, in the look book's club
-// (software drawing here: only the qualities against each other mean
-// anything; CHECKS_GPU=1 for this computer's graphics card).
+// How long a picture takes, in the look book's club (software drawing here:
+// only good for spotting a change; CHECKS_GPU=1 for this computer's
+// graphics card).
 add("speed", async () => {
-  const out = [];
-  for (const q of ["fast", "auto", "high"]) {
-    await sc((q) => window.stage.setOptions({ quality: q }), q);
-    const ms = await sc(async () => {
-      await window.SC.settle(3);
-      const t0 = performance.now(), f0 = window.SC.frames();
-      await window.SC.settle(6, 60000);
-      return (performance.now() - t0) / Math.max(1, window.SC.frames() - f0);
-    });
-    out.push(`${q === "fast" ? "Low" : q === "auto" ? "Medium" : "High"} ${ms.toFixed(0)} ms`);
-  }
-  console.log("  ..   a picture takes: " + out.join(", "));
+  const ms = await sc(async () => {
+    await window.SC.settle(3);
+    const t0 = performance.now(), f0 = window.SC.frames();
+    await window.SC.settle(6, 60000);
+    return (performance.now() - t0) / Math.max(1, window.SC.frames() - f0);
+  });
+  console.log(`  ..   a picture takes ${ms.toFixed(0)} ms`);
 });
 
 // The look book: a small club - a stage, a truss of movers in pink and
@@ -1143,7 +1196,7 @@ add("lookbook", async () => {
         objects: [{ id: "dj", kind: "dj_booth", x: 0, z: 2, w: 2.4, d: 0.9, h: 1.1, y: 0.8 }],
         zones: [{ id: "df", kind: "dancefloor", points: [[-5, 6], [5, 6], [5, 14], [-5, 14]], y: 0, density: 0.6 }],
       }),
-      fixtures, looks, options: { haze: 0.6, quality: "high", house: 0.25, people: true },
+      fixtures, looks, options: { haze: 0.6, house: 0.25, people: true },
       camera: { pos: [0, 4.2, 20.5], target: [0, 2.2, 5] },
     });
   });

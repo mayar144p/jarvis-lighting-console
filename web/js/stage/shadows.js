@@ -5,7 +5,7 @@
 // stands in their way (one atlas of 4 x 4 cells), and the surface shader
 // darkens whatever is further from the lens than that.
 //
-// Up to 16 lights (High; Medium 6).  A light keeps its cell while it stays
+// Up to 16 lights, the brightest.  A light keeps its cell while it stays
 // among the brightest, and the pictures are drawn again only when a light
 // with one moved or the room changed - a rig that holds its position (most
 // of a show) costs nothing here.  How soft a light's shadow is follows its

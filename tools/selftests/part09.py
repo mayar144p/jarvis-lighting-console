@@ -2460,7 +2460,7 @@ def test_gobo_pictures() -> None:
 def test_shadows() -> None:
     """3D shadows: the brightest beams get a depth picture of the crowd,
     performers, objects and stage; the floor shader darkens what is behind
-    them; a toggle (Crowd menu) and the fast quality turn it off."""
+    them; a toggle (Crowd menu) turns it off."""
     print("3D shadows")
     st = ROOT / "web" / "js" / "stage"
     sh = (st / "shadows.js").read_text(encoding="utf-8")
@@ -2468,8 +2468,8 @@ def test_shadows() -> None:
     vj = (st / "venue.js").read_text(encoding="utf-8")
     sj = stage_js()
     sp = (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
-    # (what the shadows DO - 16 on High, 6 on Medium, not drawn again while
-    # nothing moves, half a beam stopped by a balcony - is drawn and read
+    # (what the shadows DO - 16 of them, not drawn again while nothing
+    # moves, half a beam stopped by a balcony - is drawn and read
     # back by tools/stagecheck.mjs; these only check the pieces are there)
     check("a depth atlas for the brightest beams, casters only, back faces",
           "SHADOW_SLOTS" in sh and "c.layers.set(CASTER_LAYER)" in sh and "THREE.BackSide" in sh
@@ -2477,14 +2477,14 @@ def test_shadows() -> None:
     check("the surface shader darkens what a caster hides from a beam",
           "const shadowAt = Fn(([i, wp])" in mj and "slot.greaterThanEqual(0)" in mj
           and 'arrayOf(SHADOW_SLOTS, () => new THREE.Matrix4(), "mat4")' in mj and "SHADOW_SLOTS = 16" in mj, "")
-    check("High: 16 beams cast shadows, Medium 6",
-          'q === "high" ? 16 : 6' in sj and "Math.min(SHADOW_SLOTS, slots, lights.length)" in sh, "")
+    check("16 beams cast shadows, on any computer",
+          "this.options.shadows === false ? 0 : SHADOW_SLOTS" in sj and "Math.min(SHADOW_SLOTS, slots, lights.length)" in sh, "")
     check("the crowd, performers, objects (not marks or haze areas) and the stage deck cast",
           "casts(buildCrowd(" in vj and "casts(buildPerformers(" in vj
           and 'if (o.kind !== "mark" && o.kind !== "haze") casts(g)' in vj
           and "skirt.layers.enable(CASTER_LAYER)" in vj, "")
-    check("on by default, off with the toggle or the fast quality",
-          "shadows: true" in sj and 'this.options.quality !== "fast"' in sj and "this.shadows.off()" in sj
+    check("on by default, off with the toggle",
+          "shadows: true" in sj and "this.shadows.off()" in sj
           and '"Shadows"' in sp and 'pref("shadows", "1")' in sp, "")
 
 
@@ -3663,9 +3663,9 @@ def test_usb_dmx() -> None:
 def test_3d_detail() -> None:
     """The 3D's detail (A9 step 2): gobos soften out of focus and with
     frost, a prism splits the pool and the gobo into three, gobo shafts in
-    the haze, shiny floors mirror the lenses (per floor type), quality named
-    High / Medium / Low with Low leaving the detail out; a light whose file
-    names gobo slots but has no pictures gets a drawn gobo per slot."""
+    the haze, shiny floors mirror the lenses (per floor type), one quality
+    (the best, the detail always drawn); a light whose file names gobo slots
+    but has no pictures gets a drawn gobo per slot."""
     print("3D detail: focus, frost, prism, gobo shafts, reflections")
     from app import engine as eng
     from app import fixlib
@@ -3677,28 +3677,30 @@ def test_3d_detail() -> None:
     dj = dialogs_js()
     lg = (st / "lightgrid.js").read_text(encoding="utf-8")
     check("each light carries blur (focus, frost) and prism to the shaders",
-          "uLook" in mj and "L[o + 13] = l.blur || 0; L[o + 14] = l.prism || 0" in lg and "L.beam.focus" in sj and "L.beam.prism" in sj, "")
+          "uLook" in mj + (st / "beams.js").read_text(encoding="utf-8") and "L[o + 13] = l.blur || 0; L[o + 14] = l.prism || 0" in lg and "L.beam.focus" in sj and "L.beam.prism" in sj, "")
     check("gobos soften, a prism makes its copies (one look at the picture a pixel)",
-          "const goboMask = (id, uv0, look, detail)" in mj and "mix(goboShape(id, uv), 0.55" in mj and "float(6.2831853).div(n)" in mj, "")
+          "const goboMask = (id, uv0, look)" in mj and "mix(goboShape(id, uv), 0.55" in mj and "float(6.2831853).div(n)" in mj, "")
+    bj = (st / "beams.js").read_text(encoding="utf-8")
     check("gobo shafts in the haze: the beam shader shows the same picture",
-          "a.mulAssign(goboMask(u.uGobo, uv, vec4(u.uLook.xyz, 0), detail).mul(0.95).add(0.2))" in mj and "u.uGobo.value = goboId" in sj, "")
+          "lit.mulAssign(goboMask(u.uGobo, uv, vec4(u.uLook.xyz, 0)))" in bj and "v.uGobo.value = goboId" in sj, "")
     check("shiny floors mirror the lenses, by floor type",
           "reflect(normalize(wp.sub(cameraPosition)), N)" in mj and "FLOOR_SHEEN" in vj and "black: 1" in vj and "grass: 0" in vj, "")
-    check("Low leaves the detail out (the shaders are built without it), Medium and High draw it",
-          "if (!detail) return goboShape(id, uv0)" in mj and "m.userData.detail(DETAIL.on)" in mj
-          and 'setDetail(this.scene, this.options.quality !== "fast")' in sj, "")
+    check("one quality: the detail always drawn, nothing left to switch it off (no simpler beams)",
+          "DETAIL" not in mj and "setDetail" not in sj and "userData.detail" not in mj + bj
+          and "beamMaterial" not in mj + sj and "_adapt(" not in sj, "")
     stage_dir = ROOT / "web" / "js" / "stage"
     check("the 3D runs on three.js's WebGPU renderer, no WebGL renderer or GLSL left",
-          "new THREE.WebGPURenderer(rendererOpts(" in sj and "new THREE.RenderPipeline(renderer)" in sj
+          "new THREE.WebGPURenderer(rendererOpts(" in sj and "new THREE.RenderPipeline(this.renderer)" in sj
           and not any("WebGLRenderer" in f.read_text(encoding="utf-8") or "ShaderMaterial(" in f.read_text(encoding="utf-8")
                       for f in stage_dir.glob("*.js")), "")
     check("a browser whose WebGPU can't run it (or has none) gets the same renderer on WebGL 2",
           'tex.createView({ swizzle: "rgba" })' in sj and "forceWebGL: true" in sj and "export const GPU_DEVICE = await probeWebGPU()" in sj, "")
     check("fog, CO2, flame and confetti are sprites (WebGPU points are one pixel)",
           "new THREE.Sprite(m)" in (stage_dir / "sfx.js").read_text(encoding="utf-8"), "")
-    check("quality is named Max / Medium / Low, Max the standard",
-          "High: sharpest" in dj and "Medium: beams in the haze" in dj and "adapts to this computer" in dj and "Low: older laptops" in dj
-          and '|| "high"; }' in dj and 'pref("quality", "high")' in (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8"), "")
+    check("no quality to choose: Settings says the 3D always draws at its best, an older desk's choice is dropped",
+          "The 3D always draws at its best" in dj and "haze.quality" not in dj and "Medium:" not in dj
+          and "quality" not in (ROOT / "web" / "app" / "stagepanel.js").read_text(encoding="utf-8")
+          and "delete this.options.quality" in sj, "")
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         db = tmp / "f.db"
@@ -3856,7 +3858,8 @@ def test_real_light_look() -> None:
     check("the 3D reads the look: facets, turns, shake, scroll, split, strobe kinds",
           all(k in sj for k in ("lk.prism", "lk.prot", "lk.grot", "lk.gshake", "lk.gscroll", "lk.cscroll", "lk.split", "lk.smode")), "")
     check("prisms of any facet count, linear prisms, and half beams in the shader",
-          "float(6.2831853).div(n)" in mj and "a linear prism" in mj and "look.w.greaterThan(0.5)" in mj and "uColor2" in mj, "")
+          "float(6.2831853).div(n)" in mj and "a linear prism" in mj and "look.w.greaterThan(0.5)" in mj
+          and "uColor2" in (ROOT / "web" / "js" / "stage" / "beams.js").read_text(encoding="utf-8"), "")
     check("each head of a multi-head model can pan", "sk.cells.push({ pan: p, tilt: t, lens })" in mo and "c.pan.rotation.y" in sj, "")
 
 
@@ -5820,8 +5823,8 @@ console.log(JSON.stringify(out));
 def test_sweep3_fixes() -> None:
     """Sweep 3: the actions that had no test of their own, and its fixes -
     127.0.0.1 is this computer (no false network warning), a rebuilt room
-    keeps the lights on its new rigging, the 3D's auto quality counts very
-    slow frames, the Output choices aren't cut off, the groups fold."""
+    keeps the lights on its new rigging, the 3D never lowers its quality on
+    a slow computer, the Output choices aren't cut off, the groups fold."""
     print("Sweep 3: the untested actions; loopback, rebuilt rooms, slow 3D")
     from app import engine as eng, netif
     lan = [{"name": "eth", "ip": "192.0.2.2", "mask": "255.255.255.0"}]
@@ -5886,8 +5889,11 @@ def test_sweep3_fixes() -> None:
         finally:
             e.shutdown()
     st = stage_js()
-    check("3D auto quality counts very slow frames (not only < 200 ms) and goes below half",
-          "dt > 2000" in st and "MIN = 0.35" in st and "q.lite" in st)
+    check("the 3D never lowers its quality by itself (a slow computer shows fewer pictures, not simpler ones)",
+          "_adapt" not in st and "q.lite" not in st and "screenRatio()" in st)
+    check("...and a computer slow over every picture leaves the page time between them (the desk's buttons answer)",
+          "this._slow = took > 250 ? this._slow + 1 : 0;" in st and "if (t < this._restUntil) return;" in st
+          and "this._slow >= 3 ? performance.now() + Math.min(took, 2000) : 0" in st)
     dl = dialogs_js()
     css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
     check("Output's choices have room (not cut off)", "out-grid" in dl and ".out-grid" in css)
@@ -10187,8 +10193,8 @@ def test_desktop_frame() -> None:
     check("the 3D window comes to the front, and can be kept on top", "win.moveTop();" in mj and "win.focus();" in mj
           and '"Keep the 3D view on top"' in mj and 'setAlwaysOnTop(!!on, "floating")' in mj, "")
     mn = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
-    check("a setting changed in one window reaches the others (3D quality, look, Gig mode)",
-          'window.addEventListener("storage"' in mn and 'e.key === "haze.quality"' in mn and 'e.key === "haze.theme"' in mn, "")
+    check("a setting changed in one window reaches the others (calm flashing, look, Gig mode)",
+          'window.addEventListener("storage"' in mn and 'e.key === "haze.calm"' in mn and 'e.key === "haze.theme"' in mn, "")
 
     ic = (ROOT / "web" / "app" / "icons.js").read_text(encoding="utf-8")
     dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
@@ -10246,9 +10252,9 @@ def test_council_fixes() -> None:
           and (ROOT / "tools" / "safetycheck.mjs").exists(), "")
 
     mn = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
-    check("the 3D starts at High: a quality saved before it was the standard goes back to High once",
-          'localStorage.getItem("haze.qualityV") !== "2"' in mn and 'localStorage.setItem("haze.quality", "high");' in mn
-          and 'localStorage.setItem("haze.qualityV", "2")' in (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8"), "")
+    check("one quality, the best: a quality an older desk saved (Low, Medium) goes",
+          'localStorage.removeItem("haze.quality")' in mn and 'localStorage.removeItem("haze.qualityV")' in mn
+          and "haze.quality" not in (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8"), "")
 
 
 

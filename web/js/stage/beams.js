@@ -1,4 +1,4 @@
-// Beams as light in the air (Medium and High quality).
+// Beams as light in the air.
 //
 // What you see of a beam in haze is light the haze scatters towards you,
 // all along your line of sight through the beam.  So for every pixel a
@@ -83,7 +83,7 @@ export const VOL = {
   z01: uniform(1),                   // its depth runs 0..1 (WebGPU) or -1..1 (WebGL 2)
   near: uniform(0.05),               // the camera's near and far (the stage sets them)
   far: uniform(400),
-  steps: uniform(16, "int"),         // most steps along a line of sight (High 24, Medium 12)
+  steps: uniform(24, "int"),         // most steps along a line of sight (the mirror's view: 8)
   haze: texture3D(hazeTexture()),
   g: uniform(0.35),                  // how much the haze favours forwards (0 = evenly)
   gain: uniform(0.25),               // the overall brightness of beams in haze
@@ -155,7 +155,7 @@ export function volumeGeometry() {
 }
 
 // ------------------------------------------------------------ the shader
-const light = (u, detail) => Fn(() => {
+const light = (u) => Fn(() => {
   const C = cameraPosition;
   const D = normalize(positionWorld.sub(C)).toVar();
   const V = u.uAxis, O = u.uOrigin;
@@ -224,7 +224,7 @@ const light = (u, detail) => Fn(() => {
       If(gobo, () => {
         const cs = cos(u.uGoboRot), sn = sin(u.uGoboRot);
         const uv = vec2(cs.mul(uv0.x).add(sn.mul(uv0.y)), sn.negate().mul(uv0.x).add(cs.mul(uv0.y)));
-        lit.mulAssign(goboMask(u.uGobo, uv, vec4(u.uLook.xyz, 0), detail));
+        lit.mulAssign(goboMask(u.uGobo, uv, vec4(u.uLook.xyz, 0)));
       });
       If(u.uShadow.greaterThanEqual(0), () => {
         lit.mulAssign(shadowTap(u.uShadow, P));
@@ -267,11 +267,7 @@ export function volumeBeamMaterial() {
   const t = positionGeometry.y;
   const r = u.uR0.add(t.mul(u.uLen).mul(u.uTan)).mul(1.04).add(0.01);
   m.positionNode = vec3(positionGeometry.x.mul(r), t.mul(u.uLen), positionGeometry.z.mul(r));
-  m.userData.detail = (on) => {
-    m.userData.detailOn = on;
-    m.colorNode = vec4(light(u, on), 1);
-  };
-  m.userData.detail(true);
+  m.colorNode = vec4(light(u), 1);
   return m;
 }
 

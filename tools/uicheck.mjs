@@ -388,15 +388,10 @@ for (const [width, tall] of SIZES) {
   const p = await browser.newPage({ viewport: { width, height } });
   p.on("pageerror", (e) => { pageErrors.push(String((e && e.stack) || e.message || e)); });
   p.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource/.test(m.text())) pageErrors.push("console: " + m.text().slice(0, 300)); });
-  // the 3D drawn in software (no graphics card) at 1920 x 1080 kept the
-  // page too busy for clicks on CI's machines (the nightly: 03/04/14/15
-  // timed out there, never on a faster machine): draw it Fast, as with the
-  // big rig - the screen check is about the panels, not the 3D's detail
-  // (and with Max the standard 3D quality now, at every size)
-  const fast = BIG || !GPU;
-  await p.addInitScript((fast) => {
-    try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.people", "0"); localStorage.removeItem("haze.bottom"); if (fast) localStorage.setItem("haze.quality", "fast"); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ }
-  }, fast);
+  // (the 3D at its one quality, the best, at every size)
+  await p.addInitScript(() => {
+    try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.people", "0"); localStorage.removeItem("haze.bottom"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ }
+  });
   await p.goto(BASE + "?3d=1");   // (the 3D view is off by default: these steps cover it too)
   await p.waitForTimeout(1500);
   if (!rigBuilt) { await buildRig(p); rigBuilt = true; await p.reload(); await p.waitForTimeout(1800); }

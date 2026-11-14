@@ -46,7 +46,7 @@ export function openVideoDialog(stage) {
   const liveRows = [h("label.field", h("span", "Size"), size)];
   const bestRows = [h("label.field", h("span", "Size"), filmSize), h("label.field", h("span", "Pictures"), fps),
     h("p.muted.small", "The show plays once while the desk notes every look and where the camera is; then the 3D draws "
-      + "every picture at full quality (High, every shadow) as long as each takes, and makes the video. "
+      + "every picture whole (every beam, every shadow) as long as each takes, and makes the video. "
       + "Smooth on any computer - a slow one just takes longer. The timeline's music goes in.")];
   const saved = h("p.muted.small", "");
   const sync = () => {

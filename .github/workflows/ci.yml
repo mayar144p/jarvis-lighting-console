@@ -88,7 +88,7 @@ jobs:
         run: node tools/remotecheck.mjs
       - name: The desk and the phone show the same (a long run of presses from both)
         run: node tools/synccheck.mjs
-      - name: What the 3D draws (pools, beams in haze, gobos, colours, every quality - read back pixel by pixel)
+      - name: What the 3D draws (pools, beams in haze, gobos, colours, both eyes in VR - read back pixel by pixel)
         run: node tools/stagecheck.mjs
       - name: NDI video in and out (a stand-in NDI runtime, built here, and a stand-in desktop link)
         run: |

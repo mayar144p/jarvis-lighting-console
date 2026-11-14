@@ -101,12 +101,9 @@ function sideLabels(R, orient, outline) {
   return g;
 }
 import { SfxSystem } from "./sfx.js";
-import { Shadows } from "./shadows.js";
+import { Shadows, SHADOW_SLOTS } from "./shadows.js";
 import { wireUp, wireTint, WIRE, WIRE_ROOM, WIRE_SEL } from "./wire.js";
-import {
-  LIGHTS, MAX_BOUNCE, beamGeometry, beamMaterial, glowMap, streakMap, GoboAtlas,
-  setDetail,
-} from "./materials.js";
+import { LIGHTS, MAX_BOUNCE, glowMap, streakMap, GoboAtlas } from "./materials.js";
 import { GPU_DEVICE, rendererOpts } from "./gpu.js";
 import { pictureOut, exposureFor } from "./picture.js";
 import { VOL, MAX_AREAS, MAX_CLOUDS, volumeGeometry, volumeBeamMaterial, beamUpsample } from "./beams.js";
@@ -122,6 +119,10 @@ import {
 export { GPU_DEVICE };
 export { FixturePreview } from "./preview.js";
 
+/** The screen's own sharpness: its pixels a point of the page, up to two
+ *  (a 4K laptop's) - more costs four times the drawing for nothing seen. */
+const screenRatio = () => Math.min(window.devicePixelRatio || 1, 2);
+
 export class Stage {
   constructor(container, opts = {}) {
     this.el = container;
@@ -131,8 +132,10 @@ export class Stage {
     if (this.gobos) this.gobos.onReady = () => { this.dirty = true; };
     this.fixtures = new Map();            // head_no -> instance
     this.selected = new Set();
+    // (one quality, the best, whatever the computer: every beam as light in
+    // the haze, 16 shadows, the mirror floor, the glow, smooth edges)
     this.options = { haze: 0.6, bloom: true, people: true, labels: true, house: 0.35,
-      quality: "high", zones: false, dance: true, shadows: true,
+      zones: false, dance: true, shadows: true,
       exposure: 0,          // the picture's brightness, in stops (-2 .. +2): the lights don't change
       calm: false,          // calm flashing: strobes shimmer instead of flashing the screen
       bounce: true,         // light bounced off the pools and the screens lights the room
@@ -147,7 +150,9 @@ export class Stage {
     this.planes = [];
     this.boxes = [];
     this.built = null;
-    this.q = { cap: 1.5, ratio: 1.5, ema: 16, slowSince: 0, fastSince: 0, last: 0 };
+    this.q = { ratio: screenRatio() };         // pixels drawn a point of the page
+    this._restUntil = 0;                         // a slow computer's pause between pictures (_loop)
+    this._slow = 0;                              // slow pictures in a row
     this.lastRender = 0;
     // this view can send the 3D out as NDI (the desktop app picks the window)
     ndiOffer(this, true);
@@ -175,8 +180,6 @@ export class Stage {
     }
     this.ready = false;
     this.renderer = renderer;
-    this.q.cap = Math.min(window.devicePixelRatio || 1, 1.5);
-    this.q.ratio = this.q.cap;
     renderer.setPixelRatio(this.q.ratio);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     // the colour curve is the pipeline's own last step (picture.js: the
@@ -235,9 +238,8 @@ export class Stage {
     });
 
     // the picture: the scene, plus a glow round the bright parts (bloom);
-    // tone mapping and colour space happen at the end of the pipeline
-    this.post = new THREE.RenderPipeline(renderer);
-    this._makePipeline(false);
+    // the true colour happens at the end of the pipeline (_pipe, _recipe)
+    this._pipes = {};
     // the renderer starts asynchronously (it asks the graphics card first)
     renderer.init().then(() => {
       if (this.destroyed) return;
@@ -258,8 +260,8 @@ export class Stage {
     scene.add(this.rigGroup);
     this.beamGroup = new THREE.Group();
     scene.add(this.beamGroup);
-    // the beams in haze (Medium and High): their own scene, drawn after the
-    // room into a half-size picture of their own (beams.js)
+    // the beams in haze: their own scene, drawn after the room into a
+    // half-size picture of their own (beams.js)
     this.beamScene = new THREE.Scene();
     this.projectors = new Projectors(this.beamScene);   // video thrown onto the room (projectors.js)
 
@@ -270,6 +272,7 @@ export class Stage {
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
+    this._watchSharpness();
     this.resize();
     this._applyHouse();
     this.buildVenue(null, []);
@@ -280,15 +283,32 @@ export class Stage {
 
   // ---------------------------------------------------------------- sizing
   resize() {
-    if (!this.renderer || this.filming) return;        // (a film keeps its own size: beginFilm)
+    // (a film keeps its own size: beginFilm; a headset its own: vr.js)
+    if (!this.renderer || this.filming || this.xrOn) return;
     const w = Math.max(1, this.el.clientWidth);
     const h = Math.max(1, this.el.clientHeight);
+    // the screen's own sharpness, unless a still or a recording wants more
+    if (!this.recording && !this._still) this.q.ratio = screenRatio();
     this.renderer.setPixelRatio(this.q.ratio);
     this.renderer.setSize(w, h, false);
     this.persp.aspect = w / h;
     this.persp.updateProjectionMatrix();
     this._orthoFrustum();
     this.dirty = true;
+  }
+
+  /** The window moved to a screen of another sharpness (a laptop's and a
+   *  4K monitor's): drawn at that one's. */
+  _watchSharpness() {
+    if (typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    const moved = () => {
+      mq.removeEventListener("change", moved);
+      if (this.destroyed) return;
+      this.resize();
+      this._watchSharpness();
+    };
+    mq.addEventListener("change", moved);
   }
 
   // ----------------------------------------------------------------- venue
@@ -418,12 +438,6 @@ export class Stage {
   _buildBeams(inst) {
     for (const b of inst.beams) this._dropBeam(b);
     inst.beams = inst.sk.emitters.map((em) => {
-      const mat = beamMaterial();
-      const mesh = new THREE.Mesh(beamGeometry(), mat);
-      mesh.frustumCulled = false;
-      mesh.visible = false;
-      mesh.renderOrder = 2;
-      this.beamGroup.add(mesh);
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({
         map: glowMap(), blending: THREE.AdditiveBlending, depthWrite: false,
         transparent: true, toneMapped: false,
@@ -438,18 +452,17 @@ export class Stage {
       streak.visible = false;
       streak.renderOrder = 3;
       this.beamGroup.add(streak);
-      // the same beam as light in the air (Medium and High)
+      // the beam as light in the air (beams.js)
       const vol = new THREE.Mesh(volumeGeometry(), volumeBeamMaterial());
       vol.frustumCulled = false;
       vol.visible = false;
       this.beamScene.add(vol);
-      return { em, mesh, mat, glow, streak, vol, shadowSlot: -1, origin: new THREE.Vector3(), dir: new THREE.Vector3() };
+      return { em, glow, streak, vol, shadowSlot: -1, origin: new THREE.Vector3(), dir: new THREE.Vector3() };
     });
   }
 
   _dropBeam(b) {
-    this.beamGroup.remove(b.mesh, b.glow, b.streak);
-    b.mat.dispose();
+    this.beamGroup.remove(b.glow, b.streak);
     b.glow.material.dispose();
     b.streak.material.dispose();
     if (b.vol) {
@@ -634,6 +647,7 @@ export class Stage {
   setOptions(o) {
     const before = { ...this.options };
     Object.assign(this.options, o || {});
+    delete this.options.quality;          // (an older desk's choice: there is one quality now)
     if (this.people) this.people.visible = !!this.options.people;
     if (before.people !== this.options.people) this._shadowRoom++;
     if (this.built && this.built.zones) this.built.zones.visible = !!this.options.zones;
@@ -644,15 +658,6 @@ export class Stage {
     if (before.exposure !== this.options.exposure) this._applyExposure();
     if (before.hazeAuto !== this.options.hazeAuto) this.atmos.clear();      // Auto starts from clear air
     if (!!before.lightMap !== !!this.options.lightMap) this._applyLightMap();
-    if (before.quality !== this.options.quality) {
-      const dpr = window.devicePixelRatio || 1;
-      this.q.cap = this.options.quality === "high" ? Math.min(dpr, 2)
-        : this.options.quality === "fast" ? Math.min(dpr, 0.75) : Math.min(dpr, 1.5);
-      this.q.ratio = this.q.cap;
-      this.resize();
-      setDetail(this.scene, this.options.quality !== "fast");
-      if (this.post && (this.options.quality === "high") !== this._smooth) this._makePipeline(this.options.quality === "high");
-    }
     this.dirty = true;
   }
 
@@ -685,22 +690,15 @@ export class Stage {
 
   /**
    * A film drawn frame by frame (movierender.js): the 3D at W x H pixels,
-   * at full quality (High, every shadow, no automatic lowering), the
-   * perspective view, nothing selected; the desk's own looks wait.
+   * the perspective view, nothing selected; the desk's own looks wait.
    * filmLooks() / filmFrame() then draw it on the film's clock; endFilm()
    * puts everything back.
    */
   beginFilm(W, H) {
-    this.filming = { quality: this.options.quality, ratio: this.q.ratio, selected: this.selected, lite: this.q.lite };
+    this.filming = { ratio: this.q.ratio, selected: this.selected };
     this.recording = this.recording || { keep: this.q.ratio, film: true };
     if (!this.camera.isPerspectiveCamera) this._perspective();
     this.selected = new Set();
-    this.q.lite = false;
-    if (this.options.quality !== "high") {
-      this.options.quality = "high";
-      setDetail(this.scene, true);
-      if (this.post && !this._smooth) this._makePipeline(true);
-    }
     this.renderer.setPixelRatio(1);
     this.renderer.setSize(W, H, false);
     this.persp.aspect = W / H;
@@ -744,12 +742,6 @@ export class Stage {
     if (this._filmRT) { this._filmRT.dispose(); this._filmRT = null; }
     if (this.recording && this.recording.film) this.recording = null;
     this.selected = f.selected;
-    this.q.lite = f.lite;
-    if (this.options.quality !== f.quality) {
-      this.options.quality = f.quality;
-      setDetail(this.scene, f.quality !== "fast");
-      if (this.post && (f.quality === "high") !== this._smooth) this._makePipeline(f.quality === "high");
-    }
     this.q.ratio = f.ratio;
     this.resize();
     // the desk's looks again, from where the show is now
@@ -1671,11 +1663,21 @@ export class Stage {
     if (this.filming || this.xrOn) return;
     // hidden: the window, or a workspace with no 3D view (nothing to draw)
     if (document.hidden || document.body.classList.contains("ws-nostage")) return;
-    this._tick(performance.now(), false);
+    // a computer that takes long over every picture (a quarter of a second
+    // or more, three in a row: no graphics card - not one slow picture
+    // while new shaders are made) leaves the rest of the page, the desk's
+    // own buttons, as long again before the next one (two seconds at
+    // most): fewer pictures a second, never a simpler picture
+    const t = performance.now();
+    if (t < this._restUntil) return;
+    if (!this._tick(t, false)) return;
+    const took = performance.now() - t;
+    this._slow = took > 250 ? this._slow + 1 : 0;
+    this._restUntil = this._slow >= 3 ? performance.now() + Math.min(took, 2000) : 0;
   }
 
   /** One picture at time `now` (ms): everything moves on to then and, if
-   *  anything changed (or `force`: a film's frame), it is drawn. */
+   *  anything changed (or `force`: a film's frame), it is drawn (true). */
   _tick(now, force) {
     let motion = false;
 
@@ -1774,10 +1776,9 @@ export class Stage {
     this._drawScreens(now);
 
     this.dirty = false;
-    this._adapt(now);
     this.lastRender = now;
     this._drawCellMarks();
-    this._present(!this.wire && !!this.options.bloom && this.q.ratio > 0.55);
+    this._present(!this.wire && !!this.options.bloom);
     this._ndiSend(now);
     this._drawLabels();
     // the frame rate shown on the toolbar: pictures drawn in the last second
@@ -1789,6 +1790,7 @@ export class Stage {
     }
     this._lastDraw = now;
     if (this.opts.onFrame) this.opts.onFrame(now);
+    return true;
   }
 
   /** The haze the hazers make (atmos.js): each hazer in the rig and what
@@ -1849,18 +1851,10 @@ export class Stage {
     ndiSendFrame(W, H, ctx.getImageData(0, 0, W, H).data, o.fps || 30);
   }
 
-  /** Smooth edges on High: a last pass over the finished picture (FXAA).
-   *  (The room is no longer multisampled: the beams read its depth.) */
-  _makePipeline(smooth) {
-    this._smooth = !!smooth;
-    this._postKey = null;
-    this._bloomOn = null;
-  }
-
-  /** Beams as light in the air: Medium and High, with haze, in the 3D view
-   *  (not the flat line drawings), unless auto quality is down to the bone. */
+  /** Beams as light in the air: with haze, in the 3D view (not the flat
+   *  line drawings, not the light map). */
   _volumetric() {
-    return this.options.quality !== "fast" && !this.q.lite && !this.wire && !this.options.lightMap && !this.xrOn
+    return !this.wire && !this.options.lightMap
       && (this._hazeNow() > 0.01 || VOL.areaCount.value > 0 || VOL.cloudCount.value > 0);
   }
 
@@ -1873,12 +1867,11 @@ export class Stage {
   /** How much haze the 3D shows now, 0..1 (the Haze slider's label). */
   hazeLevel() { return this._hazeNow(); }
 
-  /** The pictures the frame is drawn into, at the canvas's size (the beams
-   *  at half of it). */
-  _targets() {
-    const r = this.renderer;
-    const size = r.getDrawingBufferSize(this._dbs || (this._dbs = new THREE.Vector2()));
-    const w = Math.max(1, Math.floor(size.x)), h = Math.max(1, Math.floor(size.y));
+  /** The pictures a view is drawn into, w x h pixels (the beams at half
+   *  of it). */
+  _targets(w, h) {
+    w = Math.max(1, Math.floor(w));
+    h = Math.max(1, Math.floor(h));
     if (!this.sceneRT) {
       this.sceneRT = new THREE.RenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: true });
       this.sceneRT.depthTexture = new THREE.DepthTexture(w, h);
@@ -1894,88 +1887,175 @@ export class Stage {
     this._beamSize.value.set(bw, bh);
   }
 
+  /** The picture's last steps for one view - the screen's, or one eye's in
+   *  VR: each has its own, as the glow is worked out once a picture. */
+  _pipe(name) {
+    return this._pipes[name] || (this._pipes[name] = { post: new THREE.RenderPipeline(this.renderer), key: null, bloom: null });
+  }
+
+  /** What the last steps do: the beams over the room, the glow round the
+   *  bright parts, the true colour (picture.js), smooth edges (FXAA).  The
+   *  recipe depends on these only, never on which beams are lit: a strobe
+   *  would otherwise rebuild it at every flash. */
+  _recipe(pipe, glow, vol, fx, lux) {
+    const key = `${glow}|${vol}|${fx}|${lux}`;
+    if (key === pipe.key) return;
+    pipe.key = key;
+    let hdr = this._sceneTex;
+    if (vol) hdr = hdr.add(beamUpsample(this.beamRT.texture, this._beamSize));
+    if (pipe.bloom) pipe.bloom.dispose();
+    // (the glow sees the light as the standard exposure would: a bright
+    // sky, exposed darker, mustn't glow all over - _applyExposure)
+    const bs = this._bloomScale || (this._bloomScale = uniform(1));
+    pipe.bloom = glow ? bloom(hdr.mul(bs), 0.55, 0.4, 0.9) : null;
+    // the light map's false colours go to the screen as they are (the
+    // legend's colours): no exposure, no curve, no glow
+    let out = lux ? renderOutput(hdr, THREE.NoToneMapping, THREE.SRGBColorSpace) : pictureOut(glow ? hdr.add(pipe.bloom.div(bs)) : hdr);
+    if (fx) out = fxaa(out);
+    pipe.post.outputColorTransform = false;           // the true-colour step does it (picture.js)
+    pipe.post.outputNode = out;
+    pipe.post.needsUpdate = true;
+  }
+
   /** Draw the frame: the room (with its depth), the beams in haze over it,
-   *  the glow, the true-colour step and, on High, smooth edges. */
+   *  the glow, the true colour and smooth edges - in VR the same for each
+   *  eye (_presentEyes). */
   _present(glow) {
+    if (this.xrOn) { this._presentEyes(glow); return; }
     const r = this.renderer;
-    if (this.xrOn) {
-      // the headset (vr.js): both eyes straight from the scene - the simpler
-      // beams, the true colour as its tone mapping, no mirror
-      this.mirror.off();
-      r.setRenderTarget(null);
-      r.render(this.scene, this.camera);
-      return;
-    }
-    this._targets();
-    // (the picture's recipe depends on the quality only, never on which
-    // beams are lit: a strobe would otherwise rebuild it at every flash)
+    const size = r.getDrawingBufferSize(this._dbs || (this._dbs = new THREE.Vector2()));
+    const keep = r.getRenderTarget();
+    // (a film on WebGPU: into a picture of its own, read back for the encoder)
+    this._view(glow, this.camera, size.x, size.y, this._pipe("screen"), this.filming && this._filmRT ? this._filmRT : keep);
+    r.setRenderTarget(keep);
+  }
+
+  /**
+   * One view of the room, whole, as `cam` sees it at w x h pixels: the
+   * floor's mirror, the room with its depth, the beams in haze, then the
+   * last steps into `out` (null: the screen, or the headset - `eye`: only
+   * that eye's part of its picture).
+   */
+  _view(glow, cam, w, h, pipe, out, eye = null) {
+    const r = this.renderer;
+    this._targets(w, h);
     const vol = this._volumetric();
-    const fx = this._smooth && !this.wire;
     const lux = !!this.options.lightMap;
     if (lux) glow = false;
-    const key = `${glow}|${vol}|${fx}|${lux}`;
-    if (key !== this._postKey) {
-      this._postKey = key;
-      let hdr = this._sceneTex;
-      if (vol) hdr = hdr.add(beamUpsample(this.beamRT.texture, this._beamSize));
-      if (this.bloom) this.bloom.dispose();
-      // (the glow sees the light as the standard exposure would: a bright
-      // sky, exposed darker, mustn't glow all over - _applyExposure)
-      const bs = this._bloomScale || (this._bloomScale = uniform(1));
-      this.bloom = glow ? bloom(hdr.mul(bs), 0.55, 0.4, 0.9) : null;
-      // the light map's false colours go to the screen as they are (the
-      // legend's colours): no exposure, no curve, no glow
-      let out = lux ? renderOutput(hdr, THREE.NoToneMapping, THREE.SRGBColorSpace) : pictureOut(glow ? hdr.add(this.bloom.div(bs)) : hdr);
-      if (fx) out = fxaa(out);
-      this.post.outputColorTransform = false;           // the true-colour step does it (picture.js)
-      this.post.outputNode = out;
-      this.post.needsUpdate = true;
-      this._bloomOn = glow;
-    }
-    const keep = r.getRenderTarget();
-    // the floor's mirror first (the floor's shader reads it): Medium and
-    // High, a shiny floor, the camera above it
+    this._recipe(pipe, glow, vol, !this.wire, lux);
+    const z01 = r.coordinateSystem === THREE.WebGPUCoordinateSystem ? 1 : 0;
+    // the floor's mirror first (the floor's shader reads it): a shiny
+    // floor, the camera above it
     const fm = this.built && this.built.mirror;
-    if (fm && fm.sheen > 0.05 && this.options.quality !== "fast" && !this.wire && !this.q.lite && !lux
-        && this.options.mirror !== false && this.camera.isPerspectiveCamera && this.camera.position.y > 0.05 && !this.options.lightsOnly) {
-      const k = this.options.quality === "high" ? 0.5 : 0.25;
+    cam.updateMatrixWorld();
+    if (fm && fm.sheen > 0.05 && !this.wire && !lux && this.options.mirror !== false && cam.isPerspectiveCamera
+        && cam.matrixWorld.elements[13] > 0.05 && !this.options.lightsOnly) {
       const ms = this._ms || (this._ms = new THREE.Vector2());
-      ms.set(this.sceneRT.width * k, this.sceneRT.height * k);
-      VOL.z01.value = r.coordinateSystem === THREE.WebGPUCoordinateSystem ? 1 : 0;
-      VOL.near.value = this.camera.near;
-      VOL.far.value = this.camera.far;
-      this.mirror.render(r, this.scene, this.beamScene, this.camera, ms,
+      ms.set(this.sceneRT.width * 0.5, this.sceneRT.height * 0.5);
+      VOL.z01.value = z01;
+      VOL.near.value = cam.near;
+      VOL.far.value = cam.far;
+      this.mirror.render(r, this.scene, this.beamScene, cam, ms,
         { beams: vol && this.beamScene.children.some((m) => m.visible), hide: fm.hide, steps: 8 });
     } else this.mirror.off();
     r.setRenderTarget(this.sceneRT);
-    r.render(this.scene, this.camera);
+    r.render(this.scene, cam);
     if (vol) {
-      VOL.z01.value = r.coordinateSystem === THREE.WebGPUCoordinateSystem ? 1 : 0;
-      VOL.near.value = this.camera.near;
-      VOL.far.value = this.camera.far;
-      VOL.steps.value = this.options.quality === "high" ? 24 : 12;
+      VOL.z01.value = z01;
+      VOL.near.value = cam.near;
+      VOL.far.value = cam.far;
+      VOL.steps.value = 24;
       const clear = r.getClearColor(this._clr || (this._clr = new THREE.Color())), alpha = r.getClearAlpha();
       r.setClearColor(0x000000, 0);
       r.setRenderTarget(this.beamRT);
-      if (this.beamScene.children.some((m) => m.visible)) r.render(this.beamScene, this.camera);
+      if (this.beamScene.children.some((m) => m.visible)) r.render(this.beamScene, cam);
       else r.clear();
       r.setClearColor(clear, alpha);
     }
-    // (a film on WebGPU: into a picture of its own, read back for the encoder)
-    r.setRenderTarget(this.filming && this._filmRT ? this._filmRT : keep);
-    this.post.render();
-    if (this.filming && this._filmRT) r.setRenderTarget(keep);
+    r.setRenderTarget(out);
+    const xr = eye && r.getOutputRenderTarget();
+    if (xr) {
+      // only this eye's part of the headset's picture (its clear too)
+      xr.viewport.copy(eye.viewport);
+      xr.scissor.copy(eye.viewport);
+      r.setScissorTest(true);
+    }
+    pipe.post.render();
+    if (xr) {
+      r.setScissorTest(false);
+      xr.viewport.set(0, 0, xr.width, xr.height);
+      xr.scissor.set(0, 0, xr.width, xr.height);
+    }
+  }
+
+  /**
+   * VR (vr.js): the whole picture for each eye - the mirror floor, the
+   * beams as light in the haze, the glow, the true colour, smooth edges -
+   * drawn as the screen's is, at the eye's own size, into its half of the
+   * headset's picture.
+   */
+  _presentEyes(glow) {
+    const r = this.renderer, xr = r.xr;
+    if (!r.getOutputRenderTarget()) return;
+    // where the headset is now, and so each eye (three.js works this out
+    // itself only for a scene drawn straight to the headset)
+    if (this.camera.parent) this.camera.parent.updateWorldMatrix(true, false);
+    xr.updateCamera(this.camera);
+    const eyes = xr.getCamera().cameras;
+    const full = r.getDrawingBufferSize(this._xrSize || (this._xrSize = new THREE.Vector2()));
+    const W = full.x, H = full.y;
+    // the pipeline's own pictures (the glow, smooth edges) at the eye's size
+    const sized = typeof r._setXRLayerSize === "function";
+    try {
+      eyes.forEach((eye, i) => {
+        const w = Math.max(1, Math.round(eye.viewport.z)), h = Math.max(1, Math.round(eye.viewport.w));
+        if (sized) r._setXRLayerSize(w, h);
+        this._view(glow, this._eyeCam(i, eye), w, h, this._pipe("eye" + i), null, eye);
+      });
+    } finally {
+      if (sized) r._setXRLayerSize(W, H);
+    }
+  }
+
+  /** A headset's eye as a camera of its own (the views are drawn one at a
+   *  time): where it is, and its own lopsided view. */
+  _eyeCam(i, eye) {
+    const list = this._eyes || (this._eyes = []);
+    let c = list[i];
+    if (!c) {
+      c = list[i] = new THREE.PerspectiveCamera();
+      c.matrixAutoUpdate = false;
+      c.matrixWorldAutoUpdate = false;
+      c.userData.eye = true;                // (its mirror copies its view: reflect.js)
+    }
+    c.matrix.copy(eye.matrixWorld);
+    c.matrixWorld.copy(eye.matrixWorld);
+    c.matrixWorldInverse.copy(eye.matrixWorldInverse);
+    c.matrixWorld.decompose(c.position, c.quaternion, c.scale);
+    c.coordinateSystem = this.renderer.coordinateSystem;
+    c.projectionMatrix.copy(eye.projectionMatrix);
+    c.projectionMatrixInverse.copy(eye.projectionMatrixInverse);
+    // its near and far from its own view (the beams in haze end at the
+    // room's depth with them)
+    const e = c.projectionMatrix.elements;
+    if (c.coordinateSystem === THREE.WebGPUCoordinateSystem) { c.near = e[14] / e[10]; c.far = e[14] / (e[10] + 1); }
+    else { c.near = e[14] / (e[10] - 1); c.far = e[14] / (e[10] + 1); }
+    c.fov = 2 * Math.atan(1 / e[5]) / DEG;
+    c.aspect = e[5] / e[0];
+    return c;
   }
 
   /** A still of the view at print size (the long side `longSide` px), as
    *  a PNG data URL: the scene rendered again at a higher resolution. */
   photo(longSide = 3840) {
     const w = Math.max(1, this.el.clientWidth), h = Math.max(1, this.el.clientHeight);
-    const keep = this.q.ratio;
+    const keep = this.q.ratio;                  // (a recording's, while one runs)
+    this._still = true;
     this.q.ratio = Math.min(4, Math.max(1, longSide / Math.max(w, h)));
     this.resize();
     this._present(!!this.options.bloom);
     const url = this.renderer.domElement.toDataURL("image/png");
+    this._still = false;
     this.q.ratio = keep;
     this.resize();
     this.dirty = true;
@@ -1983,8 +2063,8 @@ export class Stage {
   }
 
   /** Record the view as a video stream: the canvas at `longSide` pixels
-   *  on its long side (1920 = full HD), 30 frames a second, the picture
-   *  quality held steady while it records.  stopRecording() puts it back. */
+   *  on its long side (1920 = full HD), 30 frames a second, that size held
+   *  while it records.  stopRecording() puts it back. */
   startRecording(longSide = 1920, fps = 30) {
     const dom = this.renderer.domElement;
     if (!dom.captureStream) return null;
@@ -2152,54 +2232,6 @@ export class Stage {
     return [p, nrm, col.r * k, col.g * k, col.b * k];
   }
 
-  /** Auto quality: shed resolution when frames run long, win it back later.
-   *  A very slow computer (software-drawn 3D: frames of 100-1000 ms) counts
-   *  too - it is the one that needs it most; a gap over 2 s is the page
-   *  hidden or paused, not a slow frame.  At the bottom (35 %) the surface
-   *  detail goes as well (shadows already go below 60 %), and comes back
-   *  once frames are quick again. */
-  _adapt(now) {
-    const q = this.q;
-    const dt = now - (q.last || now);
-    q.last = now;
-    if (this.options.quality !== "auto" || this.recording || dt <= 0 || dt > 2000) return;
-    q.ema = q.ema * 0.9 + Math.min(dt, 400) * 0.1;
-    const MIN = 0.35;
-    if (q.ema > 28) {
-      q.fastSince = 0;
-      if (!q.slowSince) q.slowSince = now;
-      // a frame of 300 ms+ is a struggling computer: act after 3 such frames, not 1.2 s
-      else if (now - q.slowSince > (dt > 300 ? Math.min(1200, dt * 3) : 1200)) {
-        q.slowSince = 0;
-        q.ema = 18;
-        if (q.ratio > MIN) {
-          // the slower it is, the bigger the step down
-          q.ratio = Math.max(MIN, +(q.ratio * (dt > 150 ? 0.6 : 0.8)).toFixed(2));
-          this.resize();
-        } else if (!q.lite) {
-          q.lite = true;
-          setDetail(this.scene, false);
-        }
-      }
-    } else if (q.ema < 17) {
-      q.slowSince = 0;
-      if (!q.fastSince) q.fastSince = now;
-      else if (now - q.fastSince > 6000) {
-        q.fastSince = 0;
-        if (q.lite) {
-          q.lite = false;
-          setDetail(this.scene, this.options.quality !== "fast");
-        } else if (q.ratio < q.cap) {
-          q.ratio = Math.min(q.cap, +(q.ratio * 1.15).toFixed(2));
-          this.resize();
-        }
-      }
-    } else {
-      q.slowSince = 0;
-      q.fastSince = 0;
-    }
-  }
-
   /** Apply one head's look to its model.  Returns true when it emits. */
   _drive(inst, time, lights) {
     const L = inst.cur;
@@ -2349,7 +2381,6 @@ export class Stage {
       angle *= 1 - iris * 0.6;
       if (em.laser) angle = 0.25;
       if (body.type === "atmos" || angle <= 0 || a <= 0.002) {
-        b.mesh.visible = false;
         b.vol.visible = false;
         b.glow.visible = false;
         b.streak.visible = false;
@@ -2368,33 +2399,14 @@ export class Stage {
       }
       const half = (angle / 2) * DEG;
       const r0 = Math.max(0.01, em.radius);
-      const r1 = r0 + Math.tan(half) * len;
-      b.mesh.position.copy(b.origin);
       // the cone's own x / z are the same right / up the surface shader
       // uses for this beam (materials.js), so a gobo or a split colour
       // reads the same way round in the haze and where it lands
       const rt = this._v1.crossVectors(b.dir, Math.abs(b.dir.y) < 0.99 ? UP : X_AXIS).normalize();
       const u2 = this._v2.crossVectors(rt, b.dir);
-      b.mesh.quaternion.setFromRotationMatrix(this._m4.makeBasis(rt, b.dir, u2));
-      const u = b.mat.uniforms;
-      u.uLen.value = len;
-      u.uR0.value = r0;
-      u.uR1.value = r1;
       const cc = em.cell !== undefined && L.cells ? L.cells[em.cell] : null;
       const cr = cc ? cc.r : L.r, cg = cc ? cc.g : L.g, cb = cc ? cc.b : L.b;
-      if (split) {
-        u.uColor.value.setRGB(...split[0]);
-        u.uColor2.value.setRGB(...split[1]);
-      } else {
-        u.uColor.value.setRGB(cr, cg, cb);
-        u.uColor2.value.setRGB(cr, cg, cb);
-      }
-      const narrow = Math.min(3.2, Math.max(0.45, Math.sqrt(22 / Math.max(angle, 1))));
-      u.uIntensity.value = a * 0.55 * narrow / Math.max(1, inst.beams.length * 0.6);
-      u.uSoft.value = lerp(1.7, 0.55, frost);
-      u.uHaze.value = this._hazeNow();
       const volumetric = this._volumetric();
-      b.mesh.visible = this._hazeNow() > 0.01 && !volumetric;
       b.reach = len;
       // the beam as light in the air (beams.js): the cone runs on past
       // where its centre lands, to where its far edge does, and the room's
@@ -2414,7 +2426,7 @@ export class Stage {
         }
         b.reach = far;
         b.vol.position.copy(b.origin);
-        b.vol.quaternion.copy(b.mesh.quaternion);
+        b.vol.quaternion.setFromRotationMatrix(this._m4.makeBasis(rt, b.dir, u2));
         v.uOrigin.value.copy(b.origin);
         v.uAxis.value.copy(b.dir);
         v.uRight.value.copy(rt);
@@ -2423,8 +2435,13 @@ export class Stage {
         v.uTan.value = k;
         v.uLen.value = Math.min(40, far * 1.08 + 0.15);
         v.uFade.value = len >= 39.5 ? 1 : 0;
-        v.uColor.value.copy(u.uColor.value);
-        v.uColor2.value.copy(u.uColor2.value);
+        if (split) {
+          v.uColor.value.setRGB(...split[0]);
+          v.uColor2.value.setRGB(...split[1]);
+        } else {
+          v.uColor.value.setRGB(cr, cg, cb);
+          v.uColor2.value.setRGB(cr, cg, cb);
+        }
         // the light in the beam: shared by a light's heads; the spread
         // over the cone thins it out by itself, so a narrow beam is a
         // bright one and a wide wash a soft one
@@ -2444,9 +2461,9 @@ export class Stage {
       b.glow.scale.setScalar(g);
       b.glow.material.color.setRGB(cr, cg, cb).multiplyScalar(0.35 + 1.8 * Math.pow(facing, 4) * a);
       // a lens flare's streak when the lens looks almost straight at the
-      // camera (not on Fast quality, not for a laser's pin-point)
+      // camera (not for a laser's pin-point)
       const k = Math.pow(facing, 24) * a;
-      b.streak.visible = k > 0.05 && this.options.quality !== "fast" && !em.laser;
+      b.streak.visible = k > 0.05 && !em.laser;
       if (b.streak.visible) {
         b.streak.position.copy(b.glow.position);
         b.streak.scale.set(g * 4, g * 0.12, 1);
@@ -2454,7 +2471,6 @@ export class Stage {
       }
 
       if (inst.head === this.povHead || this.options.lightMap) {   // looking down this beam; the light map
-        b.mesh.visible = false;
         b.vol.visible = false;
         b.glow.visible = false;
         b.streak.visible = false;
@@ -2464,10 +2480,7 @@ export class Stage {
       if (!goboId && L.beam.gobo2 !== undefined) goboId = this._goboId(inst, L.beam.gobo2, inst.data.gobos2);
       // an animation wheel in the beam: a break-up pattern that keeps moving
       if (!goboId && L.beam.anim) goboId = 3 + (Math.floor(time * (0.5 + (L.beam.anim_rot || 0.3) * 4)) % 3);
-      u.uGobo.value = goboId;                     // the same picture in the haze
-      u.uGoboRot.value = rot;
-      u.uLook.value.set(blur, prism, prot, split ? 1 : 0);
-      if (b.vol.visible) {
+      if (b.vol.visible) {                        // the same picture in the haze
         const v = b.vol.material.uniforms;
         v.uGobo.value = goboId;
         v.uGoboRot.value = rot;
@@ -2549,10 +2562,9 @@ export class Stage {
     const list = [...groups.values()].sort((x, y) => y.weight - x.weight);
     for (const g of list) g.pos.multiplyScalar(1 / g.wsum);
     this._lightList = list;                     // (the light meter reads the same lights: luxAt)
-    const q = this.options.quality;
-    // shadow pictures for the brightest: High 16, Medium 6, none on Low
-    // (or when the view is kept light)
-    const shadowSlots = this.wire || this.options.shadows === false || q === "fast" || this.q.ratio <= 0.6 ? 0 : q === "high" ? 16 : 6;
+    // shadow pictures for the 16 brightest (none in the line drawings, or
+    // with shadows turned off)
+    const shadowSlots = this.wire || this.options.shadows === false ? 0 : SHADOW_SLOTS;
     // a light inside something solid (under the deck, in the booth): its
     // shadow picture starts where its beam comes out, as the beam does
     for (const g of list.slice(0, shadowSlots)) {
@@ -2569,7 +2581,7 @@ export class Stage {
     else { this.shadows.off(); for (const g of list) g.slot = -1; }
     for (const l of lights) if (l.beam) l.beam.shadowSlot = -1;
     for (const g of list) for (const bm of g.beams) if (bm && bm.shadowSlot < 0) bm.shadowSlot = g.slot;
-    this.grid.update(list, this.room, q === "fast" ? 12 : q === "high" ? 64 : 32);
+    this.grid.update(list, this.room, 64);
     this._bounce(list);
     this.lightStats = { ...this.grid.stats, shadows: LIGHTS.uShadowCount.value, bounce: LIGHTS.uVplCount.value };
   }
@@ -2577,11 +2589,10 @@ export class Stage {
   /** Light bounced back into the room: the brightest pools (their colour
    *  times the surface's - a black floor sends little back, a white wall a
    *  lot) and the LED screens, as soft lights facing out from where they
-   *  are.  High: 12 pools, Medium 6, Low none. */
+   *  are: the 12 brightest pools. */
   _bounce(list) {
-    const q = this.options.quality;
-    const off = this.wire || q === "fast" || this.options.bounce === false;
-    const most = off ? 0 : q === "high" ? 12 : 6;
+    const off = this.wire || this.options.bounce === false;
+    const most = off ? 0 : 12;
     const alb = (this.built && this.built.albedo) || {};
     const out = [];
     if (most) {
@@ -2694,6 +2705,7 @@ export class Stage {
     if (this._ndiOff) this._ndiOff();
     releaseScreens(this.built);
     if (this.sceneRT) { this.sceneRT.dispose(); this.beamRT.dispose(); }
+    for (const p of Object.values(this._pipes || {})) { if (p.bloom) p.bloom.dispose(); p.post.dispose(); }
     this.mirror.dispose();
     if (this.resizeObserver) this.resizeObserver.disconnect();
     if (this.renderer) {

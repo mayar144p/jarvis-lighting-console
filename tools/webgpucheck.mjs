@@ -41,7 +41,7 @@ async function scene(mode) {
     headers: { "content-type": "application/json" }, body: JSON.stringify({ action: a, params }) })).json()).result, [a, params]);
   const install = (src, key) => win.evaluate(async ([src, key]) => (await (await fetch("/api/fixtures/library/install", { method: "POST",
     headers: { "content-type": "application/json" }, body: JSON.stringify({ src, key }) })).json()).fixture.id, [src, key]);
-  await win.evaluate((m) => { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.quality", "high"); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1");
+  await win.evaluate((m) => { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.noLockAsk", "1");
     localStorage.setItem("haze.people", "0"); localStorage.setItem("haze.3d", "on"); if (m === "webgl") localStorage.setItem("haze.renderer", "webgl"); else localStorage.removeItem("haze.renderer"); }, mode);
   await act("venue_template", { name: "club" });
   const spots = (await act("add_heads", { fixture_id: await install("qlc", "Robe/Robe-Pointe.qxf"), qty: 2 })).heads;

@@ -13,15 +13,15 @@
 import * as THREE from "three";
 import {
   Fn, If, Loop, Continue, uniform, uniformArray, texture, textureLoad, float, int, ivec2, vec2, vec3, vec4,
-  positionWorld, positionLocal, positionGeometry, positionView, normalWorld, cameraPosition,
+  positionWorld, positionLocal, normalWorld, cameraPosition,
   frontFacing, select, smoothstep, mix, max, min, abs, fract, floor, sin, cos, atan, sqrt, pow,
-  dot, cross, normalize, length, reflect, clamp, exp, mod, varying, instanceIndex, hash,
-  transformNormalToView, fwidth, log2,
+  dot, cross, normalize, length, reflect, clamp, mod, varying, instanceIndex, hash,
+  fwidth, log2,
 } from "three/tsl";
 import { CD_PER_UNIT, LUX_TOP, luxRamp } from "./luxmap.js";
 
 export const MAX_LIGHTS = 512;          // lights in the room's grid
-export const SHADOW_SLOTS = 16;         // lights with a shadow picture (High; Medium 6)
+export const SHADOW_SLOTS = 16;         // lights with a shadow picture
 export const MAX_BOUNCE = 16;           // pools and screens that light the room back
 
 // an array uniform the stage writes into in place (LIGHTS.uPos.value[i]...)
@@ -267,9 +267,7 @@ const goboShape = Fn(([id, uv]) => {
 // focus the picture's contrast melts into the pool (one look at the
 // picture, not several: this runs for every pixel of the room).  A prism
 // splits the beam into copies round its centre (a linear one: in a row).
-// Low quality (detail off): the picture as it is, and no halves.
-export const goboMask = (id, uv0, look, detail) => {
-  if (!detail) return goboShape(id, uv0);
+export const goboMask = (id, uv0, look) => {
   return Fn(() => {
     const uv = vec2(uv0).toVar();
     const edge = float(1).toVar();
@@ -391,14 +389,14 @@ const bounceAt = (wp, N, light, wrap = 0) => {
 
 /** The light every beam puts on a surface point (and, for a shiny one,
  *  the lenses it mirrors). */
-const surfaceLight = (albedo, grid, sheen, detail, mirror = false) => Fn(() => {
+const surfaceLight = (albedo, grid, sheen, mirror = false) => Fn(() => {
   const wp = positionWorld;
   const N = select(frontFacing, normalize(normalWorld), normalize(normalWorld).negate()).toVar();
   const light = vec3(LIGHTS.uAmbient).mul(max(N.y, 0).mul(0.4).add(0.6)).toVar();
   const lux = float(0).toVar();                 // the rig's direct light only (the light map)
   const gloss = vec3(0).toVar();
   // where this point would show a light reflected (once, not per light)
-  const R = detail ? reflect(normalize(wp.sub(cameraPosition)), N).toVar() : null;
+  const R = reflect(normalize(wp.sub(cameraPosition)), N).toVar();
   eachLight(wp, (li, L, along, d2, t0, t1) => {
     const d = sqrt(d2).toVar();
     const Ld = L.div(max(d, 1e-4)).toVar();
@@ -421,7 +419,7 @@ const surfaceLight = (albedo, grid, sheen, detail, mirror = false) => Fn(() => {
       }).Else(() => {
         const cs = cos(t3.x), sn = sin(t3.x);
         const uv = vec2(cs.mul(uv0.x).add(sn.mul(uv0.y)), sn.negate().mul(uv0.x).add(cs.mul(uv0.y)));
-        spot.mulAssign(goboMask(t2.w, uv, vec4(t3.y, t3.z, t3.w, t4.x), detail));
+        spot.mulAssign(goboMask(t2.w, uv, vec4(t3.y, t3.z, t3.w, t4.x)));
       });
     });
     const lam = max(dot(N, Ld.negate()), 0).toVar();
@@ -435,12 +433,10 @@ const surfaceLight = (albedo, grid, sheen, detail, mirror = false) => Fn(() => {
     const lands = col.mul(spot).mul(lam).mul(att).toVar();
     light.addAssign(lands);
     lux.addAssign(dot(lands, LUMA));
-    if (detail) {
-      // the lens mirrored in a shiny floor: as bright as the beam is (its
-      // light at 1 m), not as the pool is
-      const rs = max(dot(R, Ld.negate()), 0);
-      gloss.addAssign(col.mul(spot).mul(0.12).mul(pow(rs, 900).mul(6).add(pow(rs, 60).mul(0.12))));
-    }
+    // the lens mirrored in a shiny floor: as bright as the beam is (its
+    // light at 1 m), not as the pool is
+    const rs = max(dot(R, Ld.negate()), 0);
+    gloss.addAssign(col.mul(spot).mul(0.12).mul(pow(rs, 900).mul(6).add(pow(rs, 60).mul(0.12))));
   });
   bounceAt(wp, N, light);
   const alb = vec3(albedo).toVar();
@@ -469,21 +465,6 @@ const surfaceLight = (albedo, grid, sheen, detail, mirror = false) => Fn(() => {
   return select(LIGHTS.uLuxMap.greaterThan(0.5), luxFalse(lux.mul(CD_PER_UNIT)), seen);
 })();
 
-// Medium and High draw the detail (focus and frost on gobos, prisms, lenses
-// mirrored in shiny floors); Low leaves it out - it costs every pixel of
-// the room on every light, and Low is for computers that can't spare it.
-export const DETAIL = { on: true };
-export function setDetail(scene, on) {
-  DETAIL.on = !!on;
-  scene.traverse((o) => {
-    for (const m of [].concat(o.material || [])) {
-      if (!m || !m.userData.detail || m.userData.detailOn === DETAIL.on) continue;
-      m.userData.detail(DETAIL.on);
-      m.needsUpdate = true;
-    }
-  });
-}
-
 /** A diffuse surface that every beam in the rig lights. */
 export function surfaceMaterial(albedo, opts = {}) {
   const m = new THREE.MeshBasicNodeMaterial({ side: opts.side || THREE.FrontSide });
@@ -493,11 +474,7 @@ export function surfaceMaterial(albedo, opts = {}) {
     uGrid: uniform(opts.grid || 0),
     uSheen: uniform(opts.sheen || 0),
   };
-  m.userData.detail = (on) => {
-    m.userData.detailOn = on;
-    m.colorNode = surfaceLight(m.uniforms.uAlbedo, m.uniforms.uGrid, m.uniforms.uSheen, on, !!opts.mirror && on);
-  };
-  m.userData.detail(DETAIL.on);
+  m.colorNode = surfaceLight(m.uniforms.uAlbedo, m.uniforms.uGrid, m.uniforms.uSheen, !!opts.mirror);
   return m;
 }
 
@@ -550,99 +527,6 @@ export function crowdMaterial(albedo) {
   m.colorNode = select(LIGHTS.uLuxMap.greaterThan(0.5), luxFalse(lit.w.mul(CD_PER_UNIT)),
     vec3(m.uniforms.uAlbedo).mul(lit.xyz));
   crowdCache.set(key, m);
-  return m;
-}
-
-// ---------------------------------------------------------------------------
-// Beams: an open cone, scaled in the vertex stage so one geometry serves
-// every beam.  Additive, depth-tested (a fixture body hides the beam behind
-// it), never depth-written (beams do not hide each other).
-// ---------------------------------------------------------------------------
-let coneGeometry = null;
-
-/** The shared unit cone: unit circle in x/z, y from 0 (lens) to 1 (end). */
-export function beamGeometry() {
-  if (coneGeometry) return coneGeometry;
-  const g = new THREE.CylinderGeometry(1, 1, 1, 40, 12, true);
-  g.translate(0, 0.5, 0);
-  coneGeometry = g;
-  return g;
-}
-
-// the haze's drift: cheap value noise (the old beams' own), not Perlin -
-// it runs for every pixel of every beam, twice
-const hash3 = Fn(([p0]) => {
-  const p = fract(p0.mul(0.3183099).add(0.1)).mul(17);
-  return fract(p.x.mul(p.y).mul(p.z).mul(p.x.add(p.y).add(p.z)));
-});
-const valueNoise = Fn(([x]) => {
-  const i = floor(x);
-  const f0 = fract(x);
-  const f = f0.mul(f0).mul(f0.mul(-2).add(3));
-  const h = (dx, dy, dz) => hash3(i.add(vec3(dx, dy, dz)));
-  return mix(mix(mix(h(0, 0, 0), h(1, 0, 0), f.x), mix(h(0, 1, 0), h(1, 1, 0), f.x), f.y),
-    mix(mix(h(0, 0, 1), h(1, 0, 1), f.x), mix(h(0, 1, 1), h(1, 1, 1), f.x), f.y), f.z);
-});
-
-const beamNodes = (u, detail) => {
-  const t = positionGeometry.y;
-  const r = mix(u.uR0, u.uR1, t);
-  const position = vec3(positionGeometry.x.mul(r), t.mul(u.uLen), positionGeometry.z.mul(r));
-  const vT = varying(t);
-  const vRad = varying(positionGeometry.xz);
-  const vViewNormal = varying(transformNormalToView(vec3(positionGeometry.x, 0, positionGeometry.z)));
-  const color = Fn(() => {
-    const facing = abs(dot(normalize(vViewNormal), normalize(positionView.negate())));
-    const edge = pow(facing, u.uSoft);
-    const dist = vT.mul(u.uLen);
-    const along = exp(dist.mul(-0.085)).mul(smoothstep(0, 0.03, vT)).mul(smoothstep(0.93, 1, vT).mul(0.6).oneMinus());
-    const q = positionWorld.mul(0.7).add(vec3(LIGHTS.uTime.mul(0.07), LIGHTS.uTime.mul(0.03), LIGHTS.uTime.mul(0.05)));
-    const n = valueNoise(q).mul(0.65).add(valueNoise(q.mul(2.3)).mul(0.35));
-    const haze = n.mul(0.45).add(0.55);
-    const a = u.uIntensity.mul(edge).mul(along).mul(mix(1, haze, 0.8)).mul(u.uHaze).toVar();
-    If(u.uGobo.greaterThan(0.5).or(abs(u.uLook.y).greaterThan(0.5)), () => {
-      // a gobo in haze: shafts.  The line of sight through this point of
-      // the cone passes the beam's axis at about sqrt(1 - facing^2) of its
-      // radius; the picture there lights it or leaves it dark
-      const uv0 = normalize(vRad).mul(sqrt(max(0, facing.mul(facing).oneMinus())));
-      const cs = cos(u.uGoboRot), sn = sin(u.uGoboRot);
-      const uv = vec2(cs.mul(uv0.x).add(sn.mul(uv0.y)), sn.negate().mul(uv0.x).add(cs.mul(uv0.y)));
-      a.mulAssign(goboMask(u.uGobo, uv, vec4(u.uLook.xyz, 0), detail).mul(0.95).add(0.2));
-    });
-    return a;
-  });
-  // a split beam: one side of the cone one colour, the other the second
-  const tint = mix(vec3(u.uColor), vec3(u.uColor2), smoothstep(-0.05, 0.05, vRad.x.negate()).mul(u.uLook.w));
-  return { position, alpha: color(), tint };
-};
-
-export function beamMaterial() {
-  const m = new THREE.MeshBasicNodeMaterial({
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-    forceSinglePass: true,              // additive light needs no back-then-front order
-  });
-  // the same handles the ShaderMaterial had (stage.js sets .value each frame)
-  m.uniforms = {
-    uColor: uniform(new THREE.Color(1, 1, 1)),
-    uColor2: uniform(new THREE.Color(1, 1, 1)),     // the other half of a split beam
-    uIntensity: uniform(0),
-    uSoft: uniform(1.6),
-    uHaze: uniform(0.6),
-    uLen: uniform(5),
-    uR0: uniform(0.05),
-    uR1: uniform(1),
-    uGobo: uniform(0),
-    uGoboRot: uniform(0),
-    uLook: uniform(new THREE.Vector4()),
-  };
-  m.userData.detail = (on) => {
-    m.userData.detailOn = on;
-    const { position, alpha, tint } = beamNodes(m.uniforms, on);
-    m.positionNode = position;
-    m.colorNode = tint.mul(alpha);
-    m.opacityNode = alpha;
-  };
-  m.userData.detail(DETAIL.on);
   return m;
 }
 

@@ -180,7 +180,7 @@ export function initStage() {
   const keep = (key, value) => { try { localStorage.setItem("haze." + key, value); } catch (e) { /* ignore */ } };
   const house = $("#house");
   house.value = pref("house", house.value);
-  stage.setOptions({ house: +house.value, quality: pref("quality", "high") });
+  stage.setOptions({ house: +house.value });
   house.addEventListener("input", () => { stage.setOptions({ house: +house.value }); keep("house", house.value); });
   // the picture's exposure (stops): double-click puts it back to the middle
   // Auto haze: the haze follows the hazers in the rig (the label shows how much there is now)

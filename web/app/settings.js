@@ -241,15 +241,6 @@ export async function openSettings() {
   const ht = h("input", { type: "number", min: 2.2, step: 0.1, value: auto ? "" : room.height, placeholder: "auto" });
   const tpl = h("select.select", ...VENUE_TEMPLATES.map(([k, label]) => h("option", { value: k }, label)));
   tpl.value = v.template || "club";
-  const quality = h("select.select", { style: { minWidth: "340px" } },
-    h("option", { value: "high" }, "High: sharpest, beams as light in the haze, 16 cast shadows (the standard)"),
-    h("option", { value: "auto" }, "Medium: beams in the haze, 6 shadows, adapts to this computer"),
-    h("option", { value: "fast" }, "Low: older laptops - simpler beams, no shadows"));
-  try { quality.value = localStorage.getItem("haze.quality") || "high"; } catch (e) { /* ignore */ }
-  quality.addEventListener("change", () => {
-    try { localStorage.setItem("haze.quality", quality.value); localStorage.setItem("haze.qualityV", "2"); } catch (e) { /* ignore */ }
-    stagePanel().then((m) => { const st = m && m.getStage(); if (st) st.setOptions({ quality: quality.value }); });
-  });
   const view3d = h("input", { type: "checkbox", checked: HAS_3D });
   view3d.addEventListener("change", () => set3d(view3d.checked));
   const gigBox = h("input", { type: "checkbox" });
@@ -303,7 +294,8 @@ export async function openSettings() {
         h("button.btn", { onclick: () => window.hazeDesk.win.pick("ontop") }, "Keep it on top / not"),
         h("span.muted.small", "its own window: put it on a second screen, or full screen")) : null,
       h("label.check", view3d, h("span", "Also show the 3D in this window (the desk reloads)")),
-      h("label.field", h("span", "Quality"), quality),
+      h("p.muted.small", "The 3D always draws at its best, on any computer: beams as light in the haze, 16 lights casting shadows, "
+        + "mirror floors, smooth edges - on the screen, in films and in VR."),
       calmRow()]],
     ["video", "Video (NDI)", [ndiPanel()]],
     ["midi", "MIDI & OSC", [

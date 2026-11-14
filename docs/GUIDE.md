@@ -174,14 +174,13 @@ physically is and who made it:
   pan/tilt, gobo and strobe, lighting the floor, the flown truss and the
   performers, with bloom and optional haze. A lens that looks straight at
   the camera draws a thin flare streak, as a camera sees it.
-* **Beams in haze** (Medium and High quality) are light in the air, worked
-  out along your line of sight: brightest at the lens and fading as the beam
-  spreads, brighter when it points at you, with the gobo and the prism making
-  real shafts that match the pattern on the floor. A beam stops exactly where
+* **Beams in haze** are light in the air, worked out along your line of
+  sight: brightest at the lens and fading as the beam spreads, brighter when
+  it points at you, with the gobo and the prism making real shafts that match
+  the pattern on the floor. A beam stops exactly where
   it meets anything solid - a person, the truss, a balcony, a wall at any
   angle - and the brightest lights leave a shadow in the haze behind what
-  stands in them. The haze drifts slowly. **Low** keeps the simpler beams
-  for older laptops.
+  stands in them. The haze drifts slowly.
 * **Real light output.** How bright a light's beam and pool are comes from
   how much light it really puts out (lumens) and its lens: a small LED PAR
   next to a big spot looks like it does in the room, and the same light in a
@@ -192,8 +191,8 @@ physically is and who made it:
   **Back to the fixture file** undoes it).
 * **Every light lands.** A rig of hundreds of lights puts every pool on the
   floor, the walls, the truss and the crowd - not just the brightest few.
-  The brightest 16 (High; 6 on Medium) cast shadows: soft from washes, crisp
-  from spots and profiles. Their shadow pictures are only redrawn when a
+  The brightest 16 cast shadows: soft from washes, crisp from spots and
+  profiles. Their shadow pictures are only redrawn when a
   light moves, so a rig holding its position costs nothing extra.
 * **Light bounces.** The brightest pools light the room back in their
   colour times the surface's: a red wash on a white wall turns the floor in
@@ -205,7 +204,7 @@ physically is and who made it:
 * **Mirror floors.** A black dance floor, tiles or polished concrete shows
   the beams, the lenses, the truss and the screens reflected in it - sharp in
   a black floor, softer in concrete, stronger at a glancing angle than looking
-  straight down (Medium and High; the floor is set in Settings → Venue).
+  straight down (the floor is set in Settings → Venue).
 * **True colour.** The colour you pick on the desk is the colour on the
   screen, dim or bright: bright red stays red, green stays green. Only far
   brighter than the screen's white - a lens, the core of a narrow beam - does
@@ -238,12 +237,18 @@ physically is and who made it:
   Not signed in, it asks for your gdtf-share.com sign-in right there (a free
   account; the password stays in this app's memory only).
 * The fixture picker shows the same 3D model before you patch anything.
-* **Smooth on ordinary laptops.** Fixture parts and truss are merged into a few
-  draw calls, and the crowd is lit per vertex. The view only redraws when
-  something changes. The 3D starts at **High** quality (sharpest, sixteen
-  beams cast shadows). On an older laptop, **Settings → Screen & 3D → Quality:
-  Medium** lowers the resolution when frames run long and wins it back when
-  there is headroom; **Low** drops the shadows.
+* **Always at its best.** The 3D has one quality, the best, on every
+  computer, and never lowers it by itself: sharp at the screen's own
+  resolution, every beam as light in the haze, sixteen lights casting
+  shadows, mirror floors, the glow round bright light and smooth edges - on
+  the screen, in films and in VR. A slower computer shows fewer pictures a
+  second, never a simpler picture: one that takes a quarter of a second or
+  more over every picture waits as long again (up to two seconds) before the
+  next, so the desk's own buttons still answer. Fixture parts and truss are merged into a few draw
+  calls, and the view only redraws when something changes. On a computer
+  that struggles, keep the 3D in its own window (Settings → Screen & 3D →
+  **Open the 3D window**, and untick showing it in the desk's window): the
+  desk's own buttons stay quick however long a picture takes.
 
 Views: <kbd>1</kbd>–<kbd>6</kbd> (front, house left, house right, back, plan,
 whole room), <kbd>F</kbd> to frame the selection.
@@ -277,10 +282,11 @@ the room. The headset's menu button (or the menu entry again) leaves.
 
 It needs a headset this computer's browser can use - a Quest with Link or
 Air Link, SteamVR or Windows Mixed Reality with Chrome or Edge - or a
-headset's own browser. In the headset the beams are the simpler ones and the
-floor isn't a mirror (that needs more than a headset can draw twice, once
-for each eye); the colours are the same. If the browser's VR needs the 3D
-drawn by WebGL 2, the desk offers to switch it and reload.
+headset's own browser. Each eye sees the whole picture the screen does: the
+beams as light in the haze, the shadows, the mirror floor, the glow and the
+same colours, sharp to the edges of the lenses. VR draws the 3D with WebGL 2:
+when the 3D is on WebGPU the desk offers to switch it and reload, then choose
+**Walk round in VR** again.
 
 ### Quick buttons
 

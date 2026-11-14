@@ -5,15 +5,12 @@
 // on the dance floor at your own height and look round the room, the rig and
 // every light as the desk sends them, live.  The left stick walks (the way
 // you look), the right one turns you 30 degrees a flick; you stay inside the
-// room.  The headset gets the 3D's simpler beams and no mirror floor - the
-// beams as light in the air need a picture of the room's depth that the
-// headset's two eyes don't share - and the same true colour as the screen.
+// room.  Each eye gets the whole picture the screen does (stage.js,
+// _presentEyes): the beams as light in the haze, the shadows, the mirror
+// floor, the glow, the true colour, smooth edges, sharp to the edges of
+// the lenses.  The 3D draws VR with WebGL 2, which gives the two eyes one
+// picture side by side.
 import * as THREE from "three";
-import { Fn, vec4 } from "three/tsl";
-import { trueColour } from "./picture.js";
-
-// the screen's true-colour curve, as the headset's tone mapping
-export const vrToneMapping = Fn(([color]) => trueColour(vec4(color, 1)).rgb);
 
 /** Is there a VR headset this browser can use? */
 export async function vrSupported() {
@@ -37,26 +34,23 @@ export class VRWalk {
   get on() { return !!this.session; }
 
   /** Start: the headset's session (asked for from a click), you on the
-   *  dance floor facing the stage.  An Error with `.webgl` set: this
-   *  browser's VR needs the 3D on WebGL 2 (the caller can switch). */
+   *  dance floor facing the stage.  An Error with `.webgl` set: the 3D is
+   *  on WebGPU, and VR needs it on WebGL 2 (the caller can switch). */
   async start(onEnd = null) {
     const st = this.stage, r = st.renderer;
     if (!navigator.xr) throw new Error("This browser has no VR (WebXR)");
-    const webgpu = !!(r.backend && r.backend.isWebGPUBackend);
-    const opts = { optionalFeatures: ["local-floor", "bounded-floor"], ...(webgpu ? { requiredFeatures: ["webgpu"] } : {}) };
-    let session;
-    try {
-      session = await navigator.xr.requestSession("immersive-vr", opts);
-    } catch (e) {
-      if (webgpu) { const err = new Error("VR here needs the 3D on WebGL 2"); err.webgl = true; throw err; }
-      throw e;
-    }
+    // (WebGPU's VR gives each eye a picture of its own, which the eye by
+    // eye drawing can't fill yet)
+    if (r.backend && r.backend.isWebGPUBackend) { const err = new Error("VR needs the 3D on WebGL 2"); err.webgl = true; throw err; }
+    const session = await navigator.xr.requestSession("immersive-vr", { optionalFeatures: ["local-floor", "bounded-floor"] });
     this.onEnd = onEnd;
-    if (!r.library.getToneMappingFunction(THREE.CustomToneMapping)) r.library.addToneMapping(vrToneMapping, THREE.CustomToneMapping);
-    this.keep = { toneMapping: r.toneMapping, parent: st.camera.parent, pos: st.camera.position.clone(),
+    this.keep = { parent: st.camera.parent, pos: st.camera.position.clone(),
       quat: st.camera.quaternion.clone(), target: st.controls.target.clone(), controls: st.controls.enabled };
     r.xr.enabled = true;
     r.xr.setReferenceSpaceType("local-floor");
+    // sharp to the edges of the lenses (a headset otherwise draws its
+    // edges coarser to save time)
+    r.xr.setFoveation(0);
     // the loop first: three.js takes the one set when the session starts and
     // runs it with the headset's pose (set after, the pose never came: you
     // stood with your eyes at the floor)
@@ -70,7 +64,6 @@ export class VRWalk {
       throw e;
     }
     this.session = session;
-    r.toneMapping = THREE.CustomToneMapping;
     // you: on the dance floor (or in front of the stage), facing it
     if (!st.camera.isPerspectiveCamera) st._perspective();
     const spot = st.standingSpot ? st.standingSpot() : { x: 0, z: 4 };
@@ -145,7 +138,6 @@ export class VRWalk {
     // (after three.js has had the session's end too: it puts the loop back)
     setTimeout(() => { if (!this.session) r.setAnimationLoop(null); }, 0);
     r.xr.enabled = false;
-    r.toneMapping = k.toneMapping;
     this.rig.remove(st.camera);
     st.scene.remove(this.rig);
     if (k.parent) k.parent.add(st.camera);

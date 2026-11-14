@@ -62,7 +62,7 @@ export class Projectors {
    * Each frame: the projectors as lights (pushed onto `lights`, as the rig's
    * are) and their beams in haze.  hit(origin, dir, cap) -> how far to the
    * first solid thing; haze: the room's haze now; volumetric: drawn as
-   * light in the air (Medium, High).
+   * light in the air (with haze, in the 3D view).
    */
   update(lights, { hit, haze = 0, volumetric = false, lightMap = false } = {}) {
     for (const p of this.list) {

@@ -98,7 +98,7 @@ const p = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
 p.on("pageerror", (e) => errors.push(String(e.message || e)));
 p.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource/.test(m.text())) errors.push("console: " + m.text().slice(0, 200)); });
-await p.addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.people", "0"); localStorage.setItem("haze.quality", "fast"); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ } });
+await p.addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.people", "0"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ } });
 let patch = [];
 let tag = "";                       // the brand, in front of every finding
 
@@ -170,6 +170,16 @@ const nearC = (a, b, tol = 0.02) => a && b && a.every((x, i) => near(x, b[i], to
 // layer checks for every light; `touched` = the lights the step changed
 async function layers(step, settleMs = 1600) {
   await sleep(settleMs);
+  // two pictures drawn after the wait (the 3D, at its one quality, is slow
+  // to draw in software: its last picture can be from mid-fade)
+  await p.evaluate(async () => {
+    const st = window.hazeStage, end = performance.now() + 30000;
+    for (let n = 0; n < 2 && performance.now() < end; n++) {
+      const last = st.lastRender;
+      st.dirty = true;
+      while (st.lastRender === last && performance.now() < end) await new Promise((r) => setTimeout(r, 30));
+    }
+  });
   const F = await feed(), V = await view();
   let bad = 0;
   const note = (what, detail) => { if (bad++ < 6) check(false, `${tag}${step}: ${what}`, detail); };
@@ -447,8 +457,10 @@ async function steps() {
   const depth = await undoDepth();
   await p.mouse.click(700, 400);                 // focus the page, not a field
   await p.keyboard.press("Control+z");
-  await sleep(800);
-  check(depth > 0 && await undoDepth() < depth, `${tag}Ctrl+Z undoes a step`, `${depth} -> ${await undoDepth()}`);
+  // (as soon as the page has handled it: a slow 3D keeps the page busy)
+  let after = depth;
+  for (let i = 0; i < 40 && after >= depth; i++) { await sleep(200); after = await undoDepth(); }
+  check(depth > 0 && after < depth, `${tag}Ctrl+Z undoes a step`, `${depth} -> ${after}`);
   await layers("after undo");
 
   if (BRANDS) await effects();

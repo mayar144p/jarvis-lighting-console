@@ -2,10 +2,10 @@
 // shows the beams, the lenses, the truss and the screens reflected in it -
 // in a club, half of what a beam looks like is its reflection.
 //
-// Each frame (Medium and High, a shiny floor, the camera above it) the
-// room is drawn again from a camera mirrored under the floor, smaller than
-// the screen (High half, Medium a quarter), and the beams in haze are
-// drawn into that view as well, with the mirror view's own depth.  The
+// Each frame (a shiny floor, the camera above it) the room is drawn again
+// from a camera mirrored under the floor, at half the screen's size, and
+// the beams in haze are drawn into that view as well, with the mirror
+// view's own depth.  In VR each eye gets its own mirror.  The
 // floor's shader (materials.js, REFL) looks its point up in that picture -
 // a rougher floor reads a blurrier mipmap level - stronger at a glancing
 // angle than looking straight down.
@@ -56,16 +56,26 @@ export class FloorMirror {
     const f = this._f.set(-e[8], e[9], -e[10]);
     const u = this._u.set(e[4], -e[5], e[6]);
     const cam = this.cam;
-    cam.fov = camera.fov;
-    cam.aspect = camera.aspect;
     cam.near = camera.near;
     cam.far = camera.far;
-    cam.zoom = camera.zoom;
     cam.coordinateSystem = camera.coordinateSystem;
     cam.position.copy(p);
     cam.up.copy(u);
     cam.lookAt(p.x + f.x, p.y + f.y, p.z + f.z);
-    cam.updateProjectionMatrix();
+    if (camera.userData.eye) {
+      // a headset's eye (stage.js): its own lopsided view, turned over
+      // left for right as the mirrored camera is (the sideways offset
+      // changes sign), so the mirror covers just what that eye sees
+      cam.projectionMatrix.copy(camera.projectionMatrix);
+      const m = cam.projectionMatrix.elements;
+      for (const i of [1, 2, 3, 4, 8, 12]) m[i] = -m[i];
+      cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
+    } else {
+      cam.fov = camera.fov;
+      cam.aspect = camera.aspect;
+      cam.zoom = camera.zoom;
+      cam.updateProjectionMatrix();
+    }
     cam.updateMatrixWorld();
     REFL.matrix.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     const shown = hide.map((m) => m.visible);

@@ -1,13 +1,13 @@
 // How smooth the 3D view runs with the test rig (20 real lights, 124 with BIG_RIG=1, tools/
-// bigrig.mjs) all lit, moving and changing colour, at each quality:
-// High, Medium (auto) and Low.  Frames a second and the slowest frames.
+// bigrig.mjs) all lit, moving and changing colour, at its one quality (the
+// best: it never lowers it).  Frames a second and the slowest frames.
 //
 //   node tools/fpscheck.mjs                 software drawing (servers, cloud)
 //   CHECKS_GPU=1 node tools/fpscheck.mjs    on this computer's graphics card
 //
 // Runs its own server on scratch data; your shows are untouched.  On a
-// graphics card High should hold 30+ fps; software drawing is far slower
-// and only good for comparing the qualities with each other.
+// graphics card it should hold 30+ fps; software drawing is far slower
+// and only shows that it draws.
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -46,16 +46,16 @@ await act("select_all");
 await act("set_intensity", { level: 100 });
 await act("run_fx", { name: "rainbow" });
 await act("run_fx", { name: "circle" });
-console.log(`${n} lights, all lit, rainbow + circle, ${SECONDS} s per quality`);
+console.log(`${n} lights, all lit, rainbow + circle, ${SECONDS} s`);
 
 const GPU = process.env.CHECKS_GPU === "1";
 const b = await chromium.launch({ executablePath: GPU ? undefined : exe, headless: !GPU,
   args: GPU ? ["--ignore-gpu-blocklist"] : ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
 const rows = [];
-const ONLY = (process.env.FPS_ONLY || "").toLowerCase();       // e.g. FPS_ONLY=low
-for (const [label, q] of [["High", "high"], ["Medium", "auto"], ["Low", "fast"]].filter(([l]) => !ONLY || l.toLowerCase() === ONLY)) {
+{
+  const label = "3D";
   const p = await b.newPage({ viewport: { width: 1600, height: 900 } });
-  await p.addInitScript((quality) => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.quality", quality); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ } }, q);
+  await p.addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ } });
   await p.goto(BASE + "?window=stage");                // the 3D on its own, as in Show mode
   for (let i = 0; i < 60; i++) { if (await p.evaluate(() => window.hazeStage && window.hazeStage.fixtures.size > 100)) break; await sleep(500); }
   await sleep(4000);                                    // models and gobos loaded
@@ -81,7 +81,6 @@ for (const [label, q] of [["High", "high"], ["Medium", "auto"], ["Low", "fast"]]
   await p.close();
 }
 await b.close();
-const order = rows.map(([, r]) => r.fps);
-const sane = order.every((f) => f > 0) && (order.length < 3 || order[2] >= order[0] * 0.9);
-console.log(sane ? "ok: every quality draws, and Low is at least as smooth as High" : "CHECK: a quality drew nothing, or Low is slower than High");
+const sane = rows.every(([, r]) => r.fps > 0);
+console.log(sane ? "ok: the 3D draws" : "CHECK: the 3D drew nothing");
 done(sane ? 0 : 1);

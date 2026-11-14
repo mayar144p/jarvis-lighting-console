@@ -54,7 +54,7 @@ const GPU = process.env.CHECKS_GPU === "1";
 const b = await chromium.launch({ executablePath: exe, headless: !GPU,
   args: GPU ? ["--ignore-gpu-blocklist"] : ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
 const p = await b.newPage({ viewport: { width: 1280, height: 800 } });
-await p.addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.quality", "fast"); localStorage.setItem("haze.qualityV", "2"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ } });
+await p.addInitScript(() => { try { sessionStorage.setItem("haze.venuepick", "1"); localStorage.setItem("haze.noLockAsk", "1"); } catch { /* fine */ } });
 await p.goto(BASE + "?3d=1");
 for (let i = 0; i < 40; i++) { if (await p.evaluate(() => window.hazeStage && window.hazeStage.fixtures.size)) break; await sleep(500); }
 await sleep(3000);
