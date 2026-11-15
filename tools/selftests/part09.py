@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from app import config, fixtures
-from tools.selftests.common import ROOT, check, dialogs_js, stage_js
+from tools.selftests.common import ROOT, check, desk_css, dialogs_js, stage_js
 
 
 def _free_port() -> int:
@@ -5895,7 +5895,7 @@ def test_sweep3_fixes() -> None:
           "this._slow = took > 250 ? this._slow + 1 : 0;" in st and "if (t < this._restUntil) return;" in st
           and "this._slow >= 3 ? performance.now() + Math.min(took, 2000) : 0" in st)
     dl = dialogs_js()
-    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     check("Output's choices have room (not cut off)", "out-grid" in dl and ".out-grid" in css)
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
@@ -6415,7 +6415,7 @@ def test_desk_popups() -> None:
     api = (ROOT / "web" / "app" / "api.js").read_text(encoding="utf-8")
     check("the pairing code is asked in the desk's own box, once for every waiting request",
           "promptBox(" in api and "await askToken()" in api and "if (asking) return asking" in api)
-    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     check("drop-down lists open as a dark card with the purple pick (base-select)",
           "@supports (appearance: base-select)" in css and "::picker(select)" in css and "option:checked" in css)
     mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
@@ -7362,7 +7362,7 @@ def test_look_and_reach() -> None:
     import re
     from app import engine_base
     th = (ROOT / "web" / "app" / "theme.js").read_text(encoding="utf-8")
-    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     st = (ROOT / "web" / "app" / "settings.js").read_text(encoding="utf-8")
     check("Look: density, reduced motion and your own accent colour, kept per computer",
           all(k in th for k in ("DENSITIES", "motion", "resetTheme", "HEX.test"))
@@ -7370,7 +7370,10 @@ def test_look_and_reach() -> None:
           and "Look back to how it came" in st, "")
     check("no % size or zoom: big screens get their own layout",
           "SIZES" not in th and "zoom" not in th and "ui-zoom" not in css and 'h("span", "Size")' not in st, "")
-    check("buttons and chips follow the density", "height: var(--btn-h)" in css and "min-height: var(--chip-h)" in css, "")
+    # (Density scales every control at once: the keys and chips take their
+    # heights from the named sizes, which follow --ctl-user)
+    check("buttons and chips follow the density", "height: var(--h)" in css and "min-height: var(--h-s)" in css
+          and ':root[data-density="compact"] { --ctl-user:' in css and ':root[data-density="roomy"] { --ctl-user:' in css, "")
     web = "".join(p.read_text(encoding="utf-8") for p in (ROOT / "web").rglob("*.js")
                   if "vendor" not in p.parts and "streamdeck" not in p.parts)
     named = set(re.findall(r'["\'`]([a-z][a-z0-9_]+)["\'`]', web))
@@ -8154,7 +8157,7 @@ def test_b6_layouts() -> None:
     from app import engine as eng
     from app import showtemplates
     web = ROOT / "web" / "app"
-    css = (web / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     ws = (web / "workspaces.js").read_text(encoding="utf-8")
     st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
@@ -8493,7 +8496,7 @@ def test_lights_fader() -> None:
           and "state.lite.master" in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
           and "renderSideFaders" in qb and "stripMenu" in qb and "haze.qbStrip" in qb and '!b.note ? null : h("small", b.note)' in qb and '"Description"' in qb and 'id="qb-faders"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
           and "quick_group_controls" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
-    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     check("a fader tile shows its name: on the value's line, two lines when tall, one line in S rows",
           'h("span.qfader-top", h("b.qfader-name"' in qb and "-webkit-line-clamp: 2" in css
           and '.qb-grid[data-height="s"] .qctl.qfader' in css and "@container (max-width: 150px)" in css, "")
@@ -8511,7 +8514,7 @@ def test_programmer_subtabs() -> None:
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     mv = (ROOT / "web" / "app" / "movepanel.js").read_text(encoding="utf-8")
-    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     subs = {"position": ("point", "move", "limits"), "beam": ("quick", "all"), "fx": ("effects", "running", "paint")}
     check("three tabs get sub-tabs, remembered on this computer", "const SUBS = {" in pj and "haze.sub." in pj
           and all(f'["{k}",' in pj for ks in subs.values() for k in ks), "")
@@ -10009,7 +10012,7 @@ def test_touch_surface() -> None:
     turn off Windows' edge swipes and three/four-finger gestures.  (Real
     fingers: tools/touchcheck.mjs, run in CI's screen check.)"""
     print("Touch: a control surface, not a web page")
-    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     check("the page: no overscroll, pan only (no zoom), no tap flash",
           "html, body { overscroll-behavior: none; touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; }" in css, "")
     mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
@@ -10160,14 +10163,14 @@ def test_screen_sizes() -> None:
     distance.  Every text size and control height follows the step."""
     print("Screen sizes: big screens laid out for, not zoomed")
     import re
-    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     check("1440p-class and 4K-class breakpoints", "@media (min-width: 2200px) and (min-height: 1250px)" in css
           and "@media (min-width: 3000px) and (min-height: 1700px)" in css and "--ts-base: 1.15" in css and "--ts-base: 1.45" in css, "")
     check("...each with wider panels and a taller dock", css.count("--fixtures-w: clamp(") >= 3 and css.count("--pb-h: clamp(") >= 6, "")
     left = re.findall(r"font-size: \d+(?:\.\d+)?px|font: [^;{}]*?(?<![\w.(])\d+(?:\.\d+)?px(?! \* var)", css)
     check("every text size follows the screen (no fixed px text left)", not left, str(left[:5]))
-    check("control heights follow it too", "--btn-h: calc(32px * var(--ctl))" in css and "--row-h: calc(30px * var(--ctl))" in css
-          and "--topbar-h: calc(46px * var(--ctl))" in css, "")
+    check("control heights follow it too", "--h: calc(28px * var(--ctl))" in css and "--row: calc(28px * var(--ctl))" in css
+          and "--bar: calc(44px * var(--ctl))" in css, "")
     uc = (ROOT / "tools" / "uicheck.mjs").read_text(encoding="utf-8")
     check("the screen check takes whole screens (2560x1440)", '.split("x").map(Number)' in uc, "")
     # the checks see the desk as it opens (the 3D has a window of its own,
@@ -10189,7 +10192,7 @@ def test_desktop_frame() -> None:
     mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
     pj = (ROOT / "desktop" / "preload.js").read_text(encoding="utf-8")
     wc = (ROOT / "web" / "app" / "wincontrols.js").read_text(encoding="utf-8")
-    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     check("no system title bar (a Mac keeps its window dots)", '{ frame: false }' in mj and 'titleBarStyle: "hidden"' in mj, "")
     check("the bar's buttons and Desk menu reach the app", 'ipcMain.on("win:do"' in mj and 'ipcMain.handle("win:menu"' in mj
           and 'ipcMain.on("win:run"' in mj and 'act: (what) => ipcRenderer.send("win:do"' in pj, "")
@@ -10246,7 +10249,7 @@ def test_council_fixes() -> None:
     check("stopping the output takes a hold, not a tap", '"Hold to stop"' in tb and "}, 600);" in tb, "")
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     pb = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
-    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     check("Update next to Record cue; Live shows the playbacks with GO", 'id="prog-update"' in html and 'id="pb-mini"' in html
           and "function renderMini" in pb, "")
     check("finger-sized faders and options; sliders let a scrolling finger pass",
@@ -10345,7 +10348,7 @@ def test_room_by_pointing() -> None:
           and "zoneOutline" in vj, "")
 
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
-    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     check("a palette tile is lit only while the selection holds it, and a second tap takes it off",
           "const lit = paletteOn(kind, p);" in pj and 'if (lit) run("clear_attrs"' in pj and ".pal-item.on {" in css, "")
     check("a wide programmer: room map + pan/tilt pad side by side, the pad keeps its shape, swatches stay swatch-sized",
@@ -10372,7 +10375,7 @@ def test_room_by_pointing() -> None:
           "function zonesBlock" in mv and 'tag(zonesBlock(), "limits")' in mv and "snap.floor_lock ? toggle(" in mv, "")
 
     dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
-    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     check("the desk view's windows move (by the title) and size (by the corner), snapped and remembered, with Reset",
           "function movable(el, id)" in dv and '"haze.dvLayout"' in dv and "export function resetDeskLayout" in dv
           and ".dv-resize {" in css, "")
@@ -10388,7 +10391,7 @@ def test_room_by_pointing() -> None:
           and "When a press takes effect" in qb and "function tryIt(btn, save)" in qb and 'row("Fires"' not in qb, "")
 
     pb = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
-    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     check("the dock's master faders: a grip sizes the group faders (nearly shut folds them), they go left or right, no fold button",
           'class="grp-grip" id="grp-fold-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
           and '"haze.grpW"' in pb and '"haze.mastersSide"' in pb and "body.masters-left .masters" in css, "")
@@ -10411,7 +10414,7 @@ def test_room_by_pointing() -> None:
             check("OPERATE still lets the programmer busk", e.act("set_intensity", level=90).get("ok"), "")
         finally:
             e.shutdown()
-    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     check("the lock shows: LOCKED / OPERATE in colour in the top bar, the panels dimmed behind a note when locked",
           'body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after' in css
           and "document.body.dataset.lock = lk" in (ROOT / "web" / "app" / "topbar.js").read_text(encoding="utf-8"), "")
@@ -10534,11 +10537,13 @@ def test_visual_polish() -> None:
     print("Visual polish: type scale, icons for symbols, one selected look, the Live band")
     import re as _re
     web = ROOT / "web" / "app"
-    css = (web / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     sizes = set(_re.findall(r"calc\(([0-9.]+)px \* var\(--ts\)\)", css)) - {"0.11"}
-    check("one type scale: six steps on :root, every text size is one of them (bar three big readouts)",
-          "--fs-xs: calc(11px * var(--ts));" in css and "--fs-2xl: calc(24px * var(--ts));" in css
-          and sizes <= {"11", "12", "13", "15", "18", "24", "30", "36", "44"}, str(sorted(sizes)))
+    # (five steps, 12 to 22 px; 18 / 24 and the three big readouts are the
+    # screens not rebuilt yet - css/legacy.css - and go with it)
+    check("one type scale: five steps on :root, every text size is one of them (bar the old screens' readouts)",
+          "--t-xs: calc(12px * var(--ts));" in css and "--t-xl: calc(22px * var(--ts));" in css
+          and sizes <= {"12", "13", "14", "16", "22", "18", "24", "30", "36", "44"}, str(sorted(sizes)))
     ic = (web / "icons.js").read_text(encoding="utf-8")
     check("the old text symbols (carets, notes, full screen, pages, camera, arrows) are drawn as the desk's icons, wherever they appear",
           "export function upgradeGlyphs" in ic and all(f'{k}:' in ic for k in ("caret", "music", "full", "pages", "camera"))
@@ -10633,7 +10638,7 @@ def test_dock_and_desk_fit() -> None:
     print("The dock and the desk view fit: faders, group strip, slots, head chips, keys")
     web = ROOT / "web" / "app"
     ui = (web / "ui.js").read_text(encoding="utf-8")
-    css = (web / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     pb = (web / "playbacks.js").read_text(encoding="utf-8")
     pj = (web / "programmer.js").read_text(encoding="utf-8")
     dv = (web / "deskview.js").read_text(encoding="utf-8")
@@ -10664,7 +10669,7 @@ def test_dock_and_desk_fit() -> None:
     check("a dialog that is one scrolling list scrolls once (no two-pixel scroll)",
           ".modal-body:has(> :is(.dmx-map, .qe):only-child)" in css
           and '"tiny-scroll"' in (ROOT / "tools" / "uicheck.mjs").read_text(encoding="utf-8"), "")
-    css = (web / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     dv = (web / "deskview.js").read_text(encoding="utf-8")
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     check("every desk view window has its own look: tile size (to fill), text size, tiles across, numbers - kept with its place",
@@ -10682,7 +10687,7 @@ def test_programmer_overhaul() -> None:
     size; Pan / Tilt on Palettes."""
     print("Programmer overhaul: one strip, columns, sized to the height, Text size")
     web = ROOT / "web" / "app"
-    css = (web / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     pj = (web / "programmer.js").read_text(encoding="utf-8")
     af = (web / "aimfollow.js").read_text(encoding="utf-8")
     mv = (web / "movepanel.js").read_text(encoding="utf-8")
@@ -10697,7 +10702,7 @@ def test_programmer_overhaul() -> None:
     check("Dimmer, Colour and Beam made for a wide panel", '.tab-pane[data-pane="intensity"] #int-fader' in css
           and '.tab-pane[data-pane="colour"] #picker canvas' in css and ".beam-quick { display: grid;" in css, "")
     check("Text size: Standard / Large / Extra large, layout and all", ':root[data-textsize="xl"]' in css
-          and "--ts: calc(var(--ts-base) * var(--ts-user))" in css
+          and "--ts: calc(var(--ts-base) * var(--ts-user) * var(--ts-gig))" in css
           and "TEXT_SCALE" in (web / "theme.js").read_text(encoding="utf-8"), "")
     check("the programmer's foot doesn't move (the why is a tooltip)", 'if (w) w.textContent = "";' in pj, "")
     check("a floating programmer keeps a size (no 3D view: the workspace's area) and sizes by its corner",
@@ -10784,7 +10789,7 @@ def test_shapes_drawn_palettes_fit() -> None:
     web = ROOT / "web" / "app"
     se = (web / "shapeeditor.js").read_text(encoding="utf-8")
     dv = (web / "deskview.js").read_text(encoding="utf-8")
-    css = (web / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     check("a shape is drawn with one stroke, turned into key points (no clicking point by point)",
           "function fromStroke(raw)" in se and "Draw the path: press and drag" in se and "s.points.splice(best + 1, 0, p)" not in se, "")
     check("...the box says its degrees, which way is pan and tilt, and shows the motors' tracks",

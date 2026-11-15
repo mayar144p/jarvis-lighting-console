@@ -221,6 +221,16 @@ def _which(prog: str) -> str | None:
 DIALOG_FILES = ("dialogs.js", "cuedialogs.js", "settings.js", "lightdialogs.js")
 
 
+def desk_css() -> str:
+    """The desk's stylesheet as the page loads it: every file of web/app/css
+    in the order web/index.html links them."""
+    web = ROOT / "web"
+    html = (web / "index.html").read_text(encoding="utf-8")
+    import re as _re
+    files = _re.findall(r'<link rel="stylesheet" href="/(app/css/[\w.-]+\.css)">', html)
+    return "\n".join((web / f).read_text(encoding="utf-8") for f in files)
+
+
 def dialogs_js() -> str:
     """The dialogs' source: dialogs.js and the files split out of it."""
     return "\n".join((ROOT / "web" / "app" / f).read_text(encoding="utf-8") for f in DIALOG_FILES)

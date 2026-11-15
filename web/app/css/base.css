@@ -1,0 +1,41 @@
+/* Haze - the desk's look, layer 2 of 3: the page itself.
+ * Type, focus, scrollbars and the few rules every element starts from.
+ */
+* { box-sizing: border-box; }
+html, body { min-width: 1280px; height: 100%; margin: 0; }
+/* a touch screen is the desk's control surface, not a web page: no bounce or
+   swipe "back" at the edges, no pinch or double-tap zoom, no grey flash on a
+   tap - lists and panels still scroll with a finger (pan) */
+html, body { overscroll-behavior: none; touch-action: pan-x pan-y; -webkit-tap-highlight-color: transparent; }
+body {
+  background: var(--base); color: var(--text);
+  font: 500 var(--t)/1.3 var(--font);
+  font-variant-numeric: tabular-nums lining-nums;
+  -webkit-font-smoothing: antialiased;
+}
+img, svg { -webkit-user-drag: none; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+/* hidden means hidden, whatever a part's own display says (one of the two
+   places the stylesheet forces a value; the other is Reduce motion) */
+[hidden], .hidden { display: none !important; }
+h1, h2, h3, h4, p { margin: 0; }
+h2 { font-size: var(--t); font-weight: 600; }
+h3 { margin: 16px 0 8px; font-size: var(--t-s); font-weight: 600; color: var(--text-2); }
+h3:first-child { margin-top: 0; }
+h4 { font-size: var(--t); font-weight: 600; }
+.muted { color: var(--text-2); }
+.small { font-size: var(--t-s); }
+.grow { flex: 1; }
+a { color: var(--text); }
+:focus-visible { outline: 2px solid var(--lit); outline-offset: 1px; }
+::selection { background: color-mix(in srgb, var(--lit) 30%, transparent); }
+::placeholder { color: var(--text-3); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--pressed); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+/* Reduce motion (Settings -> Screen): nothing slides, fades or pulses */
+:root[data-motion="reduced"] *, :root[data-motion="reduced"] *::before, :root[data-motion="reduced"] *::after {
+  animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important;
+}

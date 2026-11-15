@@ -3,7 +3,7 @@
 import { get, post, token } from "./api.js";
 import { aiPanel, trainingBlock } from "./aisettings.js";
 import { connectedControllers } from "./controllers.js";
-import { themeNow, setTheme, resetTheme, ACCENTS, DENSITIES, TEXT_SCALE } from "./theme.js";
+import { themeNow, setTheme, resetTheme, ACCENTS, ACCENT_NAMES, DENSITIES, TEXT_SCALE } from "./theme.js";
 import { tipsOn, setTips } from "./help.js";
 import { webMidiOn, setWebMidi, webMidiSupported, webMidiInputs, webMidiError } from "./webmidi.js";
 import { openNodeMonitor, openMidiMonitor, virtualNodeOn } from "./monitors.js";
@@ -658,10 +658,10 @@ function themeRow() {
     const bright = h("input", { type: "range", min: 30, max: 100, step: 5, value: Math.round(t.bright * 100), "aria-label": "Panel brightness" });
     bright.addEventListener("input", () => setTheme({ bright: +bright.value / 100 }));
     const custom = /^#/.test(t.accent);
-    const pickColour = h("input", { type: "color", value: custom ? t.accent : (ACCENTS[t.accent] || ACCENTS.haze)[0], "aria-label": "Your own accent colour", title: "Your own colour" });
+    const pickColour = h("input", { type: "color", value: custom ? t.accent : (ACCENTS[t.accent] || ACCENTS.lit)[0], "aria-label": "Your own accent colour", title: "Your own colour" });
     pickColour.addEventListener("change", () => { setTheme({ accent: pickColour.value }); paint(); });
     const sw = h("div.qe-swatches", ...Object.entries(ACCENTS).map(([k, [c]]) => h("button.qe-sw" + (t.accent === k ? ".on" : ""), {
-      type: "button", title: k, "aria-label": `Accent ${k}`, style: { background: c }, onclick: () => { setTheme({ accent: k }); paint(); },
+      type: "button", title: ACCENT_NAMES[k] || k, "aria-label": `Accent: ${ACCENT_NAMES[k] || k}`, style: { background: c }, onclick: () => { setTheme({ accent: k }); paint(); },
     })), h("label.qe-sw-custom" + (custom ? ".on" : ""), pickColour));
     const motion = h("input", { type: "checkbox", checked: t.motion === "reduced" });
     motion.addEventListener("change", () => setTheme({ motion: motion.checked ? "reduced" : "full" }));

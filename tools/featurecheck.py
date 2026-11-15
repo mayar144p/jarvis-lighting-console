@@ -117,7 +117,7 @@ def web():
     exactly the "exists only as a button" case this file exists to catch.
     """
     if not _WEB:
-        files = [ROOT / "web" / "index.html", ROOT / "web" / "app" / "app.css"]
+        files = [ROOT / "web" / "index.html"] + sorted((ROOT / "web" / "app" / "css").glob("*.css"))
         files += sorted((ROOT / "web" / "app").glob("*.js"))
         files += sorted((ROOT / "web" / "js").rglob("*.js"))
         for path in files:

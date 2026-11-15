@@ -10,7 +10,7 @@ from pathlib import Path
 
 from app import fixtures
 from tools.selftests import fakes
-from tools.selftests.common import ROOT, check, dialogs_js, stage_js
+from tools.selftests.common import ROOT, check, desk_css, dialogs_js, stage_js
 
 
 def test_button_tiles() -> None:
@@ -537,7 +537,7 @@ def test_desktop_only() -> None:
     print("desktop only")
     web = ROOT / "web"
     html = (web / "index.html").read_text(encoding="utf-8")
-    css = (web / "app" / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     check("the desk has no manifest or tablet module; the phone remote is its own page",
           not (web / "manifest.webmanifest").exists() and not (web / "app" / "tablet.js").exists()
           and 'rel="manifest"' not in html and "apple-touch-icon" not in html
@@ -1214,7 +1214,7 @@ def test_big_rig_groups() -> None:
     check("the list folds lights of one model into one row, with automatic group chips and splits",
           "FOLD_MIN" in fx and "auto_groups" in fx and '"select_split"' in fx, "")
     check("Shift-drag on the stage box-selects", "headsInRect" in st and "onBox" in st, "")
-    css = (ROOT / "web" / "app" / "app.css").read_text(encoding="utf-8")
+    css = desk_css()
     mj = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     check("gig mode: 44 px controls, a switch in Settings; on by itself only on a touch-only screen with no choice saved",
