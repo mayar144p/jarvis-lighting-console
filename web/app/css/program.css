@@ -238,17 +238,11 @@
 #mv-pt > .aim-row { grid-column: 2; grid-row: 2; }
 #mv-pt > .aim-tools { grid-column: 2; grid-row: 3; margin: 0; }
 #mv-pt > .palette-strip { grid-column: 2; grid-row: 4; margin: 0; align-self: start; }
-.dv-wheels > .prog-wheels { border: 0; padding: 0; min-height: 0; gap: 10px; }
-.dv-wheels .wheel { flex-direction: row; gap: 6px; }
-.dv-wheels .wheel-knob { width: calc(34px * var(--ctl)); height: calc(34px * var(--ctl)); }
-.dv-wheels .wheel-knob i { top: 4px; height: 8px; transform-origin: 50% calc(13px * var(--ctl)); }
 @container (min-width: 1100px) {
   .beam-quick { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(480px * var(--ctl)), 1fr)); gap: 8px 32px; align-items: center; }
   .beam-quick > :not(.chip-row) { grid-column: 1 / -1; max-width: calc(1100px * var(--ctl)); }
 }
 .beam-quick > .chip-row > .k { min-width: calc(70px * var(--ctl)); }
-.dv-knobs .wheel-knob { --k: min(var(--knob), calc(100cqh - 24px)); width: var(--k); height: var(--k); }
-.dv-knobs .wheel-knob i { top: 6%; height: 26%; width: max(3px, 6%); margin-left: max(-1.5px, -3%); transform-origin: 50% calc(var(--k) * .44); }
 .fx-chan { display: grid; grid-template-columns: 44px minmax(110px, auto) 1fr auto; gap: 10px; align-items: center; font-size: var(--t-s); min-height: 24px; }
 .fx-chan-n { color: var(--text-3); }
 .fx-chan-name { font-weight: 600; color: var(--text); }
@@ -271,14 +265,9 @@
 .fx-run b { flex: 1; font-weight: 600; }
 .fx-run small { color: var(--text-3); }
 .lfo { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; align-items: end; }
-.pal-kinds { display: flex; flex-direction: column; gap: 10px; }
-.pal-row .pal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; font-weight: 600; color: var(--text-2); text-transform: capitalize; }
-.pal-items, .palette-strip, .preset-list { display: flex; flex-wrap: wrap; gap: 5px; }
-.palette-strip { margin-top: 12px; }
 .pal-item { height: calc(30px * var(--ctl)); min-width: calc(44px * var(--ctl)); padding: 0 10px; border-radius: var(--r); border: 1px solid var(--line-strong); background: var(--raised); font-weight: 600; font-size: var(--t-s); display: inline-flex; align-items: center; gap: 6px; }
 .pal-item i { width: 12px; height: 12px; border-radius: 3px; }
 .pal-item:hover { border-color: var(--lit); }
-.preset-list { margin-bottom: 8px; }
 .fx-hold.laser { border-color: var(--live); color: var(--live-ink); }
 .fx-row { display: grid; grid-template-columns: 96px 1fr auto; gap: 8px; align-items: center; margin: 6px 0; }
 .fx-row .chip-row { grid-column: 2 / -1; }
@@ -336,15 +325,6 @@
 .looks-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .looks-head h3 { margin: 0; }
 .looks-head h3 small { display: block; font-weight: 400; text-transform: none; letter-spacing: 0; margin-top: 2px; }
-.look-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
-.look-play { flex: 1; min-width: 0; padding: 0 0 8px; background: none; border: 0; color: var(--text); text-align: left; cursor: pointer; display: flex; flex-direction: column; gap: 3px; }
-.look-sw { display: flex; height: calc(34px * var(--ctl)); margin-bottom: 4px; }
-.look-sw i { flex: 1; }
-.look-sw i.none { background: repeating-linear-gradient(45deg, var(--base) 0 6px, var(--raised) 6px 12px); }
-.look-play b { padding: 0 10px; font-size: var(--t); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.look-play small { padding: 0 10px; font-size: var(--t-xs); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.look-more { width: calc(32px * var(--ctl)); background: none; border: 0; border-left: 1px solid var(--line); color: var(--text-3); cursor: pointer; font-size: var(--t-l); }
-.look-more:hover { color: var(--text); }
 .fx-hold.fire.big { min-height: calc(64px * var(--ctl)); flex: 1; font-size: var(--t-l); }
 .fx-shots { margin: 8px 0; }
 .fx-shots .k { width: calc(80px * var(--ctl)); }
@@ -488,11 +468,6 @@ body.gig .mv-play, body.gig .look-play { min-height: calc(56px * var(--ctl)); }
 .wheel-teach { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
 .sec-label { padding: 2px 12px 6px; font-size: var(--t-xs); font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-3); }
 .sec-label small { text-transform: none; letter-spacing: 0; font-weight: 500; margin-left: 4px; }
-.wheel { display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--text-2); }
-.wheel-knob { --a: 0deg; width: calc(44px * var(--ctl)); height: calc(44px * var(--ctl)); border-radius: 50%; position: relative; cursor: ns-resize; touch-action: none; background: radial-gradient(circle at 50% 40%, var(--hover), var(--base)); border: 1px solid var(--line-strong); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 5%, transparent), 0 2px 6px color-mix(in srgb, var(--black) 40%, transparent); }
-.wheel-knob i { position: absolute; left: 50%; top: 5px; width: 3px; height: 11px; margin-left: -1.5px; border-radius: 2px; background: var(--lit); transform-origin: 50% 17px; transform: rotate(var(--a)); }
-.wheel-knob:focus-visible { outline: 2px solid var(--lit); outline-offset: 2px; }
-.wheel.off .wheel-knob { pointer-events: none; cursor: default; }
 .sub-count { margin-left: 5px; font-size: var(--t-xs); padding: 0 5px; border-radius: 999px; background: var(--lit); color: var(--text); }
 #programmer .tab-pane[data-sub="point"] [data-in]:not([data-in="point"]), #programmer .tab-pane[data-sub="move"] [data-in]:not([data-in="move"]), #programmer .tab-pane[data-sub="limits"] [data-in]:not([data-in="limits"]), #programmer .tab-pane[data-sub="quick"] [data-in]:not([data-in="quick"]), #programmer .tab-pane[data-sub="all"] [data-in]:not([data-in="all"]), #programmer .tab-pane[data-sub="effects"] [data-in]:not([data-in="effects"]), #programmer .tab-pane[data-sub="running"] [data-in]:not([data-in="running"]), #programmer .tab-pane[data-sub="paint"] [data-in]:not([data-in="paint"]) { display: none; }
 details.open-find > summary { cursor: pointer; padding: 4px 0; }
@@ -516,6 +491,6 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: va
   .tab-pane[data-pane="colour"] #swatches button { border-radius: 10px; }
   .tab-pane[data-pane="colour"] #colour-match { justify-self: start; }
 }
-.slot-dot, .wheel-knob { flex: none; aspect-ratio: 1; }
+.slot-dot { flex: none; aspect-ratio: 1; }
 
 @keyframes blindpulse { 50% { background: color-mix(in srgb, var(--f-fx) 32%, transparent); } }

@@ -313,6 +313,7 @@ export function initTopbar() {
   $("#lock-btn").addEventListener("click", (e) => lockMenu(e.currentTarget));
   $("#show-btn").addEventListener("click", (e) => openShowMenu(e.currentTarget, menu));
   $("#settings-btn").addEventListener("click", openSettings);
+  $("#view3d-btn").addEventListener("click", () => import("./view3d.js").then((m) => m.open3d()));
   $("#phone-btn").addEventListener("click", () => import("./remotepanel.js").then((m) => m.openPhoneQr()));
   // (the desktop app's Desk -> Other computers, phones and tablets -> Show the QR code)
   if (window.hazeDesk && window.hazeDesk.onDo) window.hazeDesk.onDo((what) => { if (what === "phoneqr") import("./remotepanel.js").then((m) => m.openPhoneQr()); });

@@ -25,10 +25,12 @@
 .fx-table td.c-name { position: relative; padding-right: 4px; }
 .fx-table tr { cursor: pointer; user-select: none; }
 .fx-table tbody tr:hover { background: var(--raised); }
-/* what is selected: a lit edge, the row lit faintly */
+/* what is selected: a lit edge, the row lit faintly; some of a fold or a
+   group selected: a quiet edge */
 .fx-table tbody tr.sel { background: var(--select); box-shadow: inset 2px 0 var(--lit); }
+.fx-table tbody tr.sel td { color: var(--text); background-color: transparent; }
 .fx-table tbody tr.sel .c-no { color: var(--text); font-weight: 600; }
-.fx-table tr.fold.part { box-shadow: inset 2px 0 var(--line-strong); }
+.fx-table tbody tr.part { box-shadow: inset 2px 0 var(--line-strong); }
 .fx-table .f-name { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
 .fx-table .f-text { flex: 1; min-width: 0; }
 .fx-table .f-name b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
@@ -41,16 +43,21 @@
 body.gig .row-menu { opacity: 1; }
 @media (hover: none) { .row-menu { opacity: 1; } }
 /* several of the same light in a row: one line, opened with its arrow */
+.fx-table tr:is(.fold, .folder) td { background-color: color-mix(in srgb, var(--text) 2%, transparent); }
 .fx-table tr.fold .c-no { font-size: var(--t-xs); }
 .fx-table tr.fold .c-addr small { display: none; }
 .fx-table tr.fold-child td:first-child { padding-left: 22px; background-image: linear-gradient(var(--line-strong), var(--line-strong)); background-size: 1px 100%; background-position: 13px 0; background-repeat: no-repeat; }
-.fold-btn { width: calc(18px * var(--ctl)); height: calc(22px * var(--ctl)); margin-right: 2px; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--text-3); font-size: var(--t-s); line-height: 1; }
+.fold-btn { width: calc(20px * var(--ctl)); height: calc(22px * var(--ctl)); margin-right: 2px; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--text-3); font-size: var(--t-s); line-height: 1; }
 .fold-btn:hover { background: var(--hover); color: var(--text); }
 /* a group: its colour, its name (click: select its lights), how many */
 .folder-line { display: flex; align-items: center; gap: 8px; min-height: var(--row); }
 .grp-sq { flex: none; width: calc(10px * var(--ctl)); height: calc(10px * var(--ctl)); border-radius: 2px; background: var(--c, var(--text-3)); }
 .folder-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.fx-table tr.folder td { padding-top: 4px; padding-bottom: 4px; }
 .fx-table tr.folder.sel .folder-name { font-weight: 600; }
+/* held: the group flashes */
+.fx-table tbody tr.folder.flashing { background: var(--pressed); }
+.fx-table tr.folder.flashing .grp-sq { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--lit)) 50%, transparent); }
 .folder-count { color: var(--text-3); font-size: var(--t-s); }
 /* dragging lights onto a group */
 body.dragging-heads #fx-rows tr.folder { outline: 1px dashed color-mix(in srgb, var(--lit) 45%, transparent); outline-offset: -1px; }
@@ -60,6 +67,8 @@ body.dragging-heads #fx-rows tr.folder { outline: 1px dashed color-mix(in srgb, 
 tr.parked td:first-child::after { content: " P"; color: var(--blind); font-weight: 800; font-size: var(--t-xs); }
 .type-ic.drawn { outline: 1px dashed color-mix(in srgb, var(--blind) 80%, transparent); outline-offset: 1px; border-radius: 3px; color: var(--blind); }
 /* nothing patched: the list says how to start */
+.fx-table-wrap .empty { display: none; padding: 28px 18px; text-align: center; color: var(--text-2); }
+.fx-table-wrap .empty p { margin: 6px 0 12px; }
 .fx-table-wrap.is-empty .empty { display: block; }
 .fx-table-wrap.is-empty table { display: none; }
 .fixtures:has(.fx-table-wrap.is-empty) #add-btn, .fixtures:has(.fx-table-wrap.is-empty) .sel-actions { visibility: hidden; }

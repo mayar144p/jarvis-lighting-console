@@ -7,7 +7,6 @@
 .help-grid dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: baseline; }
 .help-grid dt { text-align: right; }
 .help-grid dd { margin: 0; color: var(--text-2); }
-.look-search { width: 100%; margin: 0 0 10px; }
 .tpl-card { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px; border-radius: var(--r); border: 1px solid var(--line-strong); background: var(--base); text-align: left; }
 .tpl-card:hover { border-color: var(--lit); }
 .tpl-card small { color: var(--text-3); }

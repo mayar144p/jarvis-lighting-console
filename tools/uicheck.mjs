@@ -318,7 +318,7 @@ const STEPS = [
   ["04-colour", tab("colour"), { click: '.tab-pane[data-pane="colour"]' }],
   ["05-beam", tab("beam"), { click: '.tab-pane[data-pane="beam"]' }],
   ["06-fx", tab("fx"), { click: '.tab-pane[data-pane="fx"]' }],
-  ["07-looks", tab("looks"), { click: '.tab-pane[data-pane="looks"]' }],
+  ["07-palettes", tab("desk"), { click: '.tab-pane[data-pane="desk"]' }],
   ["08-setup", tab("tools"), { click: '.tab-pane[data-pane="tools"]' }],
   ["09-movers", sel(H.movers)],
   ["10-move", tab("position"), { click: '.tab-pane[data-pane="position"]' }],
@@ -386,13 +386,12 @@ const STEPS = [
 const IN_3D = new Set(["23-views-menu", "24-crowd-menu", "25-zones", "26-arrange", "27-room-dialog", "28-rigging-dialog",
   "29-more-dialog", "30-venues-menu", "31-arrange-done", "62-stage-full"]);
 
-// The 3D's own window, opened as the operator opens it: Palettes -> "3D
-// view" (in a browser a window of its own, ?window=stage; the desktop app
+// The 3D's own window, opened as the operator opens it: the title bar's 3D
+// key (in a browser a window of its own, ?window=stage; the desktop app
 // opens its 3D window the same way).  Once a width: it stays open.
 async function open3dWindow(p) {
   await closeAll(p);
-  await p.click('#prog-tabs [data-tab="desk"]', { timeout: 10000 });
-  const [w] = await Promise.all([p.waitForEvent("popup", { timeout: 15000 }), p.click("button.dv-3d", { timeout: 10000 })]);
+  const [w] = await Promise.all([p.waitForEvent("popup", { timeout: 15000 }), p.click("#view3d-btn", { timeout: 10000 })]);
   w.on("pageerror", (e) => { pageErrors.push("3D window: " + String((e && e.stack) || e.message || e)); });
   w.on("console", (m) => { if (m.type() === "error" && !/favicon|Failed to load resource/.test(m.text())) pageErrors.push("3D window console: " + m.text().slice(0, 300)); });
   await w.waitForLoadState();

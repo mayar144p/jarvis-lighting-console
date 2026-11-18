@@ -5917,13 +5917,14 @@ def test_sweep3_fixes() -> None:
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
     check("no Groups strip above the fixture list (groups are its folders)", 'id="group-chips"' not in html and "#group-chips" not in fx)
-    dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
+    dv = (ROOT / "web" / "app" / "palettes.js").read_text(encoding="utf-8")
     gi = (ROOT / "web" / "app" / "goboicon.js").read_text(encoding="utf-8")
     pg = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("each gobo button shows its gobo (its picture, as the light throws it)", "/api/console/gobo?ref=" in gi
           and "export function goboIcon" in gi and "goboIcon(goboRef(role, s))" in pg and "goboIcon(goboRef(a.role, s))" in pg
           and "goboIcon(ref)" in dv, "")
-    check("a group tile in the desk view flashes while held", "function holdToFlash" in dv and '"group_flash"' in dv, "")
+    check("a group held in the side panel flashes (a tap still selects it)", "function holdToFlash(list)" in fx
+          and '"group_flash", { group, down: true }' in fx and 'holdToFlash($("#fx-rows"));' in fx, "")
 
 
 def test_sweep3_adds() -> None:
@@ -9177,10 +9178,9 @@ def test_line_up() -> None:
     fx = (app_dir / "fixtures.js").read_text(encoding="utf-8")
     check("each moving light's own menu: Line up and Invert", "Line up with the real light" in fx
           and '"set_orient", { heads: sameSelection(head), invert_pan' in fx and "Invert tilt" in fx, "")
-    check("Line up is on the Set up screen, the command bar and the desk view",
+    check("Line up is on the Set up screen, the command bar and each moving light's menu",
           "lineup.js" in (app_dir / "modehub.js").read_text(encoding="utf-8")
-          and "lineup.js" in (app_dir / "cmdbar.js").read_text(encoding="utf-8")
-          and "lineup.js" in (app_dir / "deskview.js").read_text(encoding="utf-8"), "")
+          and "lineup.js" in (app_dir / "cmdbar.js").read_text(encoding="utf-8") and "lineup.js" in fx, "")
 
 
 def test_programmer_pro_tools() -> None:
@@ -9317,11 +9317,13 @@ def test_desk_view() -> None:
             check("and deleted", not any(p["name"] == "Blood" for p in e.palettes["colour"]), "")
         finally:
             e.shutdown()
-    dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
+    dv = (ROOT / "web" / "app" / "palettes.js").read_text(encoding="utf-8")
     ws = (ROOT / "web" / "app" / "wslayouts.js").read_text(encoding="utf-8")
-    check("the windows: Group, Position, Colour, Beam; the strip: select, flip, record, windows, keypad",
-          all(k in dv for k in ('"Group"', '"position", "Position"', '"colour", "Colour"', '"beam", "Beam"',
-                                '"select_step"', '"flip"', '"run_command"', "ENTER", "openCueList")), "")
+    ix = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    check("Palettes: the looks across the top, then the colours, positions and beams, each in its own place",
+          all(k in ix for k in ('id="pools"', 'class="pool pool-looks"', 'id="preset-list"', 'id="pool-colour"', 'id="pool-position"', 'id="pool-beam"'))
+          and all(k in dv for k in ('["colour", "Colours", "C"]', '["position", "Positions", "P"]', '["beam", "Beams", "B"]',
+                                    '"include_palette"', '"record_palette"', '"palette_edit"')), "")
     wsj = (ROOT / "web" / "app" / "workspaces.js").read_text(encoding="utf-8")
     check("the programmer's Palettes tab, and the desk keeps the tab you left", 'data-tab="desk"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
           and "sel.dataset.tab" in wsj and "saved.tab" in wsj and "export const BOTTOMS" in ws, "")
@@ -9329,7 +9331,7 @@ def test_desk_view() -> None:
     check("the plot: Plan / Front / Side, head numbers / names / DMX, click and box select, Design mode moves lights",
           all(k in pl for k in ('"plan", "Plan"', '"front", "Front"', '"side", "Side"', '"nos", "Head numbers"',
                                 '"dmx", "DMX addresses"', '"set_place"', "Design mode", "pl-rect", "trussPath"))
-          and "openPlot" in dv, "")
+          and 'lazy("./plot.js", "openPlot")' in (ROOT / "web" / "app" / "modehub.js").read_text(encoding="utf-8"), "")
 
 
 def _node_three(js: str) -> dict:
@@ -10039,7 +10041,7 @@ def test_touch_surface() -> None:
           "if (dragging !== null) return;" in ui and "if (finger !== null) return;" in qb
           and "if (down !== null) return;" in qb
           and "if (finger !== null) return;" in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
-          and "if (finger !== null) return;" in (ROOT / "web" / "app" / "wheels.js").read_text(encoding="utf-8"), "")
+          and "if (finger !== null || e.button !== 0) return;" in (ROOT / "web" / "app" / "wheels.js").read_text(encoding="utf-8"), "")
     check("a finger held on a live button opens no menu (the mouse's right-click still does)",
           "if (!byTouch(e)) speedMenu(el, b)" in qb and "export const byTouch" in ui, "")
     tc = (ROOT / "tools" / "touchcheck.mjs").read_text(encoding="utf-8")
@@ -10176,9 +10178,9 @@ def test_screen_sizes() -> None:
     uc = (ROOT / "tools" / "uicheck.mjs").read_text(encoding="utf-8")
     check("the screen check takes whole screens (2560x1440)", '.split("x").map(Number)' in uc, "")
     # the checks see the desk as it opens (the 3D has a window of its own,
-    # opened from Palettes -> 3D view), not the old 3D inside the desk
-    check("the screen checks open the desk as it opens and the 3D in its own window (Palettes -> 3D view)",
-          "await p.goto(BASE);" in uc and 'p.waitForEvent("popup"' in uc and 'p.click("button.dv-3d"' in uc
+    # opened from the title bar's 3D key), not the old 3D inside the desk
+    check("the screen checks open the desk as it opens and the 3D in its own window (the title bar's 3D key)",
+          "await p.goto(BASE);" in uc and 'p.waitForEvent("popup"' in uc and 'p.click("#view3d-btn"' in uc
           and "IN_3D.has(name)" in uc and 'w3.goto(BASE + "?window=stage")' in (ROOT / "tools" / "vischeck.mjs").read_text(encoding="utf-8")
           and not any("3d=1" in (ROOT / "tools" / f).read_text(encoding="utf-8")
                       for f in ("uicheck.mjs", "vischeck.mjs", "pixcheck.mjs", "oddcheck_ui.mjs")), "")
@@ -10210,10 +10212,9 @@ def test_desktop_frame() -> None:
           'window.addEventListener("storage"' in mn and 'e.key === "haze.calm"' in mn and 'e.key === "haze.theme"' in mn, "")
 
     ic = (ROOT / "web" / "app" / "icons.js").read_text(encoding="utf-8")
-    dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
     check("the keys have icons, as on a pro desk: Record, Update, Fade in, Delay, Fan, Flip, Mirror...",
           all(f"  {k}: '" in ic for k in ("rec", "update", "fadein", "fadeout", "delay", "fan", "flip", "mirror", "locate", "go", "stop"))
-          and '"Record…": "rec"' in dv and 'rec.prepend(icon("rec"))' in (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
+          and 'rec.prepend(icon("rec"))' in (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
           and 'icon("fadein"), "Fade in"' in (ROOT / "web" / "app" / "cuedialogs.js").read_text(encoding="utf-8")
           and 'icon("stop")' in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8"), "")
 
@@ -10377,13 +10378,7 @@ def test_room_by_pointing() -> None:
     check("Zones & limits: where the beams may go first, the old Cues & aims too only while a show has it on",
           "function zonesBlock" in mv and 'tag(zonesBlock(), "limits")' in mv and "snap.floor_lock ? toggle(" in mv, "")
 
-    dv = (ROOT / "web" / "app" / "deskview.js").read_text(encoding="utf-8")
     css = desk_css()
-    check("the desk view's windows move (by the title) and size (by the corner), snapped and remembered, with Reset",
-          "function movable(el, id)" in dv and '"haze.dvLayout"' in dv and "export function resetDeskLayout" in dv
-          and ".dv-resize {" in css, "")
-    check("...the board fills the height there is and scrolls rather than spilling under a taller dock",
-          "function firstFit()" in dv and "if (!layout._own && board.clientHeight" in dv and ".dv-board {" in css, "")
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     check("faders fill to their level, with a cap a finger can catch", "export function faderFill" in qb
           and "linear-gradient(to top, color-mix(in srgb, var(--fill) 75%, transparent) var(--v, 100%)" in css, "")
@@ -10647,7 +10642,7 @@ def test_dock_and_desk_fit() -> None:
     css = desk_css()
     pb = (web / "playbacks.js").read_text(encoding="utf-8")
     pj = (web / "programmer.js").read_text(encoding="utf-8")
-    dv = (web / "deskview.js").read_text(encoding="utf-8")
+    dv = (web / "palettes.js").read_text(encoding="utf-8")
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     check("a fader's cap travels inside its track", "cap.style.bottom = `calc((100% - var(--cap-h)) * ${pct})`" in ui and "--cap-h:" in css, "")
     check("group faders: a finger's width each, full names, a strip that scrolls and fades where more wait",
@@ -10659,28 +10654,20 @@ def test_dock_and_desk_fit() -> None:
     check("a playback's options are buttons on its card (+ Cue, Cues, Loop, Auto)",
           'const opts = h("div.pb-opts"' in pb and ".pb-opt.on {" in css, "")
     check("the head chips sit in the programmer's title row", 'id="prog-heads"' in html and '$("#prog-heads")' in pj, "")
-    check("desk view keys: whole names, windows sized within limits", '"Line up": "lineup"' in dv and "const SIZE = {" in dv
-          and ".dv-keywin .dv-key span { white-space: nowrap;" in css, "")
     check("the usual-palettes tile only when the rig can do it, and it can be put away",
           "canMake(kind) && !noOffer().includes(kind)" in dv and '"haze.dvNoOffer"' in dv, "")
-    check("the keypad says what it is for", '"1 THRU 4 @ FULL, ENTER"' in dv, "")
     check("Settings keeps one size whichever page is open; a long page scrolls inside",
           ".modal:has(.modal-body > .settings) { width: min(980px, 94vw); height: min(760px, 88vh);" in css
           and ".settings > .set-pane { overflow-y: auto;" in css, "")
-    check("the desk view board fills the programmer and scrolls rather than squash; a narrow one stacks its windows",
-          '.prog-body:has(> .tab-pane[data-pane="desk"]:not([hidden]))' in css and ".dv-board.dv-stack" in css
-          and "const STACK_BELOW" in dv, "")
+    check("the pools: looks across, colours half the width, positions and beams a quarter each - on a narrow programmer the colours over them",
+          ".pool-colour { grid-column: span 6; }" in css and ".pool-position, .pool-beam { grid-column: span 3; }" in css
+          and "@container (max-width: 800px)" in css and ".pool-tile.on { box-shadow: inset 0 0 0 2px var(--lit); }" in css, "")
     check("the desk opens on Palettes", 'let tab = "desk";' in pj and 'showTab("desk");' in pj
           and 'data-tab="desk" aria-selected="true"' in html, "")
     check("a dialog that is one scrolling list scrolls once (no two-pixel scroll)",
           ".modal-body:has(> :is(.dmx-map, .qe):only-child)" in css
           and '"tiny-scroll"' in (ROOT / "tools" / "uicheck.mjs").read_text(encoding="utf-8"), "")
-    css = desk_css()
-    dv = (web / "deskview.js").read_text(encoding="utf-8")
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
-    check("every desk view window has its own look: tile size (to fill), text size, tiles across, numbers - kept with its place",
-          "function lookMenu(anchor, el, id)" in dv and "r.look = { ...(r.look || {}), ...change };" in dv
-          and '.dv-win[data-size="fill"] .dv-tiles' in css and '.dv-win[data-text="xl"]' in css and ".dv-win[data-cols] .dv-tiles" in css, "")
     check("what the programmer holds: chips under its tabs, saying how many lights", 'class="prog-head"' in html and '<div class="prog-in" id="prog-in" hidden></div>' in html
           and "light${counts[g] === 1 ? \"\" : \"s\"}`) : null," in (web / "programmer.js").read_text(encoding="utf-8"), "")
 
@@ -10711,15 +10698,6 @@ def test_programmer_overhaul() -> None:
           and "--ts: calc(var(--ts-base) * var(--ts-user) * var(--ts-gig))" in css
           and "TEXT_SCALE" in (web / "theme.js").read_text(encoding="utf-8"), "")
     check("the programmer's foot doesn't move (the why is a tooltip)", 'if (w) w.textContent = "";' in pj, "")
-    check("Pan / Tilt / Dimmer knobs on Palettes (a window of their own)", "export function mountWheels(box, list)" in (web / "wheels.js").read_text(encoding="utf-8"), "")
-    dv = (web / "deskview.js").read_text(encoding="utf-8")
-    check("desk view windows follow the pointer pixel by pixel (an outline shows where they land)",
-          "requestAnimationFrame(paint)" in dv and 'h("div.dv-ghost")' in dv and ".dv-ghost {" in css, "")
-    check("...sized to the pixel: the windows below move down or come up, never overlapping",
-          "function reflow(live = null)" in dv and "top = Math.max(top, p.top + p.hp + GAP)" in dv
-          and "if (board.clientWidth < 50) { owed = true; return null; }" in dv, "")
-    check("...and the dock moving up or down doesn't resize them (Show -> Fit the windows to the panel)",
-          "function fitRows()" in dv and "if (e.isTrusted) reflow();" in dv and "layout._own = true;" in dv, "")
     mp = (web / "movepanel.js").read_text(encoding="utf-8")
     check("Roam's speed is a slider (any speed, named as it moves)", "function roamSlider()" in mp and '"Roam speed"' in mp, "")
     pj2 = (web / "programmer.js").read_text(encoding="utf-8")
@@ -10732,12 +10710,12 @@ def test_programmer_overhaul() -> None:
     check("the map's DJ marker: an arrow with a head, its zone's label not drawn on top, a tooltip on each mark",
           "am-front-head" in af and "Math.hypot(cx - bx, cz - bz) < 1.2" in af and "The middle of the room" in af, "")
     wh = (web / "wheels.js").read_text(encoding="utf-8")
-    check("a wheel the selection doesn't have is greyed in its place (the row never shifts)", 'el.classList.add("off")' in wh and ".wheel.off {" in css, "")
+    check("a value the selection doesn't have is greyed in its place (the row never shifts)", 'el.classList.add("off")' in wh and ".pv.off {" in css, "")
     ws = (web / "workspaces.js").read_text(encoding="utf-8")
     check("no layouts menu: the three modes are the switch, and no 3D view toggle hides in a menu",
           "function openMenu" not in ws and '"3D view", hint: "show or hide' not in ws, "")
-    check("Palettes has a 3D view button (the desktop app's 3D window, or a window of its own)", "export function open3d()" in (web / "view3d.js").read_text(encoding="utf-8")
-          and "m.open3d()" in dv, "")
+    check("the title bar has a 3D view key (the desktop app's 3D window, or a window of its own)", "export function open3d()" in (web / "view3d.js").read_text(encoding="utf-8")
+          and "m.open3d()" in (web / "topbar.js").read_text(encoding="utf-8") and 'id="view3d-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8"), "")
 
 
 def test_freeze_watchdog() -> None:
@@ -10791,7 +10769,7 @@ def test_shapes_drawn_palettes_fit() -> None:
     print("Shapes drawn and explained; palettes dimmed for lights that can't take them")
     web = ROOT / "web" / "app"
     se = (web / "shapeeditor.js").read_text(encoding="utf-8")
-    dv = (web / "deskview.js").read_text(encoding="utf-8")
+    dv = (web / "palettes.js").read_text(encoding="utf-8")
     css = desk_css()
     check("a shape is drawn with one stroke, turned into key points (no clicking point by point)",
           "function fromStroke(raw)" in se and "Draw the path: press and drag" in se and "s.points.splice(best + 1, 0, p)" not in se, "")
@@ -10800,13 +10778,10 @@ def test_shapes_drawn_palettes_fit() -> None:
     check("...and whether the path stays inside the box (Fit inside the box)", "function overshoot(pts, smooth)" in se
           and "Fit inside the box" in se and "The whole path stays inside the box." in se, "")
     check("a palette the selected lights can't take is dimmed and says why", "export function paletteFits(p)" in dv
-          and '(fits === false ? ".na" : "")' in dv and ".dv-tile.na {" in css, "")
+          and '(fits === false ? ".na" : "")' in dv and ".pool-tile.na {" in css, "")
     pj = (web / "programmer.js").read_text(encoding="utf-8")
     check("...and the Beam / Colour / Position tabs list only the palettes the selected lights can take",
           ".filter((p) => paletteFits(p) !== false).map((p) => palButton(kind, p))" in pj, "")
-    check("Dimmer, Pan and Tilt as a Knobs window on Palettes (no box, sized by its menu)", '["knobs", h("section.dv-win.dv-knobwin"' in dv
-          and 'mountWheels(body, [["dimmer", "Dimmer"], ["pan", "Pan"], ["tilt", "Tilt"]])' in dv and ".dv-knobwin[data-size=\"xl\"]" in css, "")
-    check("key windows can be sized small (no forced empty space)", "select: { w: [2, 10], h: [2, 8] }" in dv, "")
     mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
     check("the desktop app keeps one address, so the screen settings survive a restart", "function localPort()" in mj
           and "await localPort()" in mj and "saved._localPort" in mj, "")
@@ -12733,4 +12708,39 @@ def test_haze_area() -> None:
                   "By the DJ" not in xml and "SceneObject" in xml, "the room's other objects go, the haze area doesn't")
         finally:
             e.shutdown()
+
+
+def test_stylesheet_rules() -> None:
+    """The desk's stylesheets keep their own rules: every file linked, in
+    its place (the colours first, the base next, the 3D last); a colour is
+    named once, in tokens.css, and used by name everywhere else;
+    !important only in base.css (hidden, reduced motion, the pointer modes);
+    and a generic one-word class can't hide a part of another screen (the
+    side panel's "empty" once hid the Cues tab's "+")."""
+    print("Stylesheets: every file linked in order, colours by name, !important only in the base")
+    import re as _re
+    web = ROOT / "web"
+    css_dir = web / "app" / "css"
+    html = (web / "index.html").read_text(encoding="utf-8")
+    linked = _re.findall(r'<link rel="stylesheet" href="/app/css/([\w.-]+\.css)">', html)
+    files = sorted(f.name for f in css_dir.glob("*.css"))
+    check("every stylesheet is linked once, the colours first, the base next and the 3D last",
+          sorted(linked) == files and len(set(linked)) == len(linked)
+          and linked[:2] == ["tokens.css", "base.css"] and linked[-1] == "stage.css", str(linked))
+    raw = _re.compile(r"#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(")
+    colours, important = [], []
+    for f in files:
+        text = _re.sub(r"/\*.*?\*/", "", (css_dir / f).read_text(encoding="utf-8"), flags=_re.S)
+        for m in _re.finditer(r"\{([^{}]*)\}", text):
+            body = m.group(1)
+            if f != "tokens.css" and raw.search(body):
+                colours.append(f"{f}: {body.strip()[:70]}")
+            if f != "base.css" and "!important" in body:
+                important.append(f"{f}: {body.strip()[:70]}")
+    check("no colour is written out but in tokens.css: everything else uses the named colours", not colours, "; ".join(colours[:5]))
+    check("!important only in base.css", not important, "; ".join(important[:5]))
+    css = desk_css()
+    check("the generic 'empty' class hides nothing on its own (the side panel's 'no lights yet' box is scoped)",
+          not _re.search(r"(^|\})\s*\.empty\s*\{[^}]*display:\s*none", css)
+          and ".fx-table-wrap .empty { display: none;" in css, "")
 

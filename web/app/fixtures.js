@@ -134,8 +134,45 @@ function folderRow(g, members, open) {
       h("button.fold-btn", { title: open ? "Close the group" : "Show its lights", "aria-label": open ? `Close ${g.name}` : `Open ${g.name}`,
         "aria-expanded": open ? "true" : "false" }, open ? "▾" : "▸"),
       sq,
-      h("b.folder-name", { title: `Select the ${members.length} light(s) in ${g.name} - hover to see them in the 3D view` }, g.name),
+      h("b.folder-name", { title: `Select the ${members.length} light(s) in ${g.name} - hold to flash them, hover to see them in the 3D view` }, g.name),
       h("span.folder-count", String(members.length)))));
+}
+
+// Hold a group's line to flash its lights - full, over everything else -
+// until you let go (a tap still selects them).  The release is caught on
+// the window: the list may be redrawn while it is held.
+function holdToFlash(list) {
+  let timer = 0, row = null;
+  const stop = () => { clearTimeout(timer); row = null; };
+  list.addEventListener("pointerdown", (e) => {
+    const tr = e.target.closest("tr.folder");
+    if (!tr || e.button !== 0 || e.target.closest(".fold-btn")) return;
+    stop();
+    row = tr;
+    const group = +tr.dataset.group;
+    timer = setTimeout(() => {
+      if (row !== tr) return;
+      tr.classList.add("flashing");
+      run("group_flash", { group, down: true }, { silentError: true });
+      const swallow = (ev) => { ev.stopImmediatePropagation(); ev.preventDefault(); };
+      const up = (ev) => {
+        window.removeEventListener("pointerup", up, true);
+        window.removeEventListener("pointercancel", up, true);
+        tr.classList.remove("flashing");
+        run("group_flash", { down: false }, { silentError: true });
+        // the click that follows a hold is not a tap
+        if (ev.type === "pointerup") {
+          window.addEventListener("click", swallow, { capture: true, once: true });
+          setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
+        }
+      };
+      window.addEventListener("pointerup", up, true);
+      window.addEventListener("pointercancel", up, true);
+    }, 350);
+  });
+  list.addEventListener("pointerup", stop);
+  list.addEventListener("pointercancel", stop);
+  list.addEventListener("pointerout", (e) => { if (row && !row.contains(e.relatedTarget)) stop(); });
 }
 
 function render() {
@@ -743,7 +780,10 @@ async function makeGroup() {
 export function initFixtures() {
   $("#fx-rows").addEventListener("click", rowClick);
   wireDrag();
+  holdToFlash($("#fx-rows"));
   $("#fx-rows").addEventListener("contextmenu", (e) => {
+    // (a finger held on a group flashes it: no menu over the flash)
+    if (e.target.closest("tr.flashing")) { e.preventDefault(); return; }
     const tr = e.target.closest("tr[data-head]");
     if (tr && tr.dataset.group !== undefined) {
       const g = userGroups().find((x) => x.n === +tr.dataset.group);

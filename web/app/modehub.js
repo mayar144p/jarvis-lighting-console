@@ -83,6 +83,7 @@ function paintSetup() {
       { title: "Room and rigging", status: v.name || v.template ? `${v.name || v.template}` : "a plain room so far", ok: v.name || v.template || (v.room || {}).width ? true : null,
         buttons: [btn("Arrange the room", () => needs3d("Arranging the room") && import("./venuepanel.js").then((m) => m.setArranging(true))),
           btn("Room shape…", lazy("./roomdialog.js", "openRoomDialog")), btn("Rigging…", lazy("./rigdialog.js", "openRigDialog")),
+          btn("Plot…", lazy("./plot.js", "openPlot")),
           btn("Describe it in words…", lazy("./settings.js", "openSettingsAt", "venue")), btn("Start again…", lazy("./venuepanel.js", "resetVenue"))] },
       { title: "Lights match the real ones", status: mv.length ? `${lined} of ${mv.length} moving light${mv.length > 1 ? "s" : ""} lined up` : "no moving lights",
         ok: mv.length ? lined === mv.length : null, buttons: [btn("Line up with the real lights…", lazy("./lineup.js", "openLineUp"))] },

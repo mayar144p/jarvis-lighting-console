@@ -354,14 +354,16 @@ another button or the whole page; what the buttons do stays the same.
 
 ### Groups
 
-*Where:* Fixtures → Group
+*Where:* Lights (the side panel) → Group
 
 A group is a set of lights you pick often (the back truss, the floor PARs).
 
 1. Select the lights (click, Ctrl+click, or drag in the 3D / the list).
-2. Press **Group** under the fixture list (or right-click →
+2. Press **Group** under the list of lights (or right-click →
    **Make a group of them…**), name it, **Create group**.
-3. Its chip selects them again. A group's **⋯** (or a right-click on its chip):
+3. The groups sit at the top of the list, each with its colour: click a
+   group's name to select its lights again, its arrow to see them, and hold
+   it down to flash them (full, until you let go). Right-click a group:
    **Add the selected lights**, **Take the selected lights out**, **Rename…**,
    **Delete group…**. Buttons and faders that use the group follow the change.
 4. Each group gets a **fader** next to the masters at the bottom: its lights at
@@ -372,19 +374,24 @@ A group is a set of lights you pick often (the back truss, the floor PARs).
 
 ### Palettes
 
-*Where:* Programmer → Looks → + Record
+*Where:* Programmer → Palettes → + Save
 
 A palette is a colour, a position or a beam setting, saved once and used
 everywhere: cues and buttons point at it, so changing the palette changes
-every cue that uses it.
+every cue that uses it. The **Palettes** tab keeps them in four pools: your
+looks across the top, then the colours, the positions and the beams. Each
+tile has its number (C1, P1, B1...) and its name; a colour shows its colour,
+a beam its gobo.
 
 1. Select lights and set the look in the programmer.
-2. Programmer → **Looks** → the row for **Colour**, **Position** or **Beam** →
-   **+ Record**, give it a name, **Record**.
-3. Tap a palette to put it on the selected lights.
-4. To change it everywhere: set the new look, then the palette's **⋯** →
-   **Update from the selection**. **Rename palette** and **Delete palette**
-   are there too.
+2. Programmer → **Palettes** → **+ Save** in the colours, positions or beams,
+   give it a name, **Save**. (The Colour, Position and Beam tabs have the same
+   **+ Save** above their controls.)
+3. Tap a palette to put it on the selected lights. Its tile is outlined while
+   the selected lights hold it, and faded when they can't take it (a gobo
+   palette on lights with no gobo wheel).
+4. To change it everywhere: set the new look, then right-click the palette →
+   **Update from the programmer**. **Rename…** and **Delete** are there too.
 
 ### Cues and playbacks
 

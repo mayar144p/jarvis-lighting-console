@@ -103,6 +103,9 @@
       <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></svg>
       <span id="lock-label">Design</span>
     </button>
+    <button class="tb-btn plain icon" id="view3d-btn" title="The 3D view, in a window of its own" aria-label="3D view">
+      <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l5.6 3.1v6.2L8 14.2l-5.6-3.1V4.9z"/><path d="M2.4 4.9L8 8l5.6-3.1M8 8v6.2"/></svg>
+    </button>
     <button class="tb-btn plain icon" id="phone-btn" title="Phone remote: a QR code to scan" aria-label="Phone remote">
       <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="1.5" width="7" height="13" rx="1.5"/><path d="M7 12.2h2"/></svg>
     </button>
@@ -244,8 +247,7 @@
           <button role="tab" data-tab="fx" aria-selected="false" title="Effects: chases, waves, movements, step effects">Effects</button>
           <button role="tab" data-tab="laser" aria-selected="false" title="Lasers" hidden>Laser</button>
           <button role="tab" data-tab="sfx" aria-selected="false" title="Special effects: confetti, CO2, fog, flame…" hidden>Special FX</button>
-          <button role="tab" data-tab="desk" aria-selected="true" title="Palettes: your saved colours, positions and beams, the groups and the command keys">Palettes</button>
-          <button role="tab" data-tab="looks" aria-selected="false" title="Looks: saved looks to play, save the one on stage">Looks</button>
+          <button role="tab" data-tab="desk" aria-selected="true" title="Palettes: your looks, colours, positions and beams - tap one and the selected lights take it">Palettes</button>
           <button role="tab" data-tab="tools" aria-selected="false" title="Rig: arrange, fan, limits, which way up (invert), line up with the real lights">Rig</button>
         </nav>
         <div class="prog-heads" id="prog-heads" hidden></div>
@@ -269,7 +271,20 @@
       <div class="prog-body" id="prog-body">
         <div class="open-warn" id="open-warn" hidden></div>
 
-        <div class="tab-pane" data-pane="desk" hidden><div id="desk-view"></div></div>
+        <!-- Palettes: what the show has saved, in four fixed pools -->
+        <div class="tab-pane" data-pane="desk" hidden>
+          <div class="pools" id="pools">
+            <section class="pool pool-looks">
+              <header><h3>Looks <span class="count" id="pool-looks-n"></span></h3>
+                <input class="look-search" id="look-search" type="search" placeholder="Find a look (name, colour, effect…)" hidden>
+                <button class="btn small" id="preset-rec" title="Save what is on the lights now as a named look">+ Save look</button></header>
+              <div class="look-grid" id="preset-list"></div>
+            </section>
+            <section class="pool pool-colour"><header><h3>Colours <span class="count" id="pool-colour-n"></span></h3></header><div class="pool-tiles" id="pool-colour"></div></section>
+            <section class="pool pool-position"><header><h3>Positions <span class="count" id="pool-position-n"></span></h3></header><div class="pool-tiles" id="pool-position"></div></section>
+            <section class="pool pool-beam"><header><h3>Beams <span class="count" id="pool-beam-n"></span></h3></header><div class="pool-tiles" id="pool-beam"></div></section>
+          </div>
+        </div>
 
         <div class="tab-pane" data-pane="colour" hidden>
           <div class="mode-hint" id="mode-hint" hidden></div>
@@ -354,19 +369,6 @@
 
         <div class="tab-pane" data-pane="laser" hidden><div id="laser-pane"></div></div>
         <div class="tab-pane" data-pane="sfx" hidden><div id="sfx-pane"></div></div>
-
-        <div class="tab-pane" data-pane="looks" hidden>
-          <div class="looks-head">
-            <h3>Looks <small class="muted">tap to play · colours, positions and effects together</small></h3>
-            <button class="btn primary" id="preset-rec" title="Save what is on the lights now as a named look">+ Save look</button>
-          </div>
-          <input class="input look-search" id="look-search" type="search" placeholder="Find a look (name, colour, effect…)" hidden>
-          <div class="look-grid" id="preset-list"></div>
-          <details class="more">
-            <summary>Palettes: just a colour, a position or a beam</summary>
-            <div class="pal-kinds" id="pal-kinds"></div>
-          </details>
-        </div>
 
         <div class="tab-pane" data-pane="tools" hidden>
           <h3>Arrange on stage</h3>

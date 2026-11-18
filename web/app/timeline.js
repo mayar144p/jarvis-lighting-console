@@ -5,7 +5,7 @@
 import { post, token } from "./api.js";
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
-import { $, h, menu, modal, toast, promptBox, typingInField } from "./ui.js";
+import { $, h, menu, modal, toast, promptBox, typingInField, cssVar } from "./ui.js";
 import { songParts, loudness, musicTraits } from "./songparts.js";
 
 const LANE_H = 46;
@@ -58,6 +58,8 @@ function render() {
   const width = Math.max(600, Math.ceil(d.length * pxs) + 40);
   const canvas = $("#tl-canvas");
   canvas.style.width = width + "px";
+  // the lanes' faint lines fall on the bars
+  canvas.style.setProperty("--bar-px", `${Math.max(4, beat() * 4 * pxs)}px`);
   // headers and lanes
   const heads = [h("div.tl-head.ruler-head", h("span.muted.small", "Time"))];
   const lanes = [];
@@ -230,13 +232,23 @@ function dragKey(dot, tr, c) {
   });
 }
 
+// The ruler: the time along the top (each label over its own short tick),
+// the bars and beats along the bottom (a bar's number beside its line), the
+// song's markers - in the desk's own colours, sharp on a sharp screen, as
+// tall as the "Time" head beside it.
 function drawRuler(width) {
   const cv = $("#tl-ruler");
-  cv.width = width;
-  cv.height = 22;
+  const head = $(".tl-head.ruler-head");
+  const H = Math.max(18, Math.round(head ? head.getBoundingClientRect().height : 22) || 22);
+  const k = H / 22, dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(width * dpr);
+  cv.height = Math.round(H * dpr);
+  cv.style.width = width + "px";             // (its height is the head's, in CSS: they line up whenever it is drawn)
   const g = cv.getContext("2d");
-  g.clearRect(0, 0, width, 22);
-  g.font = "10px system-ui, sans-serif";
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, width, H);
+  g.font = `500 ${Math.round(10 * k)}px ${cssVar("--font") || "system-ui, sans-serif"}`;
+  const ink = { time: cssVar("--text-2"), bar: cssVar("--text-3"), barLine: cssVar("--line-strong"), beatLine: cssVar("--line"), mark: cssVar("--blind") };
   const b = beat();
   const d = doc();
   // beat and bar lines, thinned out when zoomed out
@@ -245,23 +257,25 @@ function drawRuler(width) {
     for (let i = 0, t = 0; t <= d.length; i++, t = i * b) {
       const x = Math.round(t * pxs) + 0.5;
       const bar = i % 4 === 0;
-      g.strokeStyle = bar ? "rgba(148,163,184,.55)" : "rgba(148,163,184,.2)";
-      g.beginPath(); g.moveTo(x, bar ? 8 : 15); g.lineTo(x, 22); g.stroke();
-      if (bar && beatPx * 4 > 34) { g.fillStyle = "#94a3b8"; g.fillText(String(i / 4 + 1), x + 3, 17); }
+      g.strokeStyle = bar ? ink.barLine : ink.beatLine;
+      g.beginPath(); g.moveTo(x, bar ? H - 10 * k : H - 4 * k); g.lineTo(x, H); g.stroke();
+      if (bar && beatPx * 4 > 34) { g.fillStyle = ink.bar; g.fillText(String(i / 4 + 1), x + 4, H - 2 * k); }
     }
   }
   const step = pxs >= 40 ? 1 : pxs >= 12 ? 5 : pxs >= 4 ? 15 : 60;
-  g.fillStyle = "#cbd5e1";
+  g.fillStyle = ink.time;
   for (let t = 0; t <= d.length; t += step) {
-    const x = Math.round(t * pxs) + 0.5;
-    g.fillRect(x, 0, 1, 7);
-    g.fillText(fmt(t).replace(/\.0$/, ""), x + 3, 8);
+    const x = Math.round(t * pxs);
+    g.fillRect(x, 10 * k, 1, 3 * k);
+    g.textAlign = t ? "center" : "left";
+    g.fillText(fmt(t).replace(/\.0$/, ""), t ? x : x + 2, 9 * k);
   }
+  g.textAlign = "left";
   for (const m of d.markers || []) {
     const x = m.t * pxs;
-    g.fillStyle = "#fbbf24";
-    g.fillRect(x, 0, 2, 22);
-    g.fillText(m.name, x + 4, 20);
+    g.fillStyle = ink.mark;
+    g.fillRect(x, 0, 2, H);
+    g.fillText(m.name, x + 4, H - 2 * k);
   }
 }
 
@@ -272,7 +286,7 @@ function drawWave() {
   const g = cv.getContext("2d");
   const W = cv.width, H = cv.height;
   g.clearRect(0, 0, W, H);
-  g.fillStyle = "rgba(56,189,248,.55)";
+  g.fillStyle = cssVar("--text-3");
   const off = d.audio.offset || 0;
   for (let x = 0; x < W; x++) {
     const t0 = x / pxs - off, t1 = (x + 1) / pxs - off;

@@ -1374,7 +1374,7 @@ function editButton(slot, btn) {
     if (d === "preset") {
       const presets = (state.snap && state.snap.presets) || [];
       kids.push(row("Preset", presets.length ? pickList([[null, presets.map((p) => [p.n, p.name])]], +s.preset, (v) => { s.preset = v; draw(); }, "Preset")
-        : h("div.qe-note", "No presets yet - record one on the Looks tab.")));
+        : h("div.qe-note", "No looks yet - save one on the Palettes tab (+ Save look).")));
     }
     if (d === "fog") kids.push(row("Output", slider(s.fogLevel, 5, 100, 5, (v) => { s.fogLevel = v; })));
     if (PACED.has(d)) {

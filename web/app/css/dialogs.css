@@ -1,11 +1,6 @@
 /* Haze - the desk's look: the windows: adding lights, cues, the DMX map, the checks, the room, the rigging, line up, songs, sound.... */
 
 #lock-label { display: none; }
-.fx-table tbody tr.sel { background: color-mix(in srgb, var(--lit) 22%, transparent); }
-.fx-table tbody tr.sel td:first-child { box-shadow: inset 4px 0 0 var(--lit); }
-.fx-table tbody tr.sel td { color: var(--text); }
-.empty { display: none; padding: 28px 18px; text-align: center; color: var(--text-2); }
-.empty p { margin: 6px 0 12px; }
 .aim-tools .select { max-width: 160px; }
 .hint { color: var(--text-2); font-size: var(--t-s); }
 .hud-btn.icon { width: calc(30px * var(--ctl)); padding: 0; display: grid; place-items: center; }
@@ -59,7 +54,6 @@
 .beam.on { background: var(--lit); color: var(--lit-ink); border-color: var(--lit); box-shadow: none; }
 .ai-note .x { background: none; border: 0; color: inherit; cursor: pointer; padding: 0; min-width: calc(22px * var(--ctl)); min-height: calc(22px * var(--ctl)); display: inline-grid; place-items: center; border-radius: 50%; font-size: var(--t-l); line-height: 1; opacity: .7; }
 .ai-note .x:hover { background: color-mix(in srgb, var(--text) 8%, transparent); }
-.fx-table tr.fold.part { box-shadow: inset 3px 0 0 var(--lit); }
 .chan-table tr[draggable="true"] { cursor: grab; }
 .chan-table tr.dragging { opacity: .45; }
 .chan-table tr.drop td { box-shadow: inset 0 2px 0 var(--lit); }
@@ -97,9 +91,6 @@
 @media (max-width: 1500px) {
   #out-sub { display: none; }
 }
-.fx-table tr.folder td { background: color-mix(in srgb, var(--text) 2%, transparent); padding-top: 4px; padding-bottom: 4px; }
-.fx-table tr.folder.sel td { background: var(--select); }
-.fx-table tr.folder.part { box-shadow: inset 3px 0 0 var(--lit); }
 .ai-models { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
 .ai-model { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 8px; }
 .ai-model.rec { border-color: var(--lit); background: var(--select); }
@@ -119,7 +110,6 @@
 .ic-caret.glyph, .ic-caretr.glyph { width: .9em; height: .9em; opacity: .8; }
 .ic .dim { opacity: .45; }
 .ic-rec .fill { fill: var(--live); }
-.dv-win .dv-tile .gobo-ic { width: var(--tile-sw); height: var(--tile-sw); }
 .help { display: flex; flex-direction: column; gap: 12px; width: min(860px, 86vw); min-height: min(460px, 60vh); }
 .help-tabs button.on { background: var(--select); border-color: var(--lit); color: var(--text); box-shadow: inset 0 0 0 1px var(--lit); }
 .help-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
@@ -132,7 +122,6 @@
 .help-steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; }
 .help-steps li b { display: block; color: var(--text); }
 .help-steps li span { color: var(--text-2); }
-.dv-wheels .wheel .small { font-size: var(--t-s); font-weight: 600; color: var(--text-2); }
 .copilot .drawer-head { padding: 14px 18px; }
 .copilot .drawer-head h2 { font-size: var(--t-l); }
 .copilot .msg { font-size: var(--t); max-width: 88%; }
@@ -192,8 +181,6 @@
 .modal-body p, .msg { user-select: text; -webkit-user-select: text; }
 .linkish { background: none; border: 0; padding: 3px 4px; margin: -3px -4px; min-height: calc(24px * var(--ctl)); border-radius: 4px; color: var(--lit); cursor: pointer; font: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .linkish:hover { color: var(--text); }
-.look { display: flex; border: 1px solid var(--line); border-radius: var(--r-float); overflow: hidden; background: var(--raised, var(--raised)); }
-.look:hover { border-color: var(--lit); }
 
 .rec-fades { display: flex; gap: 4px; margin-top: 4px; }
 .rec-fades .chip { padding: 1px 8px; font-size: var(--t-xs); }
@@ -371,7 +358,6 @@ body.gig .seg button { min-height: calc(40px * var(--ctl)); }
 .rig-report tr.warn td { background: color-mix(in srgb, var(--blind) 6%, transparent); }
 .rig-parts { margin: 4px 0 10px; padding-left: 18px; }
 .teach .row-btns input { flex: 1; min-width: 0; }
-.wheel.off { opacity: .32; }
 .show-files { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; max-height: min(60vh, 520px); overflow: auto; }
 .show-file { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); }
 .show-file.open { border-color: color-mix(in srgb, var(--lit) 55%, transparent); }

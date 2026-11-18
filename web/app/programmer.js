@@ -3,7 +3,7 @@ import { get } from "./api.js";
 import { state, on, patch, selected, selectionHeads } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, $$, h, vfader, throttle, toast, promptBox, confirmBox, modal, menu } from "./ui.js";
-import { paletteOn, paletteFits, paletteSwatch } from "./deskview.js";
+import { paletteOn, paletteFits, paletteSwatch, renderPools } from "./palettes.js";
 import { knob, SPEED_PRESETS, TURN_PRESETS, SIZE_PRESETS } from "./speedpick.js";
 import { createPicker, rgbToHex } from "./picker.js";
 import { openCueDialog, openLightTest } from "./dialogs.js";
@@ -100,7 +100,7 @@ function renderHeader() {
     box.textContent = `${heads.length} × ${types.length === 1 ? types[0] : types.length + " types"}`;
     box.classList.add("has");
   }
-  $("#prog-body").classList.toggle("disabled", !heads.length && !["looks", "fx", "desk"].includes(tab));
+  $("#prog-body").classList.toggle("disabled", !heads.length && !["fx", "desk"].includes(tab));
   applyTabVisibility();
   const attrs = new Set(((state.snap && state.snap.programmer) || {}).attrs || []);
   // the same kinds as the "In the programmer" bar (GROUP_OF): a shutter is
@@ -1394,17 +1394,6 @@ function renderLooks(force = false) {
   if (!force && key === looksKey) return;  // (same: Record stays put under the pointer)
   looksKey = key;
   const kinds = ["colour", "position", "beam"];
-  $("#pal-kinds").replaceChildren(...kinds.map((kind) => h("div.pal-row",
-    h("div.pal-head", kind, h("button.btn.small.ghost", {
-      title: `Record a ${kind} palette from the programmer`,
-      onclick: async () => {
-        if (!hasSel()) { toast("Select fixtures and set a look first"); return; }
-        const name = await promptBox(`Record ${kind} palette`, "Name", "", { ok: "Record" });
-        if (name) run("record_palette", { kind, name }, { toast: true });
-      },
-    }, "+ Record")),
-    h("div.pal-items", ...(pals[kind] || []).map((p) => palButton(kind, p)),
-      (pals[kind] || []).length ? null : h("span.muted.small", "none yet")))));
   // each family's own palettes, as tiles at the top of its tab, with a
   // tile to save the current one
   for (const kind of kinds) {
@@ -1576,16 +1565,15 @@ function showTab(name) {
   tab = name;
   renderWheels(name);
   for (const n of $$("#prog-subslot .sub-tabs")) n.hidden = n.dataset.for !== name;
-  // (on Palettes the wheels are the palette view's Knobs window)
   $$("#prog-tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
   $$("#prog-body .tab-pane").forEach((p) => { p.hidden = p.dataset.pane !== name; });
   renderHeader();
   renderProgCells();                               // (the tilt per head shows on Position)
   if (name === "beam" || name === "colour") loadAttributes();
   if (name === "fx") loadFx();
-  if (["looks", "colour", "position", "beam"].includes(name)) renderLooks(true);   // (each family's palettes)
+  if (["colour", "position", "beam"].includes(name)) renderLooks(true);   // (each family's palettes)
   if (name === "tools") renderTools();
-  if (name === "desk") import("./deskview.js").then((m) => { m.initDeskView(); m.renderDeskView(); });
+  if (name === "desk") { renderLooks(true); renderPools(true); }
   if (name === "colour") renderColour();
   if (name === "position") { renderPad(); renderMarks(); }
   if (name === "laser" || name === "sfx") {
@@ -1720,7 +1708,8 @@ export function initProgrammer() {
     renderIntensity();
     if (tab === "colour") renderColour();
     if (tab === "fx") renderRunning();
-    if (["looks", "colour", "position", "beam"].includes(tab)) renderLooks();
+    if (["colour", "position", "beam", "desk"].includes(tab)) renderLooks();
+    if (tab === "desk") renderPools();
   };
   on("snapshot", () => {
     refresh();

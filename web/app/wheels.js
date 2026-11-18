@@ -3,8 +3,7 @@
 // now (where the desk shows it: level, colour, pan and tilt) and a line
 // filled to it.  Drag one sideways (or scroll on it) to change it; hold
 // Shift - or tap Fine - for fine.  Each moves every selected light by the
-// same share of its travel, so a mixed rig keeps its spread.  (The palette
-// view's Knobs window keeps round knobs: mountWheels.)
+// same share of its travel, so a mixed rig keeps its spread.
 import { state, on } from "./store.js";
 import { act } from "./api.js";
 import { h, $ } from "./ui.js";
@@ -36,41 +35,6 @@ function turn(attr, notches) {
     const step = owed.get(attr); owed.delete(attr);
     if (step) act("nudge", { attribute: attr, step: Math.max(-0.5, Math.min(0.5, step)) }).catch(() => {});
   }, 40);
-}
-
-function wheel(attr, label) {
-  const knob = h("div.wheel-knob", { role: "slider", tabindex: 0, "aria-label": `${label} wheel: arrow keys turn it, Shift for fine`,
-    "aria-valuetext": "relative" }, h("i"));
-  let angle = 0;
-  const spin = (n) => { angle += n * 12; knob.style.setProperty("--a", `${angle}deg`); turn(attr, n); };
-  let finger = null;                             // one finger turns it
-  knob.addEventListener("pointerdown", (e) => {
-    if (finger !== null) return;
-    finger = e.pointerId;
-    knob.setPointerCapture(e.pointerId);
-    let last = e.clientY;
-    const move = (ev) => {
-      if (ev.pointerId !== finger) return;
-      const n = Math.trunc((last - ev.clientY) / 4);          // 4 px a notch, up = more
-      if (n) { last -= n * 4; const was = fine; if (ev.shiftKey) fine = true; spin(n); fine = was; }
-    };
-    const up = (ev) => {
-      if (ev.pointerId !== finger) return;
-      finger = null;
-      for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) knob.removeEventListener(t, up);
-      knob.removeEventListener("pointermove", move);
-    };
-    knob.addEventListener("pointermove", move);
-    for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) knob.addEventListener(t, up);
-  });
-  knob.addEventListener("wheel", (e) => { e.preventDefault(); const was = fine; if (e.shiftKey) fine = true; spin(e.deltaY < 0 ? 1 : -1); fine = was; }, { passive: false });
-  knob.addEventListener("keydown", (e) => {
-    const n = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: 10, PageDown: -10 }[e.key];
-    if (!n) return;
-    e.preventDefault();
-    const was = fine; if (e.shiftKey) fine = true; spin(n); fine = was;
-  });
-  return h("div.wheel", knob, h("span.small", label));
 }
 
 // what a cell shows: the value the selected lights have now, where the desk
@@ -168,37 +132,7 @@ export function renderWheels(name = tab) {
   showValues();
 }
 
-// Other places with wheels of their own (the palette view's Knobs window):
-// [box, [[attr, label]...]] - kept up to date with the selection like the strip
-const extra = new Set();
-export function mountWheels(box, list) {
-  extra.add([box, list]);
-  fill(box, list);
-}
-function fill(box, list) {
-  const roles = rolesOfSelection();
-  const sig = list.map(([a]) => (roles.has(a) ? a : "-")).join() + fine;
-  if (box.dataset.sig === sig) return;
-  box.dataset.sig = sig;
-  const fineBtn = h("button.btn.small" + (fine ? ".on" : ""), { type: "button", "aria-pressed": String(fine),
-    title: "Fine: a tenth of the step (or hold Shift)", onclick: () => { fine = !fine; refreshExtra(); renderWheels(); } }, "FINE");
-  box.replaceChildren(...list.map(([a, l]) => {
-    const el = wheel(a, l);
-    if (!roles.has(a)) {
-      el.classList.add("off");
-      el.title = roles.size ? `The selected lights have no ${l.toLowerCase()}` : "Select lights to turn this";
-      el.querySelector(".wheel-knob").tabIndex = -1;
-    }
-    return el;
-  }), fineBtn);
-}
-function refreshExtra() {
-  for (const it of [...extra]) { if (!it[0].isConnected) { extra.delete(it); continue; } fill(it[0], it[1]); }
-}
-
 export function initWheels() {
-  on("snapshot", refreshExtra);
-  on("lite", refreshExtra);
   on("snapshot", () => renderWheels());
   on("lite", () => renderWheels());
   on("looks", showValues);

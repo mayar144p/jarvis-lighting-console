@@ -316,4 +316,8 @@ let lastTouch = -1e9;
 if (typeof addEventListener === "function") {
   addEventListener("pointerdown", (e) => { if (e.pointerType === "touch") lastTouch = performance.now(); }, true);
 }
+/** A named colour (or any named value) of the desk's look, as it is now -
+ *  for what is drawn on a canvas, which CSS can't colour. */
+export const cssVar = (name) => getComputedStyle(document.body).getPropertyValue(name).trim();
+
 export const byTouch = (e) => (e && e.pointerType === "touch") || performance.now() - lastTouch < 1500;

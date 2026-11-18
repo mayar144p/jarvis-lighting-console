@@ -34,6 +34,7 @@ function quickRecord(e, n) {
 
 function cueLabel(c) { return c ? (c.name || `Cue ${c.n}`) : ""; }
 
+let pbHint = null;
 function build() {
   const strip = $("#pb-strip");
   const count = ((state.snap && state.snap.playbacks) || []).length || 10;
@@ -85,6 +86,10 @@ function build() {
     cards.set(n, { card, fd, name, cue, prog, lvl, keys, flash, loopB, autoB, swopB });
     strip.append(card);
   }
+  // a page with no cues yet says what a playback is and how one starts
+  pbHint = h("p.pb-hint", { hidden: true },
+    "A playback is a list of cues, played one after another with GO. Set a look in the programmer, then + (or Record cue…).");
+  strip.append(pbHint);
   setFocus(focusPb);
   if (!build.told) {                                  // the engine learns it once it is there
     build.told = true;
@@ -254,6 +259,7 @@ function renderPages(pbs) {
     || page.find((pb) => !(pb.stack || []).length) || {}).n;
   const shown = new Set(page.filter((pb) => (pb.stack || []).length || pb.n === plus).map((pb) => pb.n));
   for (const [n, c] of cards) c.card.hidden = !shown.has(n);
+  if (pbHint) pbHint.hidden = lastUsed > 0;
   const strip = $("#pb-strip");
   if (strip) {
     const cols = page.filter((pb) => shown.has(pb.n))
@@ -332,7 +338,7 @@ function renderRail(pbs) {
   const running = pbs.filter((pb) => pb.active).length, latched = (q.active || []).length;
   const n = running + latched;
   rel.disabled = !n;
-  $("#pb-relall-n").textContent = n ? String(n) : "";
+  $("#pb-relall-n").textContent = n ? `${n} running` : "";
   const parts = [running ? `${running} playback${running === 1 ? "" : "s"}` : "", latched ? `${latched} button${latched === 1 ? "" : "s"}` : ""].filter(Boolean);
   rel.title = n ? `Hold to release everything that is running: ${parts.join(" and ")}` : "Nothing is running";
 }
