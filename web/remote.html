@@ -5,7 +5,7 @@
 <!-- (no pinch zoom: a remote is pressed, not read up close; the buttons are sized for a thumb) -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#070b10">
+<meta name="theme-color" content="#0f1011">
 <!-- added to the home screen it opens as an app: no browser bars -->
 <link rel="manifest" href="remote/manifest.webmanifest">
 <meta name="mobile-web-app-capable" content="yes">
@@ -15,6 +15,7 @@
 <link rel="apple-touch-icon" href="remote/icon-180.png">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <title>{{REMOTE_NAME}}</title>
+<link rel="stylesheet" href="app/css/tokens.css">
 <link rel="stylesheet" href="remote/remote.css">
 </head>
 <body>
@@ -24,7 +25,7 @@
     <!-- what this remote plays: Buttons, and Cues / Timeline when the show has them -->
     <nav class="rm-views" id="rm-views" aria-label="What to play"></nav>
     <!-- the screen lock: tap to lock, hold to unlock (Blackout and the master stay live) -->
-    <button class="rm-icon rm-lock" id="rm-lock" type="button" aria-label="Lock the screen" title="Lock the screen"><i class="rm-lock-fill"></i><span>🔓</span></button>
+    <button class="rm-icon rm-lock" id="rm-lock" type="button" aria-label="Lock the screen" title="Lock the screen"><i class="rm-lock-fill"></i><span><svg viewBox="0 0 16 16" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="10" height="7.5" rx="1.5"/><path d="M5.2 7V5a2.8 2.8 0 0 1 5.5-.8"/></svg></span></button>
     <button class="rm-icon" id="rm-more" type="button" aria-label="More">⋯</button>
   </header>
   <nav class="rm-pages" id="rm-pages" aria-label="Pages"></nav>
@@ -35,7 +36,7 @@
     <button type="button" class="rm-go" id="rm-arrange-done">Done</button>
   </div>
   <main class="rm-grid" id="rm-grid" aria-live="off"></main>
-  <div class="rm-veil" id="rm-veil" hidden><div class="rm-veil-pad">🔒</div><b>Locked</b><p>Hold the padlock at the top for a second to unlock.</p><p>Blackout and the Master still work.</p></div>
+  <div class="rm-veil" id="rm-veil" hidden><div class="rm-veil-pad"><svg viewBox="0 0 16 16" width="54" height="54" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="7" width="10" height="7.5" rx="1.5"/><path d="M5.2 7V5a2.8 2.8 0 0 1 5.6 0v2"/></svg></div><b>Locked</b><p>Hold the padlock at the top for a second to unlock.</p><p>Blackout and the Master still work.</p></div>
   <footer class="rm-strip" id="rm-strip">
     <button class="rm-bo" id="rm-bo" type="button">Blackout</button>
     <label class="rm-master"><span>Master <output id="rm-master-val">100%</output></span>

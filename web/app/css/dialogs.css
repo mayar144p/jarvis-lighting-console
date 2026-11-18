@@ -4,7 +4,7 @@
 .aim-tools .select { max-width: 160px; }
 .hint { color: var(--text-2); font-size: var(--t-s); }
 .hud-btn.icon { width: calc(30px * var(--ctl)); padding: 0; display: grid; place-items: center; }
-.hud-btn.toggle.on { background: var(--select); border-color: var(--lit); color: var(--text); }
+.hud-btn.toggle.on { background: var(--select); box-shadow: inset 0 0 0 1px var(--lit); color: var(--text); }
 .hud-btn.primary { background: var(--lit); color: var(--lit-ink); border-color: var(--lit); }
 .fx-running { display: flex; flex-direction: column; gap: 4px; }
 .ai-panel { display: flex; flex-direction: column; gap: 10px; }
@@ -378,9 +378,8 @@ body.gig .seg button { min-height: calc(40px * var(--ctl)); }
 .songs-table .song-acts { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
 .song-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(220px * var(--ctl)), 1fr)); gap: 4px 12px; margin: 8px 0; }
 .song-log { max-height: 240px; overflow-y: auto; margin-top: 10px; display: grid; gap: 2px; }
-.vis-seg button.on { background: var(--select); border-color: var(--lit); color: var(--text); }
 .vis-bar .hud-btn.icon { width: calc(28px * var(--ctl)); padding: 0; }
-.vis-bar .hud-btn.toggle.on { background: var(--select); border-color: var(--lit); color: var(--text); }
+.vis-bar .hud-btn.toggle.on { background: var(--select); box-shadow: inset 0 0 0 1px var(--lit); color: var(--text); }
 .stage.wire { background: var(--black); }
 .vis-select.preview { color: var(--blind); border-color: var(--blind); background: var(--blind-face); }
 .time-field > span .ic { margin-right: 5px; color: var(--text-2); }

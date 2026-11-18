@@ -4,11 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0f1011">
 <title>Ask the lights</title>
+<!-- the desk's own colours and typeface -->
+<link rel="stylesheet" href="/app/css/tokens.css">
 <style>
-  :root { --bg: #070b10; --surface: #0d131b; --surface-2: #131b25; --line: #26333f; --text: #e6f1fa; --muted: #8196a9; --accent: #2fd6f5; --ok: #45e0a0; --bad: #ff5c6c; }
+  :root { --bg: var(--well); --surface: var(--panel); --surface-2: var(--raised); --muted: var(--text-2); --accent: var(--lit); --ok: var(--go); --bad: var(--live-ink); }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.4 var(--font);
     padding: max(16px, env(safe-area-inset-top)) 16px 24px; }
   main { max-width: 520px; margin: 0 auto; display: grid; gap: 14px; }
   h1 { font-size: 22px; margin: 4px 0 0; }
@@ -20,7 +23,7 @@
   .row { display: flex; gap: 8px; }
   input, textarea { font: inherit; width: 100%; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
   textarea { min-height: 70px; resize: vertical; }
-  .send { background: var(--accent); color: #021318; border-color: var(--accent); min-height: 52px; }
+  .send { background: var(--accent); color: var(--lit-ink); border-color: var(--accent); min-height: 52px; }
   .mine { display: grid; gap: 6px; }
   .req { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
   .state { font-weight: 700; white-space: nowrap; }

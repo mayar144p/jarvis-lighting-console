@@ -6,15 +6,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Light Plot</title>
 <link rel="icon" href="/icons/icon-192.png">
+<!-- the desk's own colours and typeface (the sheets stay black on white, for print) -->
+<link rel="stylesheet" href="/app/css/tokens.css">
 <style>
-  :root { --ink: #111; --mute: #666; --line: #bbb; --paper: #fff; --desk: #2a2d33; --accent: #0b6fb8; }
+  :root { --ink: #111; --mute: #666; --line: #bbb; --paper: #fff; --desk: var(--well); }
   * { box-sizing: border-box; }
-  html, body { margin: 0; background: var(--desk); color: var(--ink); font: 12px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .bar { position: sticky; top: 0; z-index: 2; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 16px; background: #15171b; color: #e8e8e8; }
-  .bar b { font-size: 14px; letter-spacing: .04em; margin-right: auto; }
+  html, body { margin: 0; background: var(--desk); color: var(--ink); font: 13px/1.4 var(--font); }
+  .bar { position: sticky; top: 0; z-index: 2; display: flex; gap: 8px 14px; align-items: center; flex-wrap: wrap; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line-strong); color: var(--text-2); }
+  .bar b { font-size: 15px; font-weight: 600; color: var(--text); margin-right: auto; }
   .bar label { display: inline-flex; gap: 6px; align-items: center; }
-  .bar button { font: inherit; font-weight: 600; padding: 7px 14px; border-radius: 6px; border: 1px solid #555; background: #22252b; color: #fff; cursor: pointer; }
-  .bar button.primary { background: var(--accent); border-color: var(--accent); }
+  .bar input[type=checkbox] { accent-color: var(--lit); }
+  .bar button { font: inherit; font-weight: 500; height: 32px; padding: 0 14px; border-radius: var(--r); border: 0; background: var(--raised); color: var(--text); cursor: pointer; }
+  .bar button:hover { background: var(--hover); }
+  .bar button.primary { background: var(--lit); color: var(--lit-ink); }
   .sheet { background: var(--paper); width: min(297mm, calc(100vw - 32px)); margin: 16px auto; padding: 12mm 12mm 10mm; box-shadow: 0 6px 30px rgba(0,0,0,.4); }
   .sheet h1 { font-size: 18px; margin: 0 0 2px; }
   .sheet h2 { font-size: 14px; margin: 0 0 8px; border-bottom: 2px solid var(--ink); padding-bottom: 3px; }
@@ -50,7 +54,7 @@
 </head>
 <body>
   <div class="bar">
-    <b>PAPERWORK</b>
+    <b>Paperwork</b>
     <label><input type="checkbox" id="show-plot" checked> Light plot</label>
     <label><input type="checkbox" id="show-patch" checked> Patch sheet</label>
     <label><input type="checkbox" id="show-rig" checked> Rigging</label>

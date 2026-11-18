@@ -206,21 +206,32 @@ function setPage(p) {
 }
 
 // ------------------------------------------------------------------ tiles
-const KIND_COLOUR = { flash: "#f8fafc", strobe: "#fde047", kill: "#64748b", fx: "#a78bfa", sfx: "#fb923c", fog: "#94a3b8",
-  laser: "#22c55e", blackout: "#ef4444", estop: "#ef4444", page: "#475569", go: "#22c55e" };
-const tint = (b) => b.tint || b.colour || KIND_COLOUR[b.kind] || "#94a3b8";
+// a button with no colour of its own takes its kind's, as on the desk: the
+// lit white for flashes, strobes and effects, red for what kills, amber for
+// the special effects, green for GO
+const KIND_INK = { flash: "--lit", strobe: "--lit", fx: "--lit", kill: "--live", blackout: "--live", estop: "--live",
+  sfx: "--blind", fog: "--blind", laser: "--blind", page: "--text-3", go: "--go" };
+const tint = (b) => b.tint || b.colour || ink(KIND_INK[b.kind] || "--text-3", "#8b8985");
 // a tile's shades from its colour, worked out here: phones from a few years
 // back (an iPhone 7 stays on iOS 15) can't mix colours in CSS
 const rgb = (hex) => { const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim()); const n = parseInt(m ? m[1] : "94a3b8", 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
 const mix = (a, b, k) => { const x = rgb(a), y = rgb(b); return `rgb(${x.map((v, i) => Math.round(v * k + y[i] * (1 - k))).join(",")})`; };
+// the desk's named colours (web/app/css/tokens.css, which the page loads),
+// read once as hex for mixing a button's colour into them
+let inks = null;
+const ink = (name, fallback) => {
+  if (!inks) inks = getComputedStyle(document.documentElement);
+  return inks.getPropertyValue(name).trim() || fallback;
+};
 function paint(el, colour) {
   const c = rgb(colour).join(",");
+  const surface = ink("--raised", "#27292c"), line = ink("--line", "#2a2c2f"), text = ink("--text", "#eceae4");
   el.style.setProperty("--tint", `rgb(${c})`);
-  el.style.setProperty("--tint-bg", mix(colour, "#131b25", 0.14));
-  el.style.setProperty("--tint-edge", mix(colour, "#26333f", 0.6));
-  el.style.setProperty("--tint-down", mix(colour, "#131b25", 0.38));
+  el.style.setProperty("--tint-bg", mix(colour, surface, 0.14));
+  el.style.setProperty("--tint-edge", mix(colour, line, 0.6));
+  el.style.setProperty("--tint-down", mix(colour, surface, 0.38));
   el.style.setProperty("--tint-soft", `rgba(${c},.5)`);
-  el.style.setProperty("--tint-text", mix(colour, "#e6f1fa", 0.7));
+  el.style.setProperty("--tint-text", mix(colour, text, 0.7));
 }
 // CO2, confetti, sparks, flames, fog and lasers play on a tap, the same as
 // on the desk: the desk's ARM FX is what lets fire and lasers go (a phone
@@ -759,7 +770,7 @@ function renderFaders(grid) {
   grid.dataset.faders = key;
   grid.replaceChildren(
     h("p.rm-hint", "Each group at a share of what it's doing · double-tap a name for 100%"),
-    faderRow({ key: "master", name: "Grand master", value: snapOr("master", 100), colour: "#2fd6f5",
+    faderRow({ key: "master", name: "Grand master", value: snapOr("master", 100), colour: ink("--lit", "#f1ede2"),
       send: (x) => act("master", { level: x }).catch(() => {}) }),
     ...groupsThere().map((g, i) => faderRow({ key: `g${g.n}`, name: g.name || `Group ${g.n}`, value: groupLevel(g), colour: groupColour(g, i),
       send: (x) => act("group_master", { group: g.n, level: x }).catch(() => {}) })));
@@ -1118,6 +1129,9 @@ const LOCK_KEY = "haze.remote.locked";
 const UNLOCK_MS = 1000;
 let locked = false;
 try { locked = localStorage.getItem(LOCK_KEY) === "1"; } catch (e) { locked = false; }
+// the desk's padlock, shut and open
+const LOCK_SHUT = "<svg viewBox=\"0 0 16 16\" width=\"22\" height=\"22\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"3\" y=\"7\" width=\"10\" height=\"7.5\" rx=\"1.5\"/><path d=\"M5.2 7V5a2.8 2.8 0 0 1 5.6 0v2\"/></svg>";
+const LOCK_OPEN = "<svg viewBox=\"0 0 16 16\" width=\"22\" height=\"22\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><rect x=\"3\" y=\"7\" width=\"10\" height=\"7.5\" rx=\"1.5\"/><path d=\"M5.2 7V5a2.8 2.8 0 0 1 5.5-.8\"/></svg>";
 function setLocked(on) {
   locked = on;
   try { localStorage.setItem(LOCK_KEY, on ? "1" : "0"); } catch (e) { /* this visit only */ }
@@ -1132,7 +1146,8 @@ function setLocked(on) {
   $("#rm-veil").hidden = !on;
   const b = $("#rm-lock");
   b.classList.toggle("on", on);
-  b.querySelector("span").textContent = on ? "🔒" : "🔓";
+  // (the desk's padlock, shut or open - not an emoji)
+  b.querySelector("span").innerHTML = on ? LOCK_SHUT : LOCK_OPEN;
   b.setAttribute("aria-label", on ? "Locked - hold to unlock" : "Lock the screen");
   b.title = b.getAttribute("aria-label");
 }

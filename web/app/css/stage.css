@@ -8,8 +8,9 @@
 .stage-hud.top-right { top: 10px; right: 10px; }
 .stage-hud.bottom-left { bottom: 10px; left: 12px; right: 330px; pointer-events: none; }
 .stage-hud.bottom-right { bottom: 8px; right: 10px; }
-.hud-btn { height: calc(30px * var(--ctl)); padding: 0 10px; border-radius: var(--r); border: 1px solid var(--line-strong); background: color-mix(in srgb, var(--black) 82%, transparent); color: var(--text-2); font-size: var(--t-s); font-weight: 600; backdrop-filter: blur(6px); }
-.hud-btn:hover { color: var(--text); }
+/* a button over the 3D: the desk's flat button on a see-through panel, no outline */
+.hud-btn { height: calc(30px * var(--ctl)); padding: 0 10px; border-radius: var(--r); border: 0; background: color-mix(in srgb, var(--panel) 88%, transparent); color: var(--text-2); font-size: var(--t-s); font-weight: 500; backdrop-filter: blur(6px); }
+.hud-btn:hover { background: var(--raised); color: var(--text); }
 .hud-btn svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; }
 .venue-tools { position: absolute; top: calc(var(--vis-h, 38px) + 10px); left: 10px; z-index: 3; display: flex; flex-direction: column; gap: 6px; align-items: stretch; width: calc(108px * var(--ctl)); }
 .venue-tools .seg.vertical { flex-direction: column; }
@@ -104,11 +105,15 @@ body.arranging .stage-hud.drawn-hud { left: calc(108px * var(--ctl) + 22px); }
 .pl-head.on rect, .pl-head.on circle { fill: var(--lit); stroke: var(--text); }
 .pl-rect { fill: color-mix(in srgb, var(--lit) 12%, transparent); stroke: var(--lit); stroke-width: 0.03; }
 .vis-bar { position: absolute; top: 0; left: 0; right: 0; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 5px; min-height: calc(38px * var(--ctl)); padding: 4px 6px; background: var(--panel); border-bottom: 1px solid var(--line); }
-.vis-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 7px; background: var(--raised); border: 1px solid var(--line); }
-.vis-seg button, .vis-btn, .vis-bar .hud-btn { height: calc(26px * var(--ctl)); padding: 0 7px; border-radius: 5px; border: 1px solid transparent; background: transparent; color: var(--text-2); font-size: var(--t-s); font-weight: 600; white-space: nowrap; backdrop-filter: none; }
-.vis-btn, .vis-bar .hud-btn { background: var(--raised); border-color: var(--line); }
-.vis-seg button:hover, .vis-btn:hover, .vis-bar .hud-btn:hover { color: var(--text); border-color: var(--line-strong); }
-.vis-select { height: calc(26px * var(--ctl)); padding: 0 6px; border-radius: 5px; border: 1px solid var(--line); background: var(--raised); color: var(--text); font-size: var(--t-s); font-weight: 600; }
+/* its switches are the desk's segmented switch (the choice filled), its
+   buttons the desk's flat buttons */
+.vis-seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: var(--r); background: var(--well); }
+.vis-seg button, .vis-btn, .vis-bar .hud-btn { height: calc(26px * var(--ctl)); padding: 0 8px; border-radius: 3px; border: 0; background: none; color: var(--text-2); font-size: var(--t-s); font-weight: 500; white-space: nowrap; backdrop-filter: none; }
+.vis-btn, .vis-bar .hud-btn { border-radius: var(--r); background: var(--raised); }
+.vis-seg button:hover { color: var(--text); }
+.vis-btn:hover, .vis-bar .hud-btn:hover { background: var(--hover); color: var(--text); }
+.vis-seg button.on { background: var(--pressed); color: var(--text); font-weight: 600; }
+.vis-select { height: calc(26px * var(--ctl)); padding: 0 6px; border-radius: var(--r); border: 0; background: var(--raised); color: var(--text); font-size: var(--t-s); font-weight: 500; }
 .vis-ind { min-width: calc(40px * var(--ctl)); height: calc(26px * var(--ctl)); padding: 0 7px; display: inline-grid; place-items: center; border-radius: 5px; background: var(--black); border: 1px solid var(--line); color: var(--text); font: 600 var(--t-s)/1 var(--font, ui-monospace, monospace); white-space: nowrap; }
 #vis-fps { min-width: calc(60px * var(--ctl)); }
 #vis-fps.idle { color: var(--text-2); }
@@ -119,7 +124,6 @@ body.arranging .stage-hud.drawn-hud { left: calc(108px * var(--ctl) + 22px); }
   .vis-long { display: none; }
 }
 .teach-tabs { margin: 10px 0; }
-.teach-tabs button.on { background: var(--select); border-color: var(--lit); color: var(--text); box-shadow: inset 0 0 0 1px var(--lit); }
 .teach-cols { display: grid; grid-template-columns: minmax(220px, 300px) 1fr; gap: 20px; align-items: start; }
 .teach-left { display: flex; flex-direction: column; gap: 8px; }
 .teach-plan { width: 100%; height: calc(220px * var(--ctl)); background: var(--base); border: 1px solid var(--line); border-radius: var(--r); }
