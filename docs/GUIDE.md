@@ -569,8 +569,8 @@ venue; it's saved with the show.
    x across, z towards the audience, metres) and draw the dance floor zone.
 2. **Hang each light where it really is.** Drag it onto its truss, or type
    its position; set its **Hang** (hung, standing, on a boom...). A light hung
-   the other way round to the rest: **Invert pan / Invert tilt** in
-   Programmer → Rig.
+   the other way round to the rest: **Invert pan / Invert tilt** in its
+   menu (right-click it), or **Limits and orientation…** there.
 3. **Mark the floor.** Two or three spots far apart: the middle of the dance
    floor, its left and right, the DJ booth - the desk lists the room's own
    spots - or tape a cross somewhere and keep it as a room mark.

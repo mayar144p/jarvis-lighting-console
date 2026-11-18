@@ -146,6 +146,7 @@
       </div>
       <div class="sel-bar" id="sel-bar">
         <span id="sel-count">Nothing selected</span>
+        <button class="btn ghost small icon" id="sel-more" title="Select by kind - the same type, the movers, those with gobos - or one light at a time" aria-label="More ways to select">⋯</button>
         <span class="sel-split chip-row" id="sel-split"></span>
         <span class="sel-actions">
           <button class="btn small" id="locate-btn" title="Full, open white, centred (L)">Locate</button>
@@ -248,7 +249,6 @@
           <button role="tab" data-tab="laser" aria-selected="false" title="Lasers" hidden>Laser</button>
           <button role="tab" data-tab="sfx" aria-selected="false" title="Special effects: confetti, CO2, fog, flame…" hidden>Special FX</button>
           <button role="tab" data-tab="desk" aria-selected="true" title="Palettes: your looks, colours, positions and beams - tap one and the selected lights take it">Palettes</button>
-          <button role="tab" data-tab="tools" aria-selected="false" title="Rig: arrange, fan, limits, which way up (invert), line up with the real lights">Rig</button>
         </nav>
         <div class="prog-heads" id="prog-heads" hidden></div>
         <span class="prog-sel" id="prog-sel">Select fixtures</span>
@@ -370,52 +370,6 @@
         <div class="tab-pane" data-pane="laser" hidden><div id="laser-pane"></div></div>
         <div class="tab-pane" data-pane="sfx" hidden><div id="sfx-pane"></div></div>
 
-        <div class="tab-pane" data-pane="tools" hidden>
-          <h3>Arrange on stage</h3>
-          <div class="row-btns">
-            <select id="arr-axis" class="select"><option value="x">left–right</option><option value="z">up–downstage</option><option value="y">height</option></select>
-            <button class="btn" data-arr="align">Align</button>
-            <button class="btn" data-arr="distribute">Spread</button>
-            <button class="btn" data-arr="mirror">Mirror</button>
-          </div>
-          <h3>Fan a value across the selection</h3>
-          <div class="fan-row">
-            <select id="fan-attr" class="select"></select>
-            <input type="number" id="fan-lo" placeholder="from" class="num">
-            <input type="number" id="fan-hi" placeholder="to" class="num">
-            <select id="fan-mode" class="select"><option value="normal">ramp</option><option value="center">centre out</option><option value="mirror">mirror</option></select>
-            <button class="btn" id="fan-btn">Fan</button>
-          </div>
-          <h3>Limits and orientation</h3>
-          <div class="fan-row">
-            <select id="lim-role" class="select"></select>
-            <input type="number" id="lim-lo" placeholder="low" class="num">
-            <input type="number" id="lim-hi" placeholder="high" class="num">
-            <button class="btn" id="lim-set">Limit</button>
-            <button class="btn ghost" id="lim-clear">Clear</button>
-          </div>
-          <div class="row-btns">
-            <button class="btn" data-orient="invert_pan">Invert pan</button>
-            <button class="btn" data-orient="invert_tilt">Invert tilt</button>
-            <button class="btn" data-orient="swap">Swap pan/tilt</button>
-            <button class="btn ghost" data-orient="clear">Normal</button>
-          </div>
-          <div class="row-btns">
-            <button class="btn" id="lineup-btn" title="Point the real light at marks on the floor: the desk learns where it really points, so aims and the 3D match it">Line up with the real light…</button>
-          </div>
-          <p class="muted small" id="lim-note"></p>
-          <h3>Select</h3>
-          <div class="row-btns">
-            <button class="btn" id="sel-similar">Same type as first</button>
-            <button class="btn" data-query="pan">Movers</button>
-            <button class="btn" data-query="gobo">With gobos</button>
-          </div>
-          <div class="row-btns">
-            <button class="btn" data-step="prev" title="One light of the selection at a time: the one before">◀ Prev light</button>
-            <button class="btn" data-step="next" title="One light of the selection at a time: what you set goes to it only">Next light ▶</button>
-            <button class="btn ghost" data-step="all" title="All the lights of the selection again">All</button>
-          </div>
-        </div>
       </div>
       </div>
       <!-- the value bar: the open tab's values for the selected lights; drag

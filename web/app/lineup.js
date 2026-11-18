@@ -1,4 +1,4 @@
-// Line up lights with the real ones (Programmer -> Rig -> Line up...): the
+// Line up lights with the real ones (a light's menu -> Line up...): the
 // desk learns where each light's pan and tilt zero really are, so every
 // aim, spot, move and the 3D agree with the real light.
 //

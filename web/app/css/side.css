@@ -76,7 +76,9 @@ tr.parked td:first-child::after { content: " P"; color: var(--blind); font-weigh
 /* ------------------------------------------------------- the selection */
 /* how many and which, then what to do with them */
 .sel-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px var(--pad) 10px; border-top: 1px solid var(--line); color: var(--text-2); font-size: var(--t-s); }
-#sel-count { flex: 1 0 100%; color: var(--text); font-weight: 600; }
+/* how many, and beside it the ⋯ of more ways to select; the rest below */
+#sel-count { flex: 1 0 calc(100% - var(--h-s) - 6px); color: var(--text); font-weight: 600; }
+#sel-more { width: var(--h-s); height: var(--h-s); padding: 0; }
 .sel-split { gap: 2px; margin: 0; }
 .sel-split .chip { min-height: var(--h-s); padding: 0 8px; }
 .sel-bar .sel-actions { display: flex; flex-wrap: wrap; gap: 2px; margin-left: auto; }

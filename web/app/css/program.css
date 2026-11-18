@@ -136,7 +136,6 @@
 .fx-card small { font-size: var(--t-s); color: var(--text-3); }
 .fx-card:hover { border-color: var(--lit); }
 .fx-card.on { border-color: var(--lit); background: var(--select); }
-.fan-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .fx-disarmed { color: var(--blind); background: var(--blind-face); border-radius: var(--r); padding: 6px 10px; font-size: var(--t); }
 .fx-fire-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
 .fx-hold { min-height: calc(54px * var(--ctl)); min-width: calc(140px * var(--ctl)); font-weight: 700; touch-action: none; }

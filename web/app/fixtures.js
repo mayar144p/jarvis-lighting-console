@@ -461,6 +461,7 @@ export function rowMenu(btn, head) {
         { label: "Line up with the real light…", hint: hd.align ? "lined up" : "point it at floor marks", run: () => import("./lineup.js").then((m) => m.openLineUp(sameSelection(head))) },
         { label: ((hd.orient || {}).invert_pan ? "✓ " : "") + "Invert pan", hint: "it pans the other way", run: () => run("set_orient", { heads: sameSelection(head), invert_pan: !(hd.orient || {}).invert_pan }, { toast: true }) },
         { label: ((hd.orient || {}).invert_tilt ? "✓ " : "") + "Invert tilt", hint: "it tilts the other way", run: () => run("set_orient", { heads: sameSelection(head), invert_tilt: !(hd.orient || {}).invert_tilt }, { toast: true }) }] : []),
+    { label: "Limits and orientation…", hint: "how far it may go, which way up", run: () => import("./rigtools.js").then((m) => m.openLimits(sameSelection(head))) },
     { label: "Select all of this type", run: () => run("select_similar", { head }) },
     { label: "Make a colour row of buttons…", hint: "one button per colour, one at a time", run: () => import("./quickbuttons.js").then((m) => m.makeColourRow(sameSelection(head))) },
     ...groupItems(head),
@@ -487,6 +488,7 @@ function foldMenu(anchor, heads) {
     { label: `Select these ${n}`, run: () => select(heads) },
     { label: "Test them…", run: () => openLightTest(first) },
     { label: "Show their DMX channels", run: () => openChannels(heads) },
+    { label: "Limits and orientation…", run: () => import("./rigtools.js").then((m) => m.openLimits(heads)) },
     { label: "Change their fixture type…", run: () => openChangeType(heads) },
     ...(moving ? [
       { label: "Line up with the real lights…", run: () => import("./lineup.js").then((m) => m.openLineUp(heads)) },
@@ -650,6 +652,8 @@ function toolsMenu(btn) {
     // arranging the selected lights in the room (one Ctrl+Z each)
     { label: "Arrange: in a row across the stage", hint: "same distance from the front", disabled: sel.length < 2, run: () => run("align", { heads: sel, axis: "z" }, { toast: true }) },
     { label: "Arrange: all at the same height", disabled: sel.length < 2, run: () => run("align", { heads: sel, axis: "y" }, { toast: true }) },
+    { label: "Arrange the selection…", hint: "line up, spread, mirror", disabled: sel.length < 2, run: () => import("./rigtools.js").then((m) => m.openArrange()) },
+    { label: "Limits and orientation…", hint: "how far it may go, which way up", disabled: !sel.length, run: () => import("./rigtools.js").then((m) => m.openLimits(sel)) },
     { label: "Arrange: space evenly left to right", hint: "between the outermost two", disabled: sel.length < 3, run: () => run("distribute", { heads: sel, axis: "x" }, { toast: true }) },
     { label: "Arrange: space evenly front to back", disabled: sel.length < 3, run: () => run("distribute", { heads: sel, axis: "z" }, { toast: true }) },
     { label: "Arrange: flip left ↔ right", hint: "about its own middle", disabled: sel.length < 2, run: () => run("mirror", { heads: sel, axis: "x" }, { toast: true }) },
@@ -820,6 +824,7 @@ export function initFixtures() {
   $("#add-btn-2").addEventListener("click", () => openAddDialog());
   $("#fx-more").addEventListener("click", (e) => toolsMenu(e.currentTarget));
   $("#group-btn").addEventListener("click", makeGroup);
+  $("#sel-more").addEventListener("click", (e) => import("./rigtools.js").then((m) => m.selectMenu(e.currentTarget)));
   for (const b of document.querySelectorAll("#sel-bar [data-act]")) {
     b.addEventListener("click", () => (b.dataset.act === "clear_selection" ? select([]) : run(b.dataset.act)));
   }

@@ -10259,8 +10259,16 @@ def test_council_fixes() -> None:
     check("finger-sized faders and options; sliders let a scrolling finger pass",
           ".pb .vfader { width: calc(36px * var(--ctl));" in css and ".pb-top .btn.icon { opacity: 1; }" in css and ".row-menu { opacity: 1; }" in css
           and "touch-action: pan-y;" in css, "")
-    check("every programmer tab is named (Rig, not an icon)", ">Rig</button>" in html
+    check("every programmer tab is named (Palettes, not an icon); the Rig tab's tools live where they are used",
+          ">Palettes</button>" in html and 'data-tab="tools"' not in html
           and "#prog-tabs :is([data-tab=looks], [data-tab=tools]) span { display: none; }" not in css, "")
+    rt = (ROOT / "web" / "app" / "rigtools.js").read_text(encoding="utf-8")
+    check("...Fan on the value bar, limits and orientation on a light's menu, arranging in the side panel's tools, select by kind under the selection's ⋯",
+          'm.openFan(' in (ROOT / "web" / "app" / "wheels.js").read_text(encoding="utf-8")
+          and all(f"m.{f}(" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8") for f in ("openLimits", "openArrange", "selectMenu"))
+          and all(k in rt for k in ('"set_limits"', '"clear_limits"', '"set_orient"', '"distribute"', '"select_query"', '"select_step"')), "")
+    check("...and Fan offers what the desk does (no 'center' / 'mirror' it would refuse)",
+          all(f'["{m}",' in rt for m in ("normal", "reverse", "centre_out", "into_centre", "random")) and '"center"' not in rt, "")
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     check("the show-safety check runs in CI", "node tools/safetycheck.mjs" in ci
           and (ROOT / "tools" / "safetycheck.mjs").exists(), "")

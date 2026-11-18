@@ -7,7 +7,6 @@
 .hud-btn.toggle.on { background: var(--select); border-color: var(--lit); color: var(--text); }
 .hud-btn.primary { background: var(--lit); color: var(--lit-ink); border-color: var(--lit); }
 .fx-running { display: flex; flex-direction: column; gap: 4px; }
-.fan-row .select { flex: 1; min-width: calc(90px * var(--ctl)); }
 .ai-panel { display: flex; flex-direction: column; gap: 10px; }
 .ai-panel .seg { align-self: flex-start; }
 .ai-panel .seg button { height: calc(30px * var(--ctl)); padding: 0 14px; }
@@ -418,3 +417,13 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after { content: "Lo
 .clash-row span { flex: 1 1 140px; }
 .ct-list { max-height: 50vh; overflow: auto; margin-top: 10px; display: grid; gap: 8px; }
 .ct-item { padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; display: grid; gap: 6px; }
+
+/* the rig tools' windows: Fan a value, Limits and orientation, Arrange */
+.rig-form { display: grid; gap: 10px; min-width: min(480px, 90vw); }
+.rig-form > h3 { margin: 6px 0 0; }
+.rig-form > h3:first-child { margin-top: 0; }
+.rig-form p { margin: 0; }
+.rig-pair { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.rig-pair > .field { flex: 1; min-width: calc(110px * var(--ctl)); }
+.rig-pair > small { padding-bottom: 8px; }
+

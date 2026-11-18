@@ -1520,44 +1520,9 @@ function palButton(kind, p) {
   }, sw, p.name);
 }
 
-// ----------------------------------------------------------------- tools
-function renderTools() {
-  const roles = new Set();
-  for (const hd of selectionHeads()) for (const r of hd.map || []) if (!["raw", "unused"].includes(r) && !r.endsWith("_fine")) roles.add(r);
-  for (const id of ["#fan-attr", "#lim-role"]) {
-    const s = $(id);
-    const cur = s.value;
-    s.replaceChildren(...[...roles].sort().map((r) => h("option", { value: r }, r)));
-    if (cur && roles.has(cur)) s.value = cur;
-  }
-}
-
 function wireTools() {
-  $$("[data-arr]").forEach((b) => b.addEventListener("click", () =>
-    run(b.dataset.arr, { heads: sel(), axis: $("#arr-axis").value }, { toast: true })));
-  $("#fan-btn").addEventListener("click", () => {
-    const lo = $("#fan-lo").value, hi = $("#fan-hi").value;
-    if (lo === "" || hi === "") { toast("Give a from and a to value"); return; }
-    run("fan", { attribute: $("#fan-attr").value, from_value: +lo, to_value: +hi, mode: $("#fan-mode").value }, { toast: true });
-  });
-  $("#lim-set").addEventListener("click", () => {
-    run("set_limits", { heads: sel(), role: $("#lim-role").value, low: +($("#lim-lo").value || 0), high: +($("#lim-hi").value || 255) }, { toast: true });
-  });
-  $("#lim-clear").addEventListener("click", () => run("clear_limits", { heads: sel(), role: $("#lim-role").value }, { toast: true }));
-  $$("[data-orient]").forEach((b) => b.addEventListener("click", () => {
-    const k = b.dataset.orient;
-    run("set_orient", k === "clear" ? { heads: sel(), clear: true } : { heads: sel(), [k]: true }, { toast: true });
-  }));
   // FLIP / MIRROR on the Position tab
   $$("[data-pt]").forEach((b) => b.addEventListener("click", () => run(b.dataset.pt === "flip" ? "flip" : "mirror_pan", {}, { toast: true })));
-  $$("[data-step]").forEach((b) => b.addEventListener("click", () => run("select_step", { step: b.dataset.step }, { toast: true })));
-  $("#lineup-btn").addEventListener("click", () => import("./lineup.js").then((m) => m.openLineUp()));
-  $("#sel-similar").addEventListener("click", () => {
-    const first = sel()[0];
-    if (first === undefined) { toast("Select one fixture of the type you want"); return; }
-    run("select_similar", { head: first });
-  });
-  $$("[data-query]").forEach((b) => b.addEventListener("click", () => run("select_query", { role: b.dataset.query }, { toast: true })));
 }
 
 // ------------------------------------------------------------------ tabs
@@ -1572,7 +1537,6 @@ function showTab(name) {
   if (name === "beam" || name === "colour") loadAttributes();
   if (name === "fx") loadFx();
   if (["colour", "position", "beam"].includes(name)) renderLooks(true);   // (each family's palettes)
-  if (name === "tools") renderTools();
   if (name === "desk") { renderLooks(true); renderPools(true); }
   if (name === "colour") renderColour();
   if (name === "position") { renderPad(); renderMarks(); }
@@ -1714,14 +1678,12 @@ export function initProgrammer() {
   on("snapshot", () => {
     refresh();
     if (["beam", "colour", "laser", "sfx"].includes(tab)) loadAttributes();
-    if (tab === "tools") renderTools();
   });
   on("lite", refresh);
   on("selection", () => {
     refresh();
     if (["beam", "colour", "laser", "sfx"].includes(tab)) loadAttributes();
     if (tab === "fx") loadFx();
-    if (tab === "tools") renderTools();
     if (tab === "position") renderPad();
   });
   on("looks", () => { renderProgCells(); if (tab === "position") renderPad(); });

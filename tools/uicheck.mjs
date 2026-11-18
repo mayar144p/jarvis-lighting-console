@@ -319,8 +319,9 @@ const STEPS = [
   ["05-beam", tab("beam"), { click: '.tab-pane[data-pane="beam"]' }],
   ["06-fx", tab("fx"), { click: '.tab-pane[data-pane="fx"]' }],
   ["07-palettes", tab("desk"), { click: '.tab-pane[data-pane="desk"]' }],
-  ["08-setup", tab("tools"), { click: '.tab-pane[data-pane="tools"]' }],
-  ["09-movers", sel(H.movers)],
+  ["08-rig-tools", async (p) => { await closeAll(p); await sel(H.movers)(p); await mod(p, "rigtools.js", "openLimits"); await p.waitForTimeout(500); }, { click: ".modal-scrim:last-of-type .modal" }],
+  // (the step before leaves its window open: the click-through puts each step back after)
+  ["09-movers", async (p) => { await closeAll(p); await sel(H.movers)(p); }],
   ["10-move", tab("position"), { click: '.tab-pane[data-pane="position"]' }],
   ["11-wave360-move", async (p) => { await sel(H.wave)(p); await tab("position")(p); }],
   ["12-moover-colour", async (p) => { await sel(H.wheel)(p); await tab("colour")(p); }],

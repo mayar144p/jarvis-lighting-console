@@ -128,7 +128,10 @@ export function renderWheels(name = tab) {
       el.tabIndex = -1;
     }
     return el;
-  }), h("span.grow"), fineBtn);
+  }), h("span.grow"),
+  h("button.btn.small", { type: "button", title: "Fan a value across the selection: from the first light to the last",
+    onclick: () => import("./rigtools.js").then((m) => m.openFan((list.find(([a]) => roles.has(a)) || [""])[0])) }, "Fan…"),
+  fineBtn);
   showValues();
 }
 

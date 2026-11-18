@@ -53,7 +53,7 @@ export function whatsThis() {
 
 // -- Explain this screen: the window open, else the programmer tab, else the mode
 const TAB_TOPIC = { FX: "Effects", Looks: "Palettes", SFX: "Lasers and special effects", Laser: "Lasers and special effects",
-  Position: "Follow me speed aim", Rig: "Lining up a venue invert", Palettes: "Palettes", Colour: "colour palettes",
+  Position: "Follow me speed aim", Palettes: "Palettes", Colour: "colour palettes",
   Dimmer: "cues level", Beam: "gobos beam palettes" };
 export function explainScreen() {
   const win = [...document.querySelectorAll(".modal[aria-label]")].pop();
