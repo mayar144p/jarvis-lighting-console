@@ -8887,7 +8887,7 @@ def test_buttons_between_pages() -> None:
     qb = (ROOT / "web" / "app" / "quickbuttons.js").read_text(encoding="utf-8")
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     check("the screen: Page in the button editor, drop on a page's tab, a named empty page stays, the spare tab is a +",
-          'row("Page", chips(pageChoices()' in qb and 'to_slot: "free"' in qb and "function pagesThere" in qb
+          'row("Page", pickList([[null, pageChoices()]]' in qb and 'to_slot: "free"' in qb and "function pagesThere" in qb
           and '"+"' in qb and "qb-newpage" in qb, "")
     check("Make a button: On the page", '"On the page"' in pj and "page: toPage" in pj, "")
 

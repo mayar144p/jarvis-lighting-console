@@ -683,7 +683,73 @@ function slider(value, min, max, step, pick, unit = "%") {
   input.addEventListener("input", () => { out.textContent = `${input.value}${unit}`; pick(+input.value, false); });
   return h("div.qe-slider", input, out);
 }
-const row = (label, ...kids) => h("div.qe-row", h("div.qe-label", label), h("div.qe-body", ...kids));
+// a field: its name over its control (a narrow panel has the width for the control)
+const row = (label, ...kids) => h("div.qe-row", label ? h("div.qe-label", label) : null, h("div.qe-body", ...kids));
+// a choice of a few: one row of keys, the one picked lit
+function seg(options, value, pick) {
+  return h("div.seg.qe-seg", { role: "radiogroup" }, ...options.map(([v, label, title]) => h("button" + (value === v ? ".on" : ""), {
+    type: "button", role: "radio", "aria-checked": String(value === v), title: title || null, onclick: () => pick(v) }, label)));
+}
+// a choice of many: a list, in groups with headings - [[heading | null, [[value, name], ...]], ...]
+function pickList(groupsOf, value, pick, label = "") {
+  const box = h("select.qe-select", { "aria-label": label || null });
+  for (const [heading, opts] of groupsOf) {
+    if (!opts.length) continue;
+    const parent = heading ? h("optgroup", { label: heading }) : box;
+    for (const [v, text] of opts) {
+      const o = h("option", text);
+      o.qv = v;                                    // the value as it is (a number stays a number)
+      if (v === value) o.selected = true;
+      parent.append(o);
+    }
+    if (heading) box.append(parent);
+  }
+  // a value not in the list (a group since deleted): shown, not lost
+  if (![...box.options].some((o) => o.qv === value) && value !== undefined && value !== null && value !== "") {
+    const o = h("option", String(value));
+    o.qv = value;
+    o.selected = true;
+    box.prepend(o);
+  }
+  box.addEventListener("change", () => pick(box.selectedOptions[0].qv));
+  return box;
+}
+// a short name before a control on the same line ("Part", "Pattern")
+const pair = (label, el) => h("div.qe-pair", h("span.qe-mini", label), el);
+
+// What a button does, in groups - the editor shows the one it does now and
+// opens these to change it (26 kinds in one block of chips was a wall)
+const KIND_GROUPS = [
+  ["Light the rig", ["flash", "strobe", "colour", "dim", "kill", "fx", "move", "custom", "capture"]],
+  ["Playbacks", ["go", "release", "preset", "cuelist"]],
+  ["Controls on the page", ["fader", "xy", "tempo"]],
+  ["The page", ["label", "page", "folder"]],
+  ["Special effects", ["sfx", "fog", "laser", "arm", "fxkill"]],
+  ["Safety", ["blackout", "estop"]],
+];
+function kindPicker(s, draw, existing) {
+  const cur = DOES.find(([k]) => k === s.does) || DOES[0];
+  if (!s.pickKind) {
+    return h("button.qe-kind", { type: "button", title: "Change what this button does", onclick: () => { s.pickKind = true; draw(); } },
+      h("span.qe-kind-text", h("b", cur[1]), h("small", cur[2])), h("span.qe-kind-change", "Change"));
+  }
+  return h("div.qe-kinds",
+    ...KIND_GROUPS.map(([title, kinds]) => h("section.qe-kind-group", h("h4", title),
+      h("div.qe-kind-list", ...kinds.map((k) => {
+        const d = DOES.find(([x]) => x === k);
+        return d ? h("button.qe-kind-opt" + (k === s.does ? ".on" : ""), { type: "button", "aria-pressed": String(k === s.does),
+          onclick: () => { s.does = k; s.pickKind = false; draw(); } }, h("b", d[1]), h("small", d[2])) : null;
+      })))),
+    existing ? h("button.link.qe-kind-keep", { type: "button", onclick: () => { s.pickKind = false; draw(); } }, `Keep it as ${cur[1]}`) : null);
+}
+// the effects, by what they change
+const FX_GROUPS = [
+  ["Colour", ["rainbow", "colour_chase", "alternate"]],
+  ["Level", ["breathe", "pulse", "dimmer_chase", "sparks", "strobe_random"]],
+  ["Movement", ["circle", "pan_sweep", "tilt_bounce", "figure_eight", "fan_pan"]],
+  ["Beam", ["gobo_spin", "prism_fan", "zoom_pulse"]],
+];
+const fxName = (k) => (FX.find(([x]) => x === k) || [0, k])[1];
 
 function fromButton(b) {
   // the editor's working copy of a button
@@ -802,8 +868,10 @@ function lookSection(s, slot, btn, draw) {
   const prev = (on) => {
     const el = paintTile(h("div.qbtn" + (on ? ".on" : ""), { "aria-hidden": "true" }, ...tileContent(b)), b);
     el.classList.add(...(s.h > 1 ? ["qbig"] : s.w > 1 ? ["qwide"] : []));
-    el.style.width = `${Math.min(s.w, 3) * 92 + (Math.min(s.w, 3) - 1) * 6}px`;
-    el.style.height = `${s.h * ({ s: 48, m: 72, l: 104, xl: 140 }[lay.height] || 72) + (s.h - 1) * 6}px`;
+    // its shape at a size the panel has room for (two side by side)
+    const cw = 64, ch = Math.min(56, { s: 48, m: 72, l: 104, xl: 140 }[lay.height] || 56);
+    el.style.width = `${Math.min(s.w, 4) * cw + (Math.min(s.w, 4) - 1) * 4}px`;
+    el.style.height = `${Math.min(s.h, 4) * ch + (Math.min(s.h, 4) - 1) * 4}px`;
     return el;
   };
   const used = (x) => quick().buttons.some((o) => o.page === page && o.slot === x && !(btn && o.id === btn.id));
@@ -818,15 +886,14 @@ function lookSection(s, slot, btn, draw) {
     h("div.qe-preview", h("div.qe-prev-pair", prev(false), h("span.muted.small", "off")),
       h("div.qe-prev-pair", prev(true), h("span.muted.small", "on"))),
     row("Colour", swatches(TINTS, s.tint, (c) => { s.tint = c; draw(); }, { none: "Auto" })),
-    row("Size", h("div.qe-body",
-      h("div.chip-row", h("span.qe-mini", "Across"), chips([[1, "1"], [2, "2"], [3, "3"], [4, "4"]], s.w, (v) => { s.w = v; draw(); })),
-      h("div.chip-row", h("span.qe-mini", "Down"), chips([[1, "1"], [2, "2"], [3, "3"], [4, "4"]], s.h, (v) => { s.h = v; draw(); })),
-      warn)),
-    row("Shape", chips(SHAPES, s.shape, (v) => { s.shape = v; draw(); })),
-    row("Fill", chips(FILLS, s.fill, (v) => { s.fill = v; draw(); })),
-    row("Text", h("div.chip-row", chips(TEXTS, s.text, (v) => { s.text = v; draw(); }),
-      toggle("plain", "Name only", "Hide the small line under the name (what it does, to which lights)"),
-      toggle("blink", "Blink while on", "Blinks slowly while it is on, so it can't be missed"))),
+    row("Size", pair("Across", seg([[1, "1"], [2, "2"], [3, "3"], [4, "4"]], s.w, (v) => { s.w = v; draw(); })),
+      pair("Down", seg([[1, "1"], [2, "2"], [3, "3"], [4, "4"]], s.h, (v) => { s.h = v; draw(); })),
+      warn),
+    row("Shape", seg(SHAPES, s.shape, (v) => { s.shape = v; draw(); })),
+    row("Fill", seg(FILLS, s.fill, (v) => { s.fill = v; draw(); })),
+    row("Text", seg(TEXTS, s.text, (v) => { s.text = v; draw(); }),
+      h("div.qe-line", toggle("plain", "Name only", "Hide the small line under the name (what it does, to which lights)"),
+        toggle("blink", "Blink while on", "Blinks slowly while it is on, so it can't be missed"))),
     row("Icon", h("div.qe-body",
       h("div.qe-icons",
         h("button.qe-icon" + (!s.icon ? ".on" : ""), { type: "button", title: "No icon", onclick: () => { s.icon = ""; s.iconOnly = false; draw(); } }, "None"),
@@ -857,7 +924,7 @@ export function makeColourRow(heads = null) {
   const body = h("div.qe");
   const draw = () => {
     body.replaceChildren(
-      row("Which lights", chips([["sel", `Selected (${sel.length})`], ...groups().map((g) => ["g" + g.n, g.name])], s.who, (v) => { s.who = v; draw(); })),
+      row("Which lights", pickList([[null, [["sel", `The selected lights (${sel.length})`]]], ["Groups", groups().map((g) => ["g" + g.n, g.name])]], s.who, (v) => { s.who = v; draw(); }, "Which lights")),
       row("Colours", h("div.chip-row", ...SWATCH.map((c) => h("button.qe-sw" + (s.colours.includes(c) ? ".on" : ""), {
         type: "button", title: c, style: { background: c }, "aria-pressed": String(s.colours.includes(c)),
         onclick: () => { s.colours = s.colours.includes(c) ? s.colours.filter((x) => x !== c) : [...s.colours, c]; draw(); } })))),
@@ -873,6 +940,18 @@ export function makeColourRow(heads = null) {
         ...(s.who === "sel" ? { heads: sel } : { group: +s.who.slice(1) }) }, { toast: true });
       if (r.ok) { close(); render(true); }
     } }, "Make the row")] });
+}
+
+// a small arrow for the Pages list's up / down keys
+function arrow(dir) {
+  const svg = document.createElementNS(SVGNS, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("class", "ic");
+  svg.setAttribute("aria-hidden", "true");
+  const pth = document.createElementNS(SVGNS, "path");
+  pth.setAttribute("d", dir === "up" ? "M4 10l4-4 4 4" : "M4 6l4 4 4-4");
+  svg.append(pth);
+  return svg;
 }
 
 // Edit -> Pages: every page in one list - name it, open it, move it up or
@@ -892,10 +971,10 @@ function editPages() {
       rows.push(h("div.page-row" + (p === page ? ".on" : ""),
         h("span.page-n", String(p)), name, h("small.muted", `${n} button${n === 1 ? "" : "s"}`),
         h("button.btn.small.ghost", { title: "Open this page", onclick: () => { close(); folderBack.length = 0; setPage(p); } }, "Open"),
-        h("button.btn.small.ghost", { title: "Move up (swap with the page above)", disabled: p === 1,
-          onclick: async () => { await run("quick_page", { page: p, swap: p - 1 }); if (page === p) page = p - 1; else if (page === p - 1) page = p; draw(); render(true); } }, "▲"),
-        h("button.btn.small.ghost", { title: "Move down (swap with the page below)", disabled: p >= (q.pages || 32),
-          onclick: async () => { await run("quick_page", { page: p, swap: p + 1 }); if (page === p) page = p + 1; else if (page === p + 1) page = p; draw(); render(true); } }, "▼"),
+        h("button.btn.small.ghost.icon", { title: "Move up (swap with the page above)", "aria-label": "Move up", disabled: p === 1,
+          onclick: async () => { await run("quick_page", { page: p, swap: p - 1 }); if (page === p) page = p - 1; else if (page === p - 1) page = p; draw(); render(true); } }, arrow("up")),
+        h("button.btn.small.ghost.icon", { title: "Move down (swap with the page below)", "aria-label": "Move down", disabled: p >= (q.pages || 32),
+          onclick: async () => { await run("quick_page", { page: p, swap: p + 1 }); if (page === p) page = p + 1; else if (page === p + 1) page = p; draw(); render(true); } }, arrow("down")),
         // any page that is there can go; an empty one without asking
         h("button.btn.small.ghost.danger", { title: "Delete this page's buttons, name and grid (Ctrl+Z brings them back)", disabled: !used.has(p),
           onclick: async () => {
@@ -918,7 +997,7 @@ function editPages() {
       h("p.qe-note", "A heading tile names a row; a Go to page or Folder tile jumps between pages and can turn the old page's buttons off on the way."));
   };
   draw();
-  const close = modal({ title: "Pages", body, foot: [h("span.grow"), h("button.btn.primary", { onclick: () => close() }, "Done")] });
+  const close = modal({ title: "Pages", body, wide: true, foot: [h("span.grow"), h("button.btn.primary", { onclick: () => close() }, "Done")] });
 }
 
 // Edit -> Layout: this page's grid
@@ -932,11 +1011,12 @@ function editLayout() {
     if (s.rows > maxRows) s.rows = maxRows;
     const past = q.buttons.filter((b) => b.page === page && b.slot > s.cols * s.rows).length;
     body.replaceChildren(
-      row("Buttons across", chips([4, 5, 6, 8, 10, 12].map((n) => [n, String(n)]), s.cols, (v) => { s.cols = v; draw(); })),
-      row("Rows", chips(Array.from({ length: Math.min(12, maxRows) }, (_, i) => [i + 1, String(i + 1)]), s.rows, (v) => { s.rows = v; draw(); })),
-      row("Row height", chips([["s", "Small"], ["m", "Medium"], ["l", "Large"], ["xl", "Extra large"],
-        ["fit", "Fill", "The rows share the space there is (a full screen gets tall buttons)"]], s.height, (v) => { s.height = v; draw(); })),
-      row("", h("label.check.small", h("input", { type: "checkbox", checked: s.all, onchange: (e) => { s.all = e.target.checked; } }), " Every page")),
+      row("Buttons across", seg([4, 5, 6, 8, 10, 12].map((n) => [n, String(n)]), s.cols, (v) => { s.cols = v; draw(); })),
+      row("Rows", seg(Array.from({ length: Math.min(12, maxRows) }, (_, i) => [i + 1, String(i + 1)]), s.rows, (v) => { s.rows = v; draw(); })),
+      row("Row height", seg([["s", "Small"], ["m", "Medium"], ["l", "Large"], ["xl", "Extra large"],
+        ["fit", "Fill", "The rows share the space there is (a full screen gets tall buttons)"]], s.height, (v) => { s.height = v; draw(); }),
+        h("span.qe-note", "In Live the page always fits the screen; this is the height in Program's dock.")),
+      row("", h("label.check", h("input", { type: "checkbox", checked: s.all, onchange: (e) => { s.all = e.target.checked; } }), h("span", "The same grid on every page"))),
       h("div.qe-note", `${s.cols * s.rows} buttons on the page. Fewer across = bigger buttons. Buttons keep their numbers and flow into the new grid in order.`),
       past ? h("div.qe-note.warn", `${past} button(s) past the last row are kept but not shown - add a row to see them.`) : null);
   };
@@ -1127,30 +1207,32 @@ function editButton(slot, btn) {
     };
     const look = [
       lookSection(s, slot, btn, draw),
-      btn ? row("Page", chips(pageChoices(), s.toPageOf || page, (v) => { s.toPageOf = v; draw(); }),
+      btn ? row("Page", pickList([[null, pageChoices()]], s.toPageOf || page, (v) => { s.toPageOf = v; draw(); }, "Page"),
         h("span.qe-note", "Pick another page and Save: the button moves there (in Edit you can also drag it onto a page's tab).")) : null,
     ];
     const kids = [
+      row("Does", kindPicker(s, draw, !!btn)),
       row("Name", h("input.qe-name", { type: "text", value: s.label, maxlength: 24, placeholder: "e.g. Flash red",
         oninput: (e) => { s.label = e.target.value; body.querySelectorAll(".qe-preview .qline b").forEach((x) => { x.textContent = s.label || "Button"; }); } })),
       row("Description", h("input.qe-name", { type: "text", value: s.note, maxlength: 40, placeholder: "optional - shown under the name",
         oninput: (e) => { s.note = e.target.value; } })),
-      row("Does", chips(DOES.map(([k, l, tt]) => [k, l, tt]), d, (v) => { s.does = v; draw(); })),
     ];
     if (!NO_TARGET.has(d) || (d === "fader" && s.control.what === "lights")) {
+      const mine = t.heads && tv === "sel" ? `${t.heads.length} chosen light${t.heads.length === 1 ? "" : "s"}` : `The selected lights (${selected.length})`;
       const who = fxKind
-        ? [["all", "All effects"], ["sel", `Selected (${selected.length})`], ...FX_TYPES.map(([k, l]) => ["t" + k, l])]
-        : [["all", "All lights"], ["sel", `Selected (${selected.length})`], ...groups().map((g) => ["g" + g.n, g.name]),
-          ...autoGroups().map((g) => ["a" + g.key, `${g.name} (${g.heads.length})`])];
-      if (t.heads && tv === "sel") who[1][1] = `${t.heads.length} chosen light${t.heads.length === 1 ? "" : "s"}`;
-      kids.push(row("Which lights", chips(who, tv, setT),
-        fxKind ? null : chips(SPLITS, t.split || "", (v) => { if (v) s.target.split = v; else delete s.target.split; draw(); }),
-        fxKind ? null : chips(PATTERNS, t.pattern || "", (v) => { if (v) s.target.pattern = v; else delete s.target.pattern; draw(); })));
+        ? [[null, [["all", "All effects"], ["sel", mine]]], ["Kinds", FX_TYPES.map(([k, l]) => ["t" + k, l])]]
+        : [[null, [["all", "All lights"], ["sel", mine]]], ["Groups", groups().map((g) => ["g" + g.n, g.name])],
+          ["Kinds of light", autoGroups().map((g) => ["a" + g.key, `${g.name} (${g.heads.length})`])]];
+      kids.push(row(fxKind ? "Which effects" : "Which lights", pickList(who, tv, setT, "Which lights"),
+        fxKind ? null : pair("Which of them", seg(SPLITS.map(([k, l]) => [k, k ? l : "All"]), t.split || "",
+          (v) => { if (v) s.target.split = v; else delete s.target.split; draw(); })),
+        fxKind ? null : pair("Pattern", pickList([[null, PATTERNS]], t.pattern || "",
+          (v) => { if (v) s.target.pattern = v; else delete s.target.pattern; draw(); }, "Pattern"))));
     }
     if (d === "page" || d === "folder") {
       const n = Math.max(8, ...quick().buttons.map((x) => x.page), page + 1);
-      kids.push(row(d === "folder" ? "Opens" : "Goes to", chips(Array.from({ length: Math.min(n, quick().pages || 32) }, (_, i) => [i + 1, pageName(i + 1)]),
-        +s.toPage, (v) => { s.toPage = v; draw(); }),
+      kids.push(row(d === "folder" ? "Opens" : "Goes to", pickList([[null, Array.from({ length: Math.min(n, quick().pages || 32) }, (_, i) => [i + 1, pageName(i + 1)])]],
+        +s.toPage, (v) => { s.toPage = v; draw(); }, "Page"),
       h("div.qe-note", d === "folder" ? "Pressed, it opens that page with a ◂ Back to this one. Name and order pages with Pages… in Edit."
         : "Pressed, it shows that page. Name and order pages with Pages… in Edit.")));
       // on the way there: this page's buttons off (the preshow), some of the
@@ -1167,12 +1249,12 @@ function editButton(slot, btn) {
         : h("div.qe-note", `${pageName(+s.toPage)} has no on / off buttons yet.`)));
     }
     if (d === "label") {
-      kids.push(row("Sits", chips([["side", "Beside the buttons", "Spot 260 | Red | Blue | UV - the name at the start of the row"],
-        ["above", "Over the row below", "A small heading above a row of buttons"]], s.sits, (v) => { s.sits = v; draw(); })));
+      kids.push(row("Sits", seg([["side", "Beside its row", "Spot 260 | Red | Blue | UV - the name at the start of the row"],
+        ["above", "Above its row", "A small heading above a row of buttons"]], s.sits, (v) => { s.sits = v; draw(); })));
       kids.push(h("div.qe-note", "Only its name shows; pressing it does nothing."));
     }
     if (["fx", "move", "custom", "capture"].includes(d)) {
-      kids.push(row("Order", chips(ORDERS, s.order, (v) => { s.order = v; draw(); }),
+      kids.push(row("Order", pickList([[null, ORDERS]], s.order, (v) => { s.order = v; draw(); }, "Order"),
         h("span.qe-note", "Which way the effect runs through the lights (a chase, a wave).")));
       const moving = d === "move" || (d === "fx" && MOVES.has(s.fx)) || ((d === "custom" || d === "capture") && s.fxList.some((x) => MOVES.has(x)));
       if (moving) {
@@ -1189,33 +1271,35 @@ function editButton(slot, btn) {
     if (d === "dim") kids.push(row("Dim to", slider(s.dim, 0, 100, 5, (v) => { s.dim = v; })));
     if (d === "fader") {
       const c = s.control;
-      kids.push(row("Moves", chips([["master", "Grand master"], ["speed", "Speed master"], ["playback", "A playback"], ["group", "A group master"],
-        ["lights", "Some lights", "These lights' own fader (pick them below)"]], c.what,
-        (v) => { s.control = { what: v, n: v === "group" ? (groups()[0] || { n: 1 }).n : 1, mode: "level" }; draw(); })));
+      kids.push(row("Moves", pickList([[null, [["master", "The grand master"], ["speed", "The Speed master"], ["playback", "A playback"], ["group", "A group master"],
+        ["lights", "Some lights"]]]], c.what,
+        (v) => { s.control = { what: v, n: v === "group" ? (groups()[0] || { n: 1 }).n : 1, mode: "level" }; draw(); }, "Moves"),
+        c.what === "lights" ? h("span.qe-note", "These lights' own fader: pick them under Which lights.") : null));
       if (c.what === "lights") {
-        kids.push(row("Fader is", chips([["level", "Their brightness", "Up from dark: the lights at the fader's level (over what else they do)"],
+        const IS = [["level", "Their brightness", "Up from dark: the lights at the fader's level (over what else they do)"],
           ["master", "A master", "A share of whatever they are doing, like the grand master for these lights"],
           ["speed", "Effect speed", "How fast their effects and moves run: the middle is as set, up to twice as fast, down to a tenth"],
-          ["strobe", "Strobe speed", "How fast a strobe on them flashes (a Strobe button, the desk strobe): 1 to 30 a second - on the light's own strobe; a light without one stops at 20"]], c.mode || "level",
-        (v) => { c.mode = v; draw(); })));
+          ["strobe", "Strobe speed", "How fast a strobe on them flashes (a Strobe button, the desk strobe): 1 to 30 a second - on the light's own strobe; a light without one stops at 20"]];
+        kids.push(row("Fader is", pickList([[null, IS.map(([k, l]) => [k, l])]], c.mode || "level", (v) => { c.mode = v; draw(); }, "Fader is"),
+          h("span.qe-note", (IS.find(([k]) => k === (c.mode || "level")) || IS[0])[2])));
       }
       kids.push(row("Default", slider(s.fdefault ?? faderHome(c), 0, 100, 1, (v) => { s.fdefault = v; }),
         h("span.qe-note", "Where its ↺ puts it back (or move the fader there and press its ◉).")));
-      if (c.what === "playback") kids.push(row("Playback", chips(((state.snap && state.snap.playbacks) || []).slice(0, 10).map((pb) => [pb.n, pb.name || `PB${pb.n}`]), c.n, (v) => { c.n = v; draw(); })));
-      if (c.what === "group") kids.push(row("Group", groups().length ? chips(groups().map((g) => [g.n, g.name]), c.n, (v) => { c.n = v; draw(); })
+      if (c.what === "playback") kids.push(row("Playback", pickList([[null, ((state.snap && state.snap.playbacks) || []).slice(0, 10).map((pb) => [pb.n, `${pb.n}  ${pb.name || "Playback " + pb.n}`])]], c.n, (v) => { c.n = v; draw(); }, "Playback")));
+      if (c.what === "group") kids.push(row("Group", groups().length ? pickList([[null, groups().map((g) => [g.n, g.name])]], c.n, (v) => { c.n = v; draw(); }, "Group")
         : h("div.qe-note", "No groups yet - make one from a selection (Group).")));
     }
-    if (d === "cuelist") kids.push(row("Playback", chips(((state.snap && state.snap.playbacks) || []).slice(0, 10).map((pb) => [pb.n, pb.name || `PB${pb.n}`]), s.playback, (v) => { s.playback = v; draw(); })));
+    if (d === "cuelist") kids.push(row("Playback", pickList([[null, ((state.snap && state.snap.playbacks) || []).slice(0, 10).map((pb) => [pb.n, `${pb.n}  ${pb.name || "Playback " + pb.n}`])]], s.playback, (v) => { s.playback = v; draw(); }, "Playback")));
     if (d === "colour") kids.push(row("Colour", swatches(SWATCH, s.colour || "#ffffff", (c) => { s.colour = c; draw(); })));
     if (BASE_KINDS.has(d)) {
-      kids.push(row("Going off", chips([[false, "Only itself"], [true, "Its lights' colour buttons too",
+      kids.push(row("Going off", seg([[false, "Only itself"], [true, "Its colour buttons too",
         "A base look (the show's default): turning it off also turns off the colour buttons on its lights"]], s.base,
       (v) => { s.base = v; draw(); })));
     }
     if (d === "strobe") {
       kids.push(row("Speed", chips([[2, "Slow"], [5, "Medium"], [10, "Fast"], [18, "Very fast"], [30, "Fastest"]], s.hz,
         (v) => { s.hz = v; draw(); }), slider(s.hz, 1, 30, 0.5, (v) => { s.hz = v; }, " Hz")));
-      kids.push(row("Speed from", chips([[false, "Its own (above)"], [true, "The strobe-speed fader"]], s.followFader,
+      kids.push(row("Speed from", seg([[false, "Its own (above)"], [true, "The strobe-speed fader"]], s.followFader,
         (v) => { s.followFader = v; draw(); })));
       kids.push(h("div.qe-note", "The newest strobe button on a light sets its speed - let go and the one under it is back. "
         + "\"The strobe-speed fader\": the speed of a strobe-speed fader on these lights (a group's own strobe)."));
@@ -1224,26 +1308,25 @@ function editButton(slot, btn) {
       kids.push(row("Colour", swatches(SWATCH, s.colour, (c) => { s.colour = c; draw(); }, { none: "Keep their colour" })));
     }
     if (d === "fx") {
-      kids.push(row("Effect", chips(FX, s.fx, (v) => { s.fx = v; s.params = {}; draw(); })));
-      // the show's own step effects (FX tab -> Step effects)
+      // the library by what it changes, then the show's own step effects (FX tab -> Step effects)
       const steps = (state.snap && state.snap.step_fx) || [];
-      if (steps.length) {
-        kids.push(row("Or a step effect", chips(steps.map((f) => [`step:${f.id}`, f.name]), s.fx, (v) => { s.fx = v; s.params = {}; draw(); })));
-      }
+      const made = s.fx === "roam" || s.fx.startsWith("shape:") ? [[s.fx, s.fx === "roam" ? "A roam (made on Position)" : "A shape (made on Position)"]] : [];
+      kids.push(row("Effect", pickList([[null, made], ...FX_GROUPS.map(([g, ks]) => [g, ks.map((k) => [k, fxName(k)])]),
+        ["Your step effects", steps.map((f) => [`step:${f.id}`, f.name])]], s.fx, (v) => { s.fx = v; s.params = {}; draw(); }, "Effect")));
       if (s.fx === "roam" || s.fx.startsWith("shape:")) {
         const p = s.params || {};
         const what = s.fx === "roam" ? `a roam over ${(p.zones || []).length} zone(s)` : "a shape";
         kids.push(row("Movement", h("div.qe-note", `Made on the Position tab: ${what}, its speed and size${p.beats ? `, a round per ${p.beats} beat(s)` : ""}. `
           + "To change it, set it up again on the Position tab and press Make a button - or pick another effect above.")));
       } else if (s.fx.startsWith("step:")) {
-        kids.push(row("On the beat", chips([[0, "Its own times"], [1, "A round a beat"], [2, "2 beats"], [4, "A bar"], [8, "2 bars"]],
-          s.params.beats ?? 0, (v) => { s.params = v ? { beats: v } : {}; draw(); })));
+        kids.push(row("On the beat", pickList([[null, [[0, "Its own times"], [1, "A round a beat"], [2, "A round in 2 beats"], [4, "A round a bar"], [8, "A round in 2 bars"]]]],
+          s.params.beats ?? 0, (v) => { s.params = v ? { beats: v } : {}; draw(); }, "On the beat")));
       } else if (MOVES.has(s.fx)) {
-        kids.push(row("Direction", chips([[1, "↻ Clockwise"], [-1, "↺ Counter-clockwise"]], s.params.direction ?? 1,
+        kids.push(row("Direction", seg([[1, "Clockwise"], [-1, "Counter-clockwise"]], s.params.direction ?? 1,
           (v) => { s.params.direction = v; draw(); })));
-        kids.push(row("Arc", chips([[90, "90°"], [180, "180°"], [270, "270°"], [360, "Full"]], s.params.arc ?? 360,
+        kids.push(row("Arc", seg([[90, "90°"], [180, "180°"], [270, "270°"], [360, "Full"]], s.params.arc ?? 360,
           (v) => { s.params.arc = v; draw(); })));
-        kids.push(row("Size", chips([[10, "S"], [20, "M"], [40, "L"]], s.params.size ?? 20, (v) => { s.params.size = v; draw(); })));
+        kids.push(row("Size", seg([[10, "Small"], [20, "Medium"], [40, "Large"]], s.params.size ?? 20, (v) => { s.params.size = v; draw(); })));
         const secs = s.params.speed ? Math.round(1 / s.params.speed) : 8;
         kids.push(row("Speed", slider(secs, 2, 30, 1, (v) => { s.params.speed = +(1 / v).toFixed(4); }, " s per turn")));
       } else {
@@ -1253,7 +1336,7 @@ function editButton(slot, btn) {
     if (d === "move") {
       const mv = (state.snap && state.snap.moves) || [];
       if (!s.move && mv.length) s.move = mv[0].id;
-      kids.push(row("Move", mv.length ? chips(mv.map((m) => [m.id, m.name]), s.move, (v) => { s.move = v; draw(); })
+      kids.push(row("Move", mv.length ? pickList([[null, mv.map((m) => [m.id, m.name])]], s.move, (v) => { s.move = v; draw(); }, "Move")
         : h("div.qe-note", "No saved moves yet - make one on the Position tab and press “Save this as my move”.")));
     }
     if (d === "custom" || d === "capture") {
@@ -1282,27 +1365,28 @@ function editButton(slot, btn) {
       }
     }
     if (d === "go" || d === "release") {
-      kids.push(row("Playback", chips([...Array(10)].map((_, i) => [i + 1, String(i + 1)]), +s.playback,
-        (v) => { s.playback = v; draw(); })));
+      const pbs = (state.snap && state.snap.playbacks) || [];
+      kids.push(row("Playback", pickList([[null, [...Array(10)].map((_, i) => { const pb = pbs.find((x) => x.n === i + 1) || {}; return [i + 1, `${i + 1}  ${pb.name || "Playback " + (i + 1)}`]; })]], +s.playback,
+        (v) => { s.playback = v; draw(); }, "Playback")));
       if (d === "go") kids.push(row("Cue", h("input.qe-num", { type: "number", min: 1, value: s.cue, placeholder: "next",
         oninput: (e) => { s.cue = e.target.value; } })));
     }
     if (d === "preset") {
       const presets = (state.snap && state.snap.presets) || [];
-      kids.push(row("Preset", presets.length ? chips(presets.map((p) => [p.n, p.name]), +s.preset, (v) => { s.preset = v; draw(); })
+      kids.push(row("Preset", presets.length ? pickList([[null, presets.map((p) => [p.n, p.name])]], +s.preset, (v) => { s.preset = v; draw(); }, "Preset")
         : h("div.qe-note", "No presets yet - record one on the Looks tab.")));
     }
     if (d === "fog") kids.push(row("Output", slider(s.fogLevel, 5, 100, 5, (v) => { s.fogLevel = v; })));
     if (PACED.has(d)) {
-      kids.push(row("Button speed", h("div.chip-row", chips(RATES, s.rate, (v) => { s.rate = v; draw(); }),
-        h("button.chip" + (s.free ? ".on" : ""), { title: "Ignore the Speed master: this button keeps its own speed",
-          onclick: () => { s.free = !s.free; draw(); } }, "Own speed"),
-        h("span.qe-note", "Multiplies its effects' speed. Live: scroll on the tile, or right-click it."))));
+      kids.push(row("Button speed", h("div.qe-line", pickList([[null, RATES]], s.rate, (v) => { s.rate = v; draw(); }, "Button speed"),
+        h("label.check", h("input", { type: "checkbox", checked: !!s.free, onchange: (e) => { s.free = e.target.checked; } }),
+          h("span", { title: "Ignore the Speed master: this button keeps its own speed" }, "Its own speed"))),
+        h("span.qe-note", "Multiplies its effects' speed. Live: scroll on the tile, or right-click it.")));
     }
     if (FADES.has(d)) {
       const fades = [[0, "None"], [0.5, "0.5 s"], [1, "1 s"], [2, "2 s"], [5, "5 s"]];
-      kids.push(row("Fade in", chips(fades, s.fadeIn, (v) => { s.fadeIn = v; draw(); })));
-      kids.push(row("Fade out", chips(fades, s.fadeOut, (v) => { s.fadeOut = v; draw(); })));
+      kids.push(row("Fade in", seg(fades, s.fadeIn, (v) => { s.fadeIn = v; draw(); })));
+      kids.push(row("Fade out", seg(fades, s.fadeOut, (v) => { s.fadeOut = v; draw(); })));
     }
     const taken = quick().buttons.filter((x) => x.key && !(btn && x.id === btn.id)).map((x) => x.key);
     const keyIn = h("input.qe-num.qe-key", { type: "text", maxlength: 1, value: s.key, placeholder: "none",
@@ -1322,38 +1406,42 @@ function editButton(slot, btn) {
     const learn = h("button.chip", { onclick: () => learnMidi(learn, midiIn, midiNote, (n) => { s.midi = n; }) }, "Learn");
     kids.push(row("MIDI note", h("div.chip-row", midiIn, learn, midiNote)));
     if (!NO_QUANT.has(d)) {
-      kids.push(row("Timing", chips([["", "Like the page"], [0, "Straight away"], [1, "Next beat"], [4, "Next bar"], [32, "Next phrase"]],
-        s.quant, (v) => { s.quant = v; draw(); }),
+      kids.push(row("Timing", pickList([[null, [["", "Like the page (On the beat)"], [0, "Straight away"], [1, "On the next beat"], [4, "On the next bar"], [32, "On the next phrase"]]]],
+        s.quant, (v) => { s.quant = v; draw(); }, "Timing"),
       h("span.qe-note", "When a press takes effect: straight away, or held until the next beat, bar or phrase of the tempo so a strobe hit or a GO lands in time. Like the page: the buttons page's On the beat setting.")));
     }
     // behaviour
     if (!ONE_SHOT.has(d)) {
       const modes = [["hold", "Hold", "On while pressed"], ["latch", "On / off", "Press on, press again off"],
         ["tap", "Timed shot", "One press runs it for the seconds below"]];
-      kids.push(row("Press", chips(modes, s.mode, (v) => {
+      kids.push(row("Press", seg(modes, s.mode, (v) => {
         s.mode = v;
         if (v === "tap" && s.seconds === "") s.seconds = fxKind ? 1 : 2;
         draw();
       })));
-      kids.push(row(s.mode === "tap" ? "Runs for" : "Turn off after",
-        chips([["", "Never"], [1, "1 s"], [3, "3 s"], [10, "10 s"], [30, "30 s"], [60, "1 min"]],
-          s.seconds === "" ? "" : +s.seconds, (v) => { s.seconds = v; draw(); }),
-        h("input.qe-num", { type: "number", min: 0.1, max: 3600, step: 0.1, value: s.seconds, placeholder: "seconds",
-          oninput: (e) => { s.seconds = e.target.value; } })));
+      const secs = s.seconds === "" ? "" : +s.seconds;
+      const SECS = [["", s.mode === "tap" ? "Choose…" : "Never"], [1, "1 second"], [3, "3 seconds"], [10, "10 seconds"], [30, "30 seconds"], [60, "1 minute"]];
+      kids.push(row(s.mode === "tap" ? "Runs for" : "Turn off after", h("div.qe-line",
+        pickList([[null, SECS.some(([v]) => v === secs) ? SECS : [...SECS, [secs, `${secs} seconds`]]]], secs, (v) => { s.seconds = v; draw(); }, "Seconds"),
+        pair("or", h("input.qe-num", { type: "number", min: 0.1, max: 3600, step: 0.1, value: s.seconds, placeholder: "seconds", "aria-label": "Seconds",
+          oninput: (e) => { s.seconds = e.target.value; } })))));
       if (!fxKind) {
-        kids.push(row("One at a time with", h("div.qe-body",
-          chips([["", "No"], ...tags.map((x) => [x, x])], s.exclusive, (v) => { s.exclusive = v; draw(); }),
+        kids.push(row("One at a time with",
+          pickList([[null, [["", "No - it plays alongside the others"]]], ["Its radio group", tags.map((x) => [x, x])]],
+            tags.includes(s.exclusive) || !s.exclusive ? s.exclusive : "", (v) => { s.exclusive = v; draw(); }, "Radio group"),
           h("input.qe-tag", { type: "text", maxlength: 20, value: tags.includes(s.exclusive) ? "" : s.exclusive,
-            placeholder: "new radio group, e.g. colours", oninput: (e) => { s.exclusive = e.target.value; } }),
-          h("div.qe-note", "Buttons in the same radio group switch each other off - one colour, one movement at a time."))));
+            placeholder: "or a new radio group, e.g. colours", "aria-label": "A new radio group", oninput: (e) => { s.exclusive = e.target.value; } }),
+          h("div.qe-note", "Buttons in the same radio group switch each other off - one colour, one movement at a time.")));
       }
     }
-    const tabs = { does: kids.slice(0, playFrom), look, play: kids.slice(playFrom) };
+    if (s.pickKind) qeTab = "does";
+    const tabs = { does: s.pickKind ? kids.slice(0, 1) : kids.slice(0, playFrom), look, play: kids.slice(playFrom) };
     tabsBar.replaceChildren(...[["does", "What it does"], ["look", "Look"], ["play", "How it plays"]].map(([k, l]) =>
       h("button" + (qeTab === k ? ".on" : ""), { role: "tab", "aria-selected": String(qeTab === k), onclick: () => { qeTab = k; draw(); } }, l)));
     body.replaceChildren(tabsBar, h("div.qe-tab", ...tabs[qeTab].filter(Boolean)));
   };
   qeTab = "does";
+  s.pickKind = !btn;
   draw();
   const was = JSON.stringify(toButton(s));
 

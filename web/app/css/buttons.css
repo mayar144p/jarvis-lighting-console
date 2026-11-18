@@ -239,9 +239,91 @@ body:not([data-mode="live"]) .pb-mini { display: none; }
 /* what else it can do on one line, Cancel and Save together on the next */
 .qb-inspector-foot > .grow { flex: 1 0 100%; height: 0; }
 .qb-inspector-foot > .grow + * { margin-left: auto; }
+/* (the keys before Cancel / Save: Clear, Duplicate, Try it... - smaller, so the settings keep the room) */
+.qb-inspector-foot > .btn:not(.grow ~ *) { height: var(--h-s); padding: 0 9px; font-size: var(--t-s); }
 .qb-inspector .qe-tabs { position: sticky; top: calc(-1 * var(--pad)); z-index: 1; margin: calc(-1 * var(--pad)) calc(-1 * var(--pad)) 12px; padding: 8px var(--pad); background: var(--panel); border-radius: 0; display: flex; }
 .qb-inspector .qe-tabs button { flex: 1; }
 /* the look's preview in the editor: the tile off and on */
-.qe-preview { display: flex; align-items: flex-end; justify-content: center; gap: 16px; min-height: calc(60px * var(--ctl)); padding: 6px 0 2px; }
+.qe-preview { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: center; gap: 16px; min-height: calc(60px * var(--ctl)); padding: 6px 0 2px; }
 .qe-preview .qbtn { pointer-events: none; }
 .qe-preview .qbtn.qs-circle { height: auto; }
+
+/* ------------------------------------------------ a button's settings */
+/* beside the page in Edit, or in a window of their own: each field's name
+   over its control, a choice of a few as one row of keys, a choice of
+   many as a list */
+.qe { display: flex; flex-direction: column; gap: 16px; }
+.modal .qe { max-height: 68vh; overflow: auto; padding-right: 4px; }
+.qe-tab { display: flex; flex-direction: column; gap: 16px; }
+.modal .qe-tab { min-height: min(520px, 60vh); }
+.qe-row { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.qe-label { color: var(--text-2); font-size: var(--t-s); font-weight: 600; }
+.qe-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.qe-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.qe-line > .qe-select { flex: 1 1 calc(140px * var(--ctl)); width: auto; }
+.qe-pair { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.qe-pair > .qe-mini { flex: none; min-width: calc(64px * var(--ctl)); }
+.qe-pair > :not(.qe-mini) { flex: 1; min-width: 0; }
+.qe-line > .qe-pair > .qe-mini { min-width: 0; }
+.qe-line > .qe-pair { flex: 0 1 auto; }
+.qe-mini { color: var(--text-3); font-size: var(--t-xs); }
+.qe-seg { display: flex; width: 100%; }
+.qe-seg button { flex: 1 1 0; min-width: 0; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; }
+.qe-select { width: 100%; }
+.qe .chip-row { gap: 4px; }
+.qe .chip { min-height: var(--h); }
+.qe-name, .qe-tag { width: 100%; }
+.qe-num { width: calc(110px * var(--ctl)); }
+.qe-key { width: calc(64px * var(--ctl)); text-align: center; text-transform: uppercase; font-weight: 600; }
+.qe-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-3); font-size: var(--t-xs); line-height: 1.4; }
+.qe-note.warn { color: var(--blind); }
+.qe-slider { display: flex; align-items: center; gap: 10px; }
+.qe-slider input { flex: 1; }
+.qe-out { min-width: calc(64px * var(--ctl)); font-size: var(--t-s); text-align: right; }
+/* colours: swatches, Auto, and any colour */
+.qe-swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.qe-sw { width: calc(28px * var(--ctl)); height: calc(28px * var(--ctl)); padding: 0; border: 0; border-radius: var(--r); box-shadow: inset 0 0 0 1px var(--line-strong); cursor: pointer; }
+.qe-sw.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--lit); }
+.qe-custom { width: calc(36px * var(--ctl)); height: calc(28px * var(--ctl)); padding: 0; border: 1px solid var(--line-strong); border-radius: var(--r); background: none; cursor: pointer; }
+.qe-sw-custom { position: relative; display: inline-grid; place-items: center; width: calc(28px * var(--ctl)); height: calc(28px * var(--ctl)); overflow: hidden; border-radius: var(--r); outline: 1px dashed var(--line-strong); outline-offset: -1px; }
+.qe-sw-custom.on { outline: 2px solid var(--lit); }
+.qe-sw-custom input { width: calc(48px * var(--ctl)); height: calc(48px * var(--ctl)); padding: 0; border: 0; background: none; cursor: pointer; }
+/* a picture for the tile */
+.qe-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(36px * var(--ctl)), 1fr)); gap: 4px; }
+.qe-icon { display: grid; place-items: center; height: calc(36px * var(--ctl)); padding: 0; border: 0; border-radius: var(--r); background: var(--raised); color: var(--text-2); font-size: var(--t-xs); }
+.qe-icon:hover { background: var(--hover); color: var(--text); }
+.qe-icon.on { background: var(--lit); color: var(--lit-ink); }
+.qe-icon .qicon { width: calc(18px * var(--ctl)); height: calc(18px * var(--ctl)); }
+/* the look: the tile as it shows, off and on */
+.qe-look { display: flex; flex-direction: column; gap: 16px; }
+.qe-prev-pair { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+/* What it does / Look / How it plays */
+.qe-tabs { display: flex; width: 100%; }
+.qe-tabs button { flex: 1; }
+.modal .qe-tabs { position: sticky; top: 0; z-index: 2; }
+.qe-try { touch-action: none; }
+/* what it does: the one it does now (a key to change it), and the kinds
+   in their groups, each with a line saying what it is */
+.qe-kind { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-radius: var(--r); background: var(--raised); text-align: left; }
+.qe-kind:hover { background: var(--hover); }
+.qe-kind-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.qe-kind-text b { font-size: var(--t-l); font-weight: 600; }
+.qe-kind-text small { color: var(--text-2); font-size: var(--t-xs); line-height: 1.35; }
+.qe-kind-change { flex: none; color: var(--text-2); font-size: var(--t-s); font-weight: 600; }
+.qe-kinds { display: flex; flex-direction: column; gap: 16px; }
+.qe-kind-group h4 { margin-bottom: 6px; color: var(--text-3); font-size: var(--t-xs); font-weight: 600; }
+.qe-kind-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(148px * var(--ctl)), 1fr)); gap: 4px; }
+.qe-kind-opt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; padding: 8px 10px; border: 0; border-radius: var(--r); background: var(--raised); text-align: left; }
+.qe-kind-opt:hover { background: var(--hover); }
+.qe-kind-opt b { font-weight: 600; }
+.qe-kind-opt small { color: var(--text-3); font-size: var(--t-xs); line-height: 1.3; }
+.qe-kind-opt.on { background: var(--lit); color: var(--lit-ink); }
+.qe-kind-opt.on small { color: inherit; opacity: .7; }
+.qe-kind-keep { align-self: flex-start; }
+/* Pages…: a page per line - its number, name, how many buttons, its keys */
+.pages-list { display: flex; flex-direction: column; gap: 2px; }
+.page-row { display: grid; grid-template-columns: calc(24px * var(--ctl)) minmax(0, 1fr) calc(84px * var(--ctl)) repeat(4, auto); align-items: center; gap: 6px; padding: 2px 0; }
+.page-row.on .page-n { color: var(--text); font-weight: 700; }
+.page-n { color: var(--text-3); text-align: right; }
+.page-row small { color: var(--text-3); }
+.pages-tidy { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; padding: 8px 10px; border-radius: var(--r); background: var(--blind-face); }
