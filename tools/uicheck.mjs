@@ -373,12 +373,12 @@ const STEPS = [
   ["58-colour-match", async (p) => { await closeAll(p); await mod(p, "colourmatch.js", "openColourMatch"); await p.waitForTimeout(400); }],
   ["59-autopilot", async (p) => { await closeAll(p); await mod(p, "autopilot.js", "openAutopilot"); await p.waitForTimeout(400); }],
   ["60-rig-dialog", async (p) => { await closeAll(p); await mod(p, "rigdialog.js", "openRigDialog", "add"); await p.waitForTimeout(500); }],
-  ["61-gig-buttons-full", async (p) => { await closeAll(p); await p.click('#pb-mode [data-mode="buttons"]'); await p.click("#qb-full"); await p.waitForTimeout(600); }],
+  ["61-gig-live", async (p) => { await closeAll(p); await p.click('#mode-seg [data-mode="live"]'); await p.waitForTimeout(600); await closeAll(p); }],
   ["62-stage-full", async (p) => { await closeAll(p); await p.click("#fullscreen-btn"); await p.waitForTimeout(600); }],
   ["63-end", async (p) => {
     await p.keyboard.press("Escape"); await closeAll(p);
-    // (the buttons page back from the whole screen: step 61)
-    if (await p.isVisible("#qb-full")) await p.click("#qb-full", { timeout: 5000 }).catch(() => {});
+    // (back to Program from Live: step 61)
+    await p.click('#mode-seg [data-mode="program"]', { timeout: 5000 }).catch(() => {});
     await p.waitForTimeout(300);
   }],
 ];

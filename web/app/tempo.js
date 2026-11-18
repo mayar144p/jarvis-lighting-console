@@ -1,5 +1,5 @@
-// The beat clock in the top bar: the tempo, where the beat is (a light that
-// flashes on each beat, brighter on the 1), and where it comes from - taps,
+// The beat clock in the title bar: the tempo, where the beat is (four lamps,
+// one per beat of the bar, the one for this beat lit), and where it comes from - taps,
 // a typed BPM, MIDI clock, the CDJs (Pro DJ Link) or this browser's MIDI.
 // Tap the pill (or T) on the beat; Shift+T says "this is the 1".
 import { run } from "./actions.js";
@@ -35,11 +35,14 @@ function tick() {
   raf = requestAnimationFrame(tick);
   const beats = recv.beats + (performance.now() - recv.t) / 1000 * recv.bpm / 60;
   const phase = beats - Math.floor(beats);
-  const one = Math.floor(beats) % 4 === 0;
-  const dot = $("#tempo-dot");
-  const lit = phase < 0.18;
-  dot.classList.toggle("on", lit);
-  dot.classList.toggle("one", lit && one);
+  // the lamp of this beat is lit, brightest just after the beat falls
+  const dots = $("#tempo-dot").children, at = ((Math.floor(beats) % 4) + 4) % 4;
+  for (let i = 0; i < dots.length; i++) {
+    const on = i === at;
+    if (dots[i].classList.contains("on") !== on) dots[i].classList.toggle("on", on);
+    const hit = on && phase < 0.18;
+    if (dots[i].classList.contains("hit") !== hit) dots[i].classList.toggle("hit", hit);
+  }
 }
 
 export function tap() {

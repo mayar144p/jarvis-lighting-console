@@ -1,105 +1,67 @@
-// The workspaces' data (workspaces.js has the screen): the ready ones and
-// the check that keeps a saved one sane.  No screen here, so the selftest
-// loads it in node.
+// The three modes' data (workspaces.js has the screen): what each mode puts
+// in the frame, and the check that keeps what a computer saved sane.  No
+// screen here, so the selftest loads it in node.
 
 export const MIN_W = 220, MAX_W = 620;
-export const BOTTOMS = ["faders", "buttons", "timeline"];
+// the dock's tabs, in the order they sit ("faders" is the Cues tab: the
+// playbacks with their faders, and the cue list of the one in hand)
+export const BOTTOMS = ["buttons", "faders", "timeline", "groups"];
+export const BOTTOM_NAMES = { buttons: "Buttons", faders: "Cues", timeline: "Timeline", groups: "Group faders" };
 
-// The three modes: each job has its screen.
-//   setup    lights, room, connections, checks: the fixture list, the 3D and
-//            the Set up hub (no faders: nothing is being played yet)
-//   program  the programmer, cue lists, palettes, effects, buttons, timeline
-//   live     the show running: the Live view, the 3D, buttons, master
+// The three modes: each job has its screen, in one frame - the lights on
+// the left, the work in the middle, the master on the right.
+//   setup    the lights, the room, the connections, the checks: nothing is
+//            played yet, so there is no dock
+//   program  the programmer over the dock (buttons, cues, timeline, group
+//            faders - one at a time)
+//   live     the show running: the dock is the screen - the button page,
+//            the group faders under it, what plays now above it
 export const MODES = ["setup", "program", "live"];
 export const MODE_NAMES = { setup: "Set up", program: "Program", live: "Live" };
 
-// the ready ones: what a job wants on screen (fewer than before: Busking is
-// Programming with the buttons, Show is Live; "No 3D" is for a small
-// laptop or a desk whose 3D isn't wanted)
-export const BUILTIN = [
-  { id: "setup", name: "Set up", mode: "setup", fix: true, prog: true, stage: true, swap: false, fixW: 0, progW: 400, bottom: "faders", dock: 0, tab: "", cues: false, fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
-  { id: "live", name: "Live", mode: "live", fix: false, prog: true, stage: true, swap: false, fixW: 0, progW: 460, bottom: "buttons", dock: 0, tab: "", cues: false, fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
-  { id: "programming", name: "Program", mode: "program", fix: true, prog: true, stage: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 0, tab: "", cues: false, fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
-  { id: "theatre", name: "Theatre (cues)", mode: "program", fix: true, prog: true, stage: true, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 0, tab: "", cues: true, fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
-  // a pro desk's screen: the palette windows and the command strip, the
-  // playbacks under them
-  { id: "desk", name: "Desk (palettes + faders)", mode: "program", fix: false, prog: true, stage: false, swap: false, fixW: 0, progW: 0, bottom: "faders", dock: 0, tab: "desk", cues: false, fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
-  { id: "nostage", name: "No 3D (buttons + programmer)", mode: "program", fix: true, prog: true, stage: false, swap: false, fixW: 0, progW: 0, bottom: "buttons", dock: 0, tab: "", cues: false, fixAt: "left", progAt: "right", dockAt: "bottom", fixPos: { x: 16, y: 16 }, progPos: { x: 340, y: 16 } },
-];
+const width = (v) => { v = Math.round(+v || 0); return v ? Math.max(MIN_W, Math.min(MAX_W, v)) : 0; };
+const bottom = (v) => (BOTTOMS.includes(v) ? v : "buttons");
 
-export const SIDES = ["left", "right"];
-// where a side panel can be: a side of the screen, or floating over the 3D
-export const PLACES = [...SIDES, "float"];
-
-/** Where the panels go: {cols, rows, areas, fixAt, progAt, top} for the
- *  workspace grid.  Each side panel on the left or the right (both on one
- *  side works: the fixture list on the outside), the dock at the bottom or
- *  the top.  A hidden or floating panel takes no column. */
-export function gridFor(w) {
-  const noStage = w.stage === false;
-  let fixAt = PLACES.includes(w.fixAt) ? w.fixAt : (w.swap ? "right" : "left");
-  let progAt = PLACES.includes(w.progAt) ? w.progAt : (w.swap ? "left" : "right");
-  // nothing to float over without the 3D: the panels go to their sides
-  if (noStage && fixAt === "float") fixAt = "left";
-  if (noStage && progAt === "float") progAt = "right";
-  const cols = { fixtures: "var(--fixtures-w)", prog: "var(--prog-w)" };
-  const left = [], right = [];
-  // a floating panel takes no column: it sits over the 3D view
-  if (w.fix !== false && fixAt !== "float") (fixAt === "left" ? left : right).push("fixtures");
-  if (w.prog !== false && progAt !== "float") (progAt === "left" ? left : right).push("prog");
-  // two on one side: the fixture list at the screen's edge
-  left.sort((a) => (a === "fixtures" ? -1 : 1));
-  right.sort((a) => (a === "fixtures" ? 1 : -1));
-  const top = w.dockAt === "top";
-  if (noStage) {
-    // no 3D: the programmer (else the fixture list) takes the room it had;
-    // with neither, the dock fills the screen
-    const names = [...left, ...right];
-    const grow = names.includes("prog") ? "prog" : names[0];
-    const colsNo = names.map((n) => (n === grow ? "minmax(0, 1fr)" : cols[n])).join(" ");
-    if (!names.length) return { cols: "minmax(0, 1fr)", rows: "minmax(0, 1fr)", areas: '"pb"', fixAt, progAt, top: false };
-    const main = `"${names.join(" ")}"`, dock = `"${names.map(() => "pb").join(" ")}"`;
-    if (w.mode === "setup") return { cols: colsNo, rows: "minmax(0, 1fr)", areas: main, fixAt, progAt, top: false };
-    return { cols: colsNo, rows: top ? "var(--pb-h) minmax(0, 1fr)" : "minmax(0, 1fr) var(--pb-h)",
-      areas: top ? `${dock} ${main}` : `${main} ${dock}`, fixAt, progAt, top };
-  }
-  const names = [...left, "stage", ...right];
-  const main = `"${names.join(" ")}"`, dock = `"${names.map(() => "pb").join(" ")}"`;
-  if (w.mode === "setup") {
-    // setting up plays nothing: no faders or buttons, the room gets the height
-    return { cols: [...left.map((n) => cols[n]), "minmax(0, 1fr)", ...right.map((n) => cols[n])].join(" "),
-      rows: "minmax(0, 1fr)", areas: main, fixAt, progAt, top: false };
-  }
+/** What this computer keeps about the screen, every field the right type
+ *  (a damaged entry can't break the screen): the mode, the side panel's
+ *  width, the programmer's tab, and per mode the dock's tab - in Program
+ *  also whether the dock has the whole work area. */
+export function clean(raw) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const by = r.by && typeof r.by === "object" ? r.by : {};
+  const of = (m) => (by[m] && typeof by[m] === "object" ? by[m] : {});
   return {
-    cols: [...left.map((n) => cols[n]), "minmax(0, 1fr)", ...right.map((n) => cols[n])].join(" "),
-    rows: top ? "var(--pb-h) minmax(0, 1fr)" : "minmax(0, 1fr) var(--pb-h)",
-    areas: top ? `${dock} ${main}` : `${main} ${dock}`,
-    fixAt, progAt, top,
+    mode: MODES.includes(r.mode) ? r.mode : "program",
+    sideW: width(r.sideW),
+    workW: width(r.workW),
+    tab: /^[a-z]{1,20}$/.test(r.tab || "") ? r.tab : "",
+    by: {
+      program: { bottom: bottom(of("program").bottom), max: !!of("program").max },
+      live: { bottom: bottom(of("live").bottom) },
+    },
   };
 }
 
-const pos = (p, x) => {
-  const n = (v, d) => (Number.isFinite(+v) ? Math.max(0, Math.min(4000, Math.round(+v))) : d);
-  return { x: n(p && p.x, x), y: n(p && p.y, 16) };
-};
-
-/** A workspace with every field the right type (a damaged entry can't break the screen). */
-export function clean(w) {
-  const width = (v) => { v = Math.round(+v || 0); return v ? Math.max(MIN_W, Math.min(MAX_W, v)) : 0; };
+/** What a mode puts in the frame (the same frame in every mode):
+ *    side        the lights on the left - not while a show is played
+ *    programmer  Program's work area (not when the dock has it all)
+ *    hub         Set up's own screen, where the programmer is in Program
+ *    now         Live: what plays now, above the dock, only while something does
+ *    dock        buttons / cues / timeline / group faders; none in Set up
+ *    max         the dock has the whole work area (always in Live)
+ *    bottom      the dock's tab
+ *    strip       Live: the group faders as a strip under every tab (so the
+ *                dock has no Group faders tab there)
+ *  The master rail (grand master, release, blackout) is in every mode. */
+export function frameFor(saved, mode) {
+  const s = clean(saved);
+  const m = MODES.includes(mode) ? mode : s.mode;
+  const live = m === "live", setup = m === "setup", mem = s.by[m] || {};
+  const max = live || (m === "program" && !!mem.max);
+  let tab = bottom(mem.bottom);
+  if (live && tab === "groups") tab = "buttons";
   return {
-    id: String(w.id || "").slice(0, 40), name: String(w.name || "Workspace").slice(0, 40),
-    mode: MODES.includes(w.mode) ? w.mode : "program",
-    fix: w.fix !== false, prog: w.prog !== false, stage: w.stage !== false, swap: !!w.swap,
-    fixW: width(w.fixW), progW: width(w.progW),
-    bottom: BOTTOMS.includes(w.bottom) ? w.bottom : "faders",
-    dock: Math.max(0, Math.min(1200, Math.round(+w.dock || 0))),
-    tab: /^[a-z]{1,20}$/.test(w.tab || "") ? w.tab : "",
-    // the cue list of the playback in focus, beside the faders (Theatre)
-    cues: !!w.cues,
-    fixAt: PLACES.includes(w.fixAt) ? w.fixAt : (w.swap ? "right" : "left"),
-    progAt: PLACES.includes(w.progAt) ? w.progAt : (w.swap ? "left" : "right"),
-    dockAt: w.dockAt === "top" ? "top" : "bottom",
-    // a floating panel's top-left corner over the 3D view, in px
-    fixPos: pos(w.fixPos, 16), progPos: pos(w.progPos, 340),
+    mode: m, side: !live, programmer: m === "program" && !max, hub: setup, now: live,
+    dock: !setup, max, bottom: tab, strip: live, rail: true,
   };
 }

@@ -1151,7 +1151,7 @@ def test_my_venues() -> None:
     tbj = (ROOT / "web" / "app" / "topbar.js").read_text(encoding="utf-8")
     check("less clutter: every executor in its place (an empty one a quiet Record here), short 3D labels, a plain-words status bar",
           "Record here" in pbj and "firstEmpty" not in pbj and "const clash = placed.some" in stj
-          and "safe to program, nothing reaches the lights" in tbj, "")
+          and "Safe to program: nothing reaches the lights" in tbj, "")
     fxj = (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8")
     check("SFX: CO2 hold + 0.5 / 1 / 3 s shots, confetti only after a 1 s hold, haze levels",
           "HOLD TO FIRE" in fxj and "[0.5, 1, 3]" in fxj and "confettiButton" in fxj

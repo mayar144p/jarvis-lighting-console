@@ -58,6 +58,8 @@ window.addEventListener("storage", (e) => {
 // playbacks (playbacks + buttons, for a touch screen).  No window: all of it.
 const WINDOW = new URLSearchParams(location.search).get("window") || "";
 if (WINDOW) document.documentElement.dataset.window = WINDOW;
+// the 3D in the desk's own window (Settings -> Screen & 3D): a column of its own
+if (HAS_3D && !WINDOW) document.documentElement.classList.add("has3d");
 
 initTheme();                              // before anything draws: no bright flash in a dark venue
 // The 3D has one quality, its best, on every computer: a quality an older

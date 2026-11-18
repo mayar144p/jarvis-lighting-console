@@ -7,7 +7,6 @@
 // looks (its name and tile colour).  Pages have names; in Edit, drag a
 // button onto another slot to move it.  Pressing is live (never an undo
 // step); setting a button up is an edit, saved with the show.
-import { groupColour } from "./groupcolour.js";
 import { state, on, emit, patch } from "./store.js";
 import { run } from "./actions.js";
 import { post } from "./api.js";
@@ -536,13 +535,15 @@ function render(force = false) {
   } else box.replaceChildren(...cells);
   renderPages();
   $("#qb-edit").classList.toggle("on", editing);
-  $("#qb-edit").textContent = editing ? "Done" : "Edit";
+  $("#qb-edit").textContent = editing ? "Done" : "Edit page";
   $("#qb-edit").hidden = locked;
   $("#qb-layout").hidden = !editing;
   $("#qb-pages-btn").hidden = !editing;
   $("#qb-colrow").hidden = !editing;
   $("#qb-lock").classList.toggle("on", locked);
-  $("#qb-lock").textContent = locked ? "🔒 Locked" : "Lock";
+  $("#qb-lock").setAttribute("aria-pressed", String(locked));
+  $("#qb-lock").title = locked ? "The layout is locked on this device: the buttons play, nothing can be moved or edited. Click to unlock"
+    : "Lock the layout on this device: the buttons play, nothing can be moved or edited";
   updateControls();
   const empty = !q.buttons.some((b) => b.page === page);
   $("#qb-suggest").hidden = !empty;
@@ -650,110 +651,6 @@ function updateControls() {
       el.querySelector(".qnext").textContent = nxt ? `next: ${nxt.n} · ${nxt.name}` : pb.stack.length ? "last cue" : "";
     }
   }
-}
-
-// ------------------------------------------------------------- full screen
-// The group faders and the GM beside the buttons in full screen (the dock
-// with them is hidden there): the same masters, so both stay in step.
-let sideKey = "";
-const sideFaders = new Map();
-// where the full-screen sliders sit, which way they run and how long they
-// are - set from their own ⚙, remembered on this computer
-const STRIP_DEFAULT = { place: "bottom", dir: "v", size: "m" };
-function stripLook() {
-  try {
-    const saved = JSON.parse(localStorage.getItem("haze.qbStrip") || "{}");
-    // horizontal was the standard before: a strip still on it turns upright once
-    if (saved.dir === "h" && !saved.v2) { saved.dir = "v"; saved.v2 = 1; localStorage.setItem("haze.qbStrip", JSON.stringify(saved)); }
-    return { ...STRIP_DEFAULT, ...saved };
-  } catch { return { ...STRIP_DEFAULT }; }
-}
-function setStripLook(k, v) {
-  const cur = { ...stripLook(), [k]: v, v2: 1 };
-  try { localStorage.setItem("haze.qbStrip", JSON.stringify(cur)); } catch { /* private window */ }
-  applyStripLook();
-}
-function applyStripLook() {
-  const box = $("#qb-faders");
-  if (!box) return;
-  const s = stripLook();
-  box.dataset.place = s.place;
-  box.dataset.dir = s.dir;
-  box.dataset.size = s.size;
-  const body = box.parentElement;
-  if (body) body.dataset.place = s.place;
-}
-function stripMenu(anchor) {
-  const s = stripLook();
-  const pick = (k, v, label) => ({ label: (s[k] === v ? "● " : "○ ") + label, run: () => setStripLook(k, v) });
-  menu(anchor, [
-    pick("place", "bottom", "Under the buttons"), pick("place", "top", "Above the buttons"),
-    pick("place", "left", "Left of the buttons"), pick("place", "right", "Right of the buttons"),
-    "-",
-    pick("dir", "h", "Sliders across (horizontal)"), pick("dir", "v", "Sliders up and down (vertical)"),
-    "-",
-    pick("size", "s", "Short"), pick("size", "m", "Medium"), pick("size", "l", "Long"),
-  ]);
-}
-
-function renderSideFaders() {
-  const box = $("#qb-faders");
-  if (!box) return;
-  applyStripLook();
-  if (!$("#qb").classList.contains("qb-full")) { if (sideKey) { box.replaceChildren(); sideKey = ""; sideFaders.clear(); } return; }
-  const groups = ((state.snap && state.snap.groups) || []).slice(0, 16);
-  const key = JSON.stringify(groups.map((g) => [g.n, g.name, g.colour]));
-  if (key !== sideKey) {
-    sideKey = key;
-    sideFaders.clear();
-    // a wide slider each: the whole name shows, and the buttons keep the width
-    const one = (id, name, title, send, colour = null) => {
-      const num = h("output.mono");
-      const inp = faderFill(h("input.qfader-in", { type: "range", min: 0, max: 100, value: 100, "aria-label": title }));
-      const go = throttle((v) => send(v), 60);
-      inp.addEventListener("input", () => { num.textContent = inp.value; inp.dataset.busy = "1"; go(+inp.value); });
-      inp.addEventListener("change", () => { setTimeout(() => { delete inp.dataset.busy; }, 400); });
-      inp.addEventListener("dblclick", () => { inp.value = 100; inp.dispatchEvent(new Event("input")); inp.dispatchEvent(new Event("change")); });
-      const f = { set: (v) => { if (!inp.dataset.busy) { inp.value = v; faderFill(inp); } } };
-      sideFaders.set(id, { f, num });
-      const row = h("div.qb-side" + (id === "gm" ? ".gm" : ""), { title: title + " (double-click: full)" },
-        h("span.qb-side-top", h("b", name), num), inp);
-      if (colour) row.style.setProperty("--accent", colour);      // the group's colour, as on the dock
-      return row;
-    };
-    const gear = h("button.qmini.qb-strip-gear", { title: "Where the sliders sit, which way they run, how long they are",
-      onclick: (e) => { e.stopPropagation(); stripMenu(e.currentTarget); } }, "⚙");
-    box.replaceChildren(gear, ...groups.map((g, i) => one(g.n, g.name, `${g.name}: a master for this group`, (v) => {
-      const sg = ((state.snap && state.snap.groups) || []).find((x) => x.n === g.n);
-      if (sg) { if (v >= 100) delete sg.master; else sg.master = v; }
-      if (state.lite && state.lite.group_masters) state.lite.group_masters[g.n] = v;
-      run("group_master", { group: g.n, level: v }, { silentError: true });
-    }, groupColour(g, i))), one("gm", "GM", "Grand master: every light", (v) => {
-      if (state.snap) state.snap.master = v;
-      if (state.lite) state.lite.master = v;
-      run("master", { level: v }, { silentError: true });
-    }));
-  }
-  const live = (state.lite && state.lite.group_masters) || {};
-  for (const g of groups) {
-    const it = sideFaders.get(g.n);
-    const v = live[g.n] ?? g.master ?? 100;
-    if (it) { it.f.set(v); it.num.textContent = v; }
-  }
-  const gm = sideFaders.get("gm");
-  const m = state.lite && state.lite.master != null ? state.lite.master : (state.snap && state.snap.master) ?? 100;
-  if (gm) { gm.f.set(m); gm.num.textContent = m; }
-}
-
-function setFull(on) {
-  const box = $("#qb");
-  box.classList.toggle("qb-full", on);
-  document.body.classList.toggle("qb-fullscreen", on);
-  $("#qb-full").textContent = on ? "Exit full screen" : "⛶ Full screen";
-  if (on && document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
-  if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
-  render(true);
-  renderSideFaders();
 }
 
 // ---------------------------------------------------------------- editor
@@ -1463,8 +1360,6 @@ export function initQuickButtons() {
   $("#qb-pages-btn").addEventListener("click", editPages);
   $("#qb-profile").addEventListener("click", (e) => profileMenu(e.currentTarget));
   $("#qb-colrow").addEventListener("click", () => makeColourRow());
-  $("#qb-full").addEventListener("click", () => setFull(!$("#qb").classList.contains("qb-full")));
-  document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement && $("#qb").classList.contains("qb-full")) setFull(false); });
   $("#qb-lock").addEventListener("click", () => {
     locked = !locked;
     if (locked) editing = false;
@@ -1478,11 +1373,18 @@ export function initQuickButtons() {
     await run(fxOnly ? "quick_fx_defaults" : "quick_defaults", { page }, { toast: true });
   });
   $("#qb-release").addEventListener("click", () => run("quick_release_all"));
-  $("#qb-bo").addEventListener("click", () => run("blackout", { state: state.snap && state.snap.blackout ? 0 : 1 }));
-  // ARM / KILL FX in full screen (the top bar with them is hidden there)
-  $("#qb-arm").addEventListener("click", () => import("./fxpanel.js").then((m) => m.toggleArm()));
-  $("#qb-kill").addEventListener("click", () => run("fx_kill", {}, { toast: true }));
-  on("snapshot", () => $("#qb-bo").classList.toggle("on", !!(state.snap && state.snap.blackout)));
+  $("#qb-autopilot").addEventListener("click", () => import("./autopilot.js").then((m) => m.openAutopilot()));
+  // Live: the desk on the whole monitor (the browser's full screen; Esc leaves)
+  const full = $("#qb-full");
+  full.addEventListener("click", () => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(() => {});
+  });
+  document.addEventListener("fullscreenchange", () => {
+    const on = !!document.fullscreenElement;
+    full.classList.toggle("on", on);
+    full.title = on ? "Leave full screen (Esc)" : "The desk on the whole monitor (Esc to leave)";
+  });
   $("#qb-quant").addEventListener("change", (e) => run("quick_quant", { beats: +e.target.value }, { toast: true }));
   on("snapshot", () => render());
   on("lite", () => {
@@ -1493,9 +1395,7 @@ export function initQuickButtons() {
       el.classList.toggle("pending", waiting.has(el.dataset.id));     // waiting for its beat
     });
     updateControls();
-    renderSideFaders();
   });
-  on("snapshot", () => renderSideFaders());
   // a held button must never stay stuck on if the window loses focus
   window.addEventListener("blur", () => {
     for (const [id] of [...held]) {

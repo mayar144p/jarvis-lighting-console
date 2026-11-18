@@ -669,7 +669,7 @@ function themeRow() {
     tips.addEventListener("change", () => setTips(tips.checked));
     box.replaceChildren(
       h("h3", "Look"),
-      h("p.muted.small", "This computer only. Which panels show, where and how wide: the workspace button in the top bar (each workspace keeps its own)."),
+      h("p.muted.small", "This computer only. The side panel's width and the dock's height: drag their edges. Set up, Program and Live each keep how they were left."),
       h("div.look-rows",
         h("div.look-row", h("span", "Text size"), seg(Object.entries(TEXT_SCALE), t.text, (k) => setTheme({ text: k })),
           h("span.muted.small", "every text on the desk bigger - buttons and rows grow with it, nothing gets cut off")),

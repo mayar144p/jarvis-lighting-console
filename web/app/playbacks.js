@@ -1,6 +1,8 @@
-// The executor wing: playbacks ten to a page (pages 1-4, as on a pro desk),
-// always in their place, each with its fader and GO / Flash / Back / Stop;
-// the group masters and the grand master.
+// The dock and the master rail.  The dock shows one thing at a time - the
+// buttons, the cues (playbacks ten to a page, always in their place, each
+// with its fader and GO / Flash / Back / Stop, and the cue list of the one
+// in hand), the timeline, the group faders.  The rail on the right has the
+// grand master, Release all and Blackout: the same place in every mode.
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { act } from "./api.js";
@@ -244,13 +246,6 @@ function renderPages(pbs) {
       onclick: () => { pbPage = p; try { localStorage.setItem("haze.pbpage", String(p)); } catch (e) { /* ignore */ } render(); },
     }, `P${p}`, live ? h("span.pg-run", String(live)) : null);
   }));
-  const running = pbs.filter((pb) => pb.active).length;
-  const rel = $("#pb-relall");
-  if (rel) {
-    rel.disabled = !running;
-    $("#pb-relall-n").textContent = running ? String(running) : "";
-    rel.title = running ? `Release the ${running} running playback${running === 1 ? "" : "s"}, on every page` : "No playback is running";
-  }
   // the playbacks in use, in their places, and one "+" after the last one
   // used (no row of empty numbered slots); a page with none: just the "+"
   const page = pbs.slice((pbPage - 1) * PER_PAGE, pbPage * PER_PAGE);
@@ -317,6 +312,7 @@ function render() {
   renderGroupMasters();
   renderCues();
   renderMini(pbs);
+  renderRail(pbs);
   const s = state.snap || {};
   // the live feed's GM (the full snapshot isn't sent again for a GM move:
   // read from it, the GM jumped back to its old place - often 100 - the
@@ -327,8 +323,22 @@ function render() {
   $("#bo-btn").classList.toggle("on", !!s.blackout);
 }
 
-// Live, with the dock on Buttons: the playbacks of this page as a row of
-// small executors above the buttons (name, what's on, level, GO, Flash) -
+// The rail's Release all: how many things it would let go of - the running
+// playbacks (on every page) and the latched buttons.
+function renderRail(pbs) {
+  const rel = $("#pb-relall");
+  if (!rel) return;
+  const q = (state.lite && state.lite.quick) || (state.snap && state.snap.quick) || {};
+  const running = pbs.filter((pb) => pb.active).length, latched = (q.active || []).length;
+  const n = running + latched;
+  rel.disabled = !n;
+  $("#pb-relall-n").textContent = n ? String(n) : "";
+  const parts = [running ? `${running} playback${running === 1 ? "" : "s"}` : "", latched ? `${latched} button${latched === 1 ? "" : "s"}` : ""].filter(Boolean);
+  rel.title = n ? `Hold to release everything that is running: ${parts.join(" and ")}` : "Nothing is running";
+}
+
+// The dock on Buttons: the playbacks of this page as a row of small
+// executors above the buttons (name, what's on, level, GO, Flash) -
 // busking, GO stays on screen.  Only the ones that hold cues.
 const minis = [];
 function renderMini(pbs) {
@@ -365,22 +375,24 @@ function renderMini(pbs) {
   row.hidden = !shown;
 }
 
-// The cue list of the playback in focus, beside the faders (the Theatre
-// workspace, or Workspace -> Cue list beside the faders): every cue with
-// its fade, the one live marked; a tap jumps there.
+// The cue list of the playback in hand, beside the playbacks on the Cues
+// tab: every cue with its fade, the one live marked; a tap jumps there.
+// (Nothing to list until a playback holds cues.)
 let cuesKey = "";
 function renderCues() {
   const box = $("#pb-cues");
-  if (!box || !document.body.classList.contains("ws-cues")) { if (box) cuesKey = ""; return; }
+  if (!box) return;
   const pbs = (state.snap && state.snap.playbacks) || [];
-  const pb = pbs.find((x) => x.n === focusPb) || pbs.find((x) => (x.stack || []).length) || pbs[0];
-  if (!pb) return;
+  const used = pbs.filter((x) => (x.stack || []).length);
+  const pb = used.find((x) => x.n === focusPb) || used[0];
+  box.hidden = !pb || document.body.dataset.bottom !== "faders";
+  if (!pb) { cuesKey = ""; return; }
   const stack = pb.stack || [];
   const key = JSON.stringify([pb.n, pb.index, stack.map((c) => [c.name, c.fade])]);
   if (key === cuesKey) return;
   cuesKey = key;
   box.replaceChildren(
-    h("div.pb-cues-head", h("b", pb.name || `PB${pb.n}`), h("span.muted.small", ` ${stack.length} cue${stack.length === 1 ? "" : "s"}`),
+    h("div.pb-cues-head", h("b", pb.name || `Playback ${pb.n}`), h("span.muted.small", ` ${stack.length} cue${stack.length === 1 ? "" : "s"}`),
       h("button.btn.small.ghost", { title: "Edit the cue list", onclick: () => openCueList(pb.n) }, "Edit…")),
     stack.length ? h("ol.pb-cues-list", ...stack.map((c, i) => h("li" + (i === pb.index ? ".on" : ""), {
       title: `GO to cue ${i + 1}`, onclick: () => run("cue_go", { playback: pb.n, cue: i + 1 }),
@@ -390,16 +402,18 @@ function renderCues() {
   if (on) on.scrollIntoView({ block: "nearest" });
 }
 
-// A fader per group (the first eight): its lights at that share of
-// whatever they are doing, like the grand master for one group.
+// A fader per group: its lights at that share of whatever they are doing,
+// like the grand master for one group.  The dock's Group faders tab in
+// Program; in Live, a strip under the dock whatever its tab.  Each wears
+// its group's colour - the name's strip and the fader's fill.
 let grpKey = "";
 const grpFaders = new Map();
 function renderGroupMasters() {
   const groups = ((state.snap && state.snap.groups) || []).slice(0, 16);
   const box = $("#grp-masters");
-  const fold = $("#grp-fold-btn");
-  if (fold) fold.hidden = !groups.length;
-  const key = JSON.stringify(groups.map((g) => [g.n, g.name, g.colour]));
+  const dock = $("#grp-dock");
+  if (dock) dock.classList.toggle("none", !groups.length);
+  const key = JSON.stringify(groups.map((g) => [g.n, g.name, g.colour, (g.heads || []).length]));
   if (key !== grpKey) {
     grpKey = key;
     grpFaders.clear();
@@ -415,19 +429,22 @@ function renderGroupMasters() {
         run("group_master", { group: g.n, level: v }, { silentError: true });
       }, 60) });
       grpFaders.set(g.n, { f, num });
-      // the level under the fader, the whole name under that (two lines)
-      // its colour: the fader's fill, and a dot under the name to change it
-      // (right-click / a held finger on the name does too)
+      // the name on its colour strip (click the strip's square to change the
+      // colour; right-click / a held finger on the name does too), the fader,
+      // and beside it the level and how many lights it holds
       const colour = groupColour(g, i);
       const dot = h("button.m-colour", { type: "button", title: `${g.name}'s colour (on the desk and the phone remote) - click to change`,
         "aria-label": `${g.name} colour`, onclick: (e) => groupColourMenu(e.currentTarget, g, i) });
       const name = h("span.m-name", g.name);
       name.addEventListener("contextmenu", (e) => { e.preventDefault(); groupColourMenu(dot, g, i); });
-      const wrap = h("div.master.grp", { title: `${g.name}: a master for this group` }, el, h("span.m-label.m-num", num), name, dot);
-      wrap.style.setProperty("--accent", colour);
-      wrap.style.setProperty("--grp-colour", colour);
+      const count = (g.heads || []).length;
+      const wrap = h("div.master.grp", { title: `${g.name}: a master for this group` },
+        h("div.m-strip", dot, name),
+        h("div.m-in", el, h("div.m-read", h("span.m-label.m-num", num), h("small", `${count} light${count === 1 ? "" : "s"}`))));
+      wrap.style.setProperty("--c", colour);
       return wrap;
     }));
+    if (!groups.length) box.replaceChildren(h("p.dock-empty.muted", "No groups yet. Select some lights and press Group: each group gets a fader here."));
     scrollHints();
   }
   const live = (state.lite && state.lite.group_masters) || {};
@@ -448,11 +465,12 @@ function scrollHints() {
   box.classList.toggle("more-r", r);
 }
 
-// The bottom dock's height: drag its top edge (double-click: back to the
-// default), remembered per mode - the buttons want room, the faders less
+// The dock's height under the programmer: drag its top edge (double-click:
+// back to the default), remembered per tab - the buttons want room, the
+// cues less
 const DOCK_MIN = 140;
 function dockHeight(mode, px) {
-  const ws = document.querySelector(".workspace");
+  const ws = document.querySelector("#work");
   if (!ws) return;
   const key = "haze.dockh." + mode;
   if (px === undefined) {
@@ -460,8 +478,8 @@ function dockHeight(mode, px) {
   } else {
     try { if (px) localStorage.setItem(key, String(px)); else localStorage.removeItem(key); } catch (e) { /* private window */ }
   }
-  if (px) ws.style.setProperty("--pb-h", Math.max(DOCK_MIN, Math.min(window.innerHeight * 0.75, px)) + "px");
-  else ws.style.removeProperty("--pb-h");
+  if (px) ws.style.setProperty("--dock-h", Math.max(DOCK_MIN, Math.min(window.innerHeight * 0.75, px)) + "px");
+  else ws.style.removeProperty("--dock-h");
 }
 
 function wireGrip() {
@@ -479,21 +497,22 @@ function wireGrip() {
   });
   grip.addEventListener("pointermove", (e) => {
     if (!on) return;
-    // the dock at the top (a workspace can put it there) grows downward
-    const dir = document.body.classList.contains("ws-docktop") ? -1 : 1;
-    dockHeight(document.body.dataset.bottom || "faders", Math.round(h0 + dir * (y0 - e.clientY)));
+    dockHeight(document.body.dataset.bottom || "buttons", Math.round(h0 + (y0 - e.clientY)));
   });
   const end = () => { if (on) { on = false; grip.classList.remove("on"); window.dispatchEvent(new Event("resize")); } };
   grip.addEventListener("pointerup", end);
   grip.addEventListener("pointercancel", end);
-  grip.addEventListener("dblclick", () => { dockHeight(document.body.dataset.bottom || "faders", 0); window.dispatchEvent(new Event("resize")); });
+  grip.addEventListener("dblclick", () => { dockHeight(document.body.dataset.bottom || "buttons", 0); window.dispatchEvent(new Event("resize")); });
 }
 
 function wireModes() {
   wireGrip();
   const modes = [...document.querySelectorAll("#pb-mode button")];
+  const tools = [...document.querySelectorAll("#dock-bar .dock-tools")];
   const set = (mode) => {
-    modes.forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
+    modes.forEach((b) => { const lit = b.dataset.mode === mode; b.classList.toggle("on", lit); b.setAttribute("aria-pressed", String(lit)); });
+    // each tab's own tools, beside the tabs
+    tools.forEach((t) => { t.hidden = t.dataset.for !== mode; });
     $("#pb-strip").hidden = mode !== "faders";
     $("#pb-pages").hidden = mode !== "faders" || ((state.snap && state.snap.playbacks) || []).length <= PER_PAGE;
     $("#qb").hidden = mode !== "buttons";
@@ -502,12 +521,19 @@ function wireModes() {
     document.body.dataset.bottom = mode;
     try { localStorage.setItem("haze.bottom", mode); } catch (e) { /* ignore */ }
     dockHeight(mode);
+    renderCues();
     window.dispatchEvent(new Event("resize"));
   };
   modes.forEach((b) => b.addEventListener("click", () => set(b.dataset.mode)));
-  let saved = "faders";
+  let saved = "buttons";
   try { saved = localStorage.getItem("haze.bottom") || saved; } catch (e) { /* ignore */ }
-  set(modes.some((b) => b.dataset.mode === saved) ? saved : "faders");
+  set(modes.some((b) => b.dataset.mode === saved) ? saved : "buttons");
+}
+
+/** Show one of the dock's tabs: buttons, faders (Cues), timeline or groups. */
+export function setBottom(mode) {
+  const b = document.querySelector(`#pb-mode button[data-mode="${mode}"]`);
+  if (b) b.click();
 }
 
 // A playback's key (GO) and, from a controller on this device, its pads
@@ -546,6 +572,34 @@ function wireBindings() {
   });
 }
 
+// Release all: every running playback and every latched button.  It takes
+// a half-second hold (the key fills while held) - a stray tap beside
+// BLACKOUT can't drop the whole look.  From the keyboard it asks.
+function wireRelease(btn) {
+  let timer = 0, held = false, byPointer = false;
+  const fire = () => {
+    run("playback_release_all", {}, { silentError: true });
+    run("quick_release_all", {}, { silentError: true });
+    toast("Released everything that was running", "ok");
+  };
+  const cancel = () => { clearTimeout(timer); btn.classList.remove("holding"); };
+  btn.addEventListener("pointerdown", (e) => {
+    byPointer = true;
+    if (btn.disabled || e.button !== 0) return;
+    held = false;
+    btn.classList.add("holding");
+    timer = setTimeout(() => { held = true; btn.classList.remove("holding"); fire(); }, 500);
+  });
+  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) btn.addEventListener(ev, cancel);
+  btn.addEventListener("click", async () => {
+    const pointer = byPointer;
+    byPointer = false;
+    if (held) { held = false; return; }
+    if (pointer) { toast("Hold to release everything that is running"); return; }
+    if (await confirmBox("Release all", "Release every running playback and every latched button?", { ok: "Release", danger: true })) fire();
+  });
+}
+
 export function initPlaybacks() {
   wireModes();
   gm = vfader($("#gm-fader"), {
@@ -558,70 +612,68 @@ export function initPlaybacks() {
     }, 60),
   });
   $("#bo-btn").addEventListener("click", () => run("blackout", { state: state.snap && state.snap.blackout ? 0 : 1 }));
-  $("#pb-relall").addEventListener("click", () => run("playback_release_all", {}, { toast: true }));
-  // the group faders fold away on a small screen (remembered on this computer)
-  // the master faders' edge (a thin grip, no button taking up room): drag it
-  // to make the group faders wider or narrower - nearly shut folds them;
-  // double-click folds / shows; right-click or a held finger puts the
-  // masters on the left or the right of the dock.  Kept on this computer.
-  const fold = $("#grp-fold-btn");
-  const grp = $("#grp-masters");
+  wireRelease($("#pb-relall"));
+  // the rail on the left or the right of the screen (right-click it, or hold
+  // a finger on it): kept on this computer
   const keep = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* private window */ } };
   const read = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+  const rail = $("#rail");
+  const setSide = (left) => { document.body.classList.toggle("rail-left", left); keep("haze.mastersSide", left ? "left" : ""); window.dispatchEvent(new Event("resize")); };
+  setSide(read("haze.mastersSide") === "left");
+  const sideMenu = (anchor) => menu(anchor, [
+    { label: document.body.classList.contains("rail-left") ? "Master on the right of the screen" : "Master on the left of the screen",
+      run: () => setSide(!document.body.classList.contains("rail-left")) },
+  ]);
+  rail.addEventListener("contextmenu", (e) => { if (e.target.closest(".vfader, button")) return; e.preventDefault(); sideMenu(rail.querySelector(".m-name")); });
+  // Live: the group faders' strip under the dock - drag its top edge to make
+  // it taller or shorter (nearly shut folds it away), double-click folds /
+  // shows it.  Kept on this computer.
+  const gdock = $("#grp-dock"), fold = $("#grp-fold-btn");
   const setFold = (folded) => {
-    grp.classList.toggle("folded", folded);
+    gdock.classList.toggle("folded", folded);
     fold.setAttribute("aria-expanded", String(!folded));
     keep("haze.grpFold", folded ? "1" : "");
+    window.dispatchEvent(new Event("resize"));
   };
-  const setWidth = (w) => {
-    if (w) grp.style.width = `${Math.round(w)}px`; else grp.style.removeProperty("width");
-    keep("haze.grpW", w ? String(Math.round(w)) : "");
+  const setHeight = (px) => {
+    if (px) gdock.style.setProperty("--strip-h", `${Math.round(px)}px`); else gdock.style.removeProperty("--strip-h");
+    keep("haze.grpH", px ? String(Math.round(px)) : "");
   };
-  const setSide = (left) => { document.body.classList.toggle("masters-left", left); keep("haze.mastersSide", left ? "left" : ""); };
   setFold(read("haze.grpFold") === "1");
-  if (+read("haze.grpW")) grp.style.width = `${+read("haze.grpW")}px`;
-  setSide(read("haze.mastersSide") === "left");
-  let drag = null, holdT = 0;
-  const sideMenu = (anchor) => menu(anchor, [
-    { label: document.body.classList.contains("masters-left") ? "Masters on the right" : "Masters on the left", run: () => setSide(!document.body.classList.contains("masters-left")) },
-    { label: grp.classList.contains("folded") ? "Show the group faders" : "Fold the group faders", run: () => setFold(!grp.classList.contains("folded")) },
-    { label: "Group faders: normal width", run: () => setWidth(0) },
-  ]);
+  if (+read("haze.grpH")) gdock.style.setProperty("--strip-h", `${+read("haze.grpH")}px`);
+  let drag = null;
   fold.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
     fold.setPointerCapture(e.pointerId);
-    const open = !grp.classList.contains("folded");
-    drag = { x: e.clientX, w: open ? grp.getBoundingClientRect().width : 0, moved: false };
+    drag = { y: e.clientY, h: gdock.classList.contains("folded") ? 0 : gdock.getBoundingClientRect().height, moved: false };
     fold.classList.add("on");
-    holdT = setTimeout(() => { if (drag && !drag.moved) { drag = null; fold.classList.remove("on"); sideMenu(fold); } }, 600);
   });
   fold.addEventListener("pointermove", (e) => {
     if (!drag) return;
-    const dx = (e.clientX - drag.x) * (document.body.classList.contains("masters-left") ? 1 : -1);
-    if (Math.abs(dx) > 4) { drag.moved = true; clearTimeout(holdT); }
+    const dy = drag.y - e.clientY;
+    if (Math.abs(dy) > 4) drag.moved = true;
     if (!drag.moved) return;
-    // as wide as you like, up to what leaves the playbacks their room (app.css)
-    const w = Math.max(0, Math.min(window.innerWidth * 0.75, drag.w + dx));
-    if (w < 40) { setFold(true); return; }
-    setFold(false);
-    setWidth(w);
+    const tall = Math.max(0, Math.min(window.innerHeight * 0.5, drag.h + dy));
+    if (tall < 56) { if (!gdock.classList.contains("folded")) setFold(true); return; }
+    if (gdock.classList.contains("folded")) setFold(false);
+    setHeight(Math.max(104, tall));
   });
-  const end = () => { clearTimeout(holdT); drag = null; fold.classList.remove("on"); window.dispatchEvent(new Event("resize")); };
-  // a mouse wheel over the strip (not on a fader) scrolls it sideways
+  const endDrag = () => { if (!drag) return; drag = null; fold.classList.remove("on"); window.dispatchEvent(new Event("resize")); };
+  fold.addEventListener("pointerup", endDrag);
+  fold.addEventListener("pointercancel", endDrag);
+  fold.addEventListener("dblclick", () => { if (gdock.classList.contains("folded")) setFold(false); else { setHeight(0); setFold(true); } });
+  fold.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFold(!gdock.classList.contains("folded")); } });
+  // more group faders than fit: a mouse wheel over the strip (not on a
+  // fader) scrolls it sideways
+  const grp = $("#grp-masters");
   grp.addEventListener("wheel", (e) => {
     if (e.target.closest(".vfader") || grp.scrollWidth <= grp.clientWidth) return;
     if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { grp.scrollLeft += e.deltaY; e.preventDefault(); }
   }, { passive: false });
   grp.addEventListener("scroll", scrollHints, { passive: true });
   window.addEventListener("resize", scrollHints);
-  fold.addEventListener("pointerup", end);
-  fold.addEventListener("pointercancel", end);
-  fold.addEventListener("dblclick", () => setFold(!grp.classList.contains("folded")));
-  fold.addEventListener("contextmenu", (e) => { e.preventDefault(); sideMenu(fold); });
-  fold.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setFold(!grp.classList.contains("folded")); } });
   wireBindings();
-  // on a phone the faders are one tab away: Blackout stays in the bottom bar
   on("snapshot", render);
   on("lite", render);
 }

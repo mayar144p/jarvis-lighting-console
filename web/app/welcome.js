@@ -94,23 +94,23 @@ function offerTour() {
 const SETUP_STEPS = [
   ["#mode-seg", "Three modes", "Set up, Program, Live: the screen arranged for each job. You are in Set up."],
   ["#fixtures-panel", "Your lights", "Add lights here (+ Add finds any light in the library). Click to select; groups are folders."],
-  ["#stage-wrap", "The room in 3D", "Where the lights hang and what they do. Arrange moves trusses and lights; the DJ view (7) is from the booth."],
   ["#mode-hub", "Set up, in order", "The lights, the room, the connections, the checks - each with how it stands now and a button to do it."],
-  ["#output", "Output", "BLIND means nothing reaches the real lights. Go live… when the rig is connected."],
+  ["#output", "Output", "Blind means nothing reaches the real lights. Go live… when the rig is connected."],
+  ["#rail", "Master", "The grand master, Release all and BLACKOUT: in the same place in every mode."],
 ];
 const LIVE_STEPS = [
-  ["#mode-hub", "Live", "The song and its part, the hits (hold to fire), the tempo and the autopilot."],
-  ["#playbacks", "Buttons", "Your pages of buttons: flashes, colours, moves, effects. Full screen for a touch screen."],
-  ["#bo-btn", "Blackout", "Everything off, at once (X). The grand master is beside it."],
+  ["#qb", "Your buttons", "The button page is the screen in Live: flashes, colours, moves, effects. The page tabs are above it."],
+  ["#grp-dock", "Group faders", "A fader for each group, under the buttons. Drag the strip's top edge to make it taller, or fold it away."],
+  ["#rail", "Master and blackout", "The grand master, Release all (hold it) and BLACKOUT (X): the same place in every mode."],
   ["#mode-seg", "Back to programming", "Program to change looks and record cues; Set up for the room and the lights."],
 ];
 const STEPS = [
   ["#show-btn", "Shows", "Save, open and start shows here - New show… has the templates, and MVR plots come in here too."],
-  ["#output", "Output", "BLIND means nothing reaches the real lights. Go live… when the rig is connected."],
-  ["#fixtures-panel", "Fixtures", "Your lights and groups. Click to select; + Add finds any light in the library."],
-  ["#stage-wrap", "The 3D view", "What the lights are doing, live. Drag to look around, click a light to select it, Arrange to move things."],
+  ["#output", "Output", "Blind means nothing reaches the real lights. Go live… when the rig is connected."],
+  ["#fixtures-panel", "Your lights", "Your lights and groups. Click to select; + Add finds any light in the library."],
   ["#programmer", "Programmer", "Level, colour, position, beam and effects for the selected lights."],
-  ["#playbacks", "Playbacks and buttons", "Cue stacks with GO, a page of instant buttons, and the timeline. BLACKOUT and the grand master on the right."],
+  ["#playbacks", "The dock", "Buttons, Cues (the playbacks with GO), Timeline and Group faders - one at a time. The corner button gives it the whole work area."],
+  ["#rail", "Master", "The grand master, Release all and BLACKOUT: in the same place in every mode."],
   ["#ai-btn", "Copilot", "Say what you want - “slow blue wash on the movers” - and the AI does it, in 3D first."],
 ];
 

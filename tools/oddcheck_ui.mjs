@@ -128,6 +128,7 @@ await A.mouse.move(box.x + box.width / 2, box.y + 8);
 await A.mouse.down();
 await A.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 6 });
 await A.mouse.up();
+await sleep(300);                                    // the fader's last move goes out a moment after the finger lifts
 const gmA = await A.evaluate(() => document.querySelector("#gm-num").textContent.trim());
 ms = await until(B, (v) => document.querySelector("#gm-num").textContent.trim() === v, 3000, gmA);
 check(gmA !== "100" && ms >= 0, "the grand master moved on one screen moves on the other", `A ${gmA}, B ${await B.evaluate(() => document.querySelector("#gm-num").textContent)}`);
@@ -165,7 +166,7 @@ await act("set_intensity", { level: 60 });
 const lightsBefore = await count(A);
 await sleep(1500);                                   // autosave has the rig
 await stopServer();
-ms = await until(A, () => /reconnecting/.test(document.querySelector("#st-feed").textContent), 6000);
+ms = await until(A, () => /reconnecting/i.test(document.querySelector("#st-feed").textContent), 6000);
 check(ms >= 0, "the screen says it lost the desk", ms >= 0 ? `${ms} ms` : "no sign within 6 s");
 const banner = await A.evaluate(() => { const b = document.querySelector("#banner"); return b && !b.classList.contains("hidden") ? b.textContent : ""; });
 check(/Lost contact/.test(banner), "a banner says nothing reaches the rig", banner.slice(0, 80));
@@ -185,9 +186,9 @@ console.log(`  (while down, the screen said: ${toasts.slice(0, 160) || "nothing"
 // the server comes back
 startServer();
 check(await waitUp(), "the desk starts again");
-ms = await until(A, () => /connected/.test(document.querySelector("#st-feed").textContent) && !/reconnecting/.test(document.querySelector("#st-feed").textContent), 8000);
+ms = await until(A, () => /connected/i.test(document.querySelector("#st-feed").textContent) && !/reconnecting/i.test(document.querySelector("#st-feed").textContent), 8000);
 check(ms >= 0, "screen A reconnects by itself", ms >= 0 ? `${ms} ms` : "not within 8 s");
-ms = await until(B, () => /connected/.test(document.querySelector("#st-feed").textContent) && !/reconnecting/.test(document.querySelector("#st-feed").textContent), 8000);
+ms = await until(B, () => /connected/i.test(document.querySelector("#st-feed").textContent) && !/reconnecting/i.test(document.querySelector("#st-feed").textContent), 8000);
 check(ms >= 0, "screen B reconnects by itself", ms >= 0 ? `${ms} ms` : "not within 8 s");
 await sleep(800);
 check(await count(A) === lightsBefore, "the rig is back as it was (autosave)", `${await count(A)} of ${lightsBefore}`);

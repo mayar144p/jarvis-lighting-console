@@ -783,7 +783,7 @@ const KEY_GROUPS = [
   ["Selecting", [["A / Shift+A", "select all / none"], ["G", "make a group of the selection"], ["H / Shift+H", "highlight / solo the selection"],
     ["[ / ]", "previous / next light, one at a time"], ["{ or }", "all of them again"], ["F", "frame the selection in the 3D"], ["0 … 9", "start a command: 1 THRU 4 @ 70 (Enter runs it)"]]],
   ["The desk", [["/ or Ctrl+K", "the command bar"], ["Ctrl+Z / Ctrl+Shift+Z", "undo / redo"], ["Ctrl+S", "save the show"],
-    ["F1 / F2 / F3", "Set up / Program / Live"], ["Alt+1 … 9", "switch workspace"], ["Esc", "close / leave full screen"], ["?", "this help"], ["Shift+F1", "What's this? (click anything)"]]],
+    ["F1 / F2 / F3", "Set up / Program / Live"], ["Esc", "close"], ["?", "this help"], ["Shift+F1", "What's this? (click anything)"]]],
 ];
 const KEYS = KEY_GROUPS.flatMap(([, rows]) => rows);
 const SYNTAX = [

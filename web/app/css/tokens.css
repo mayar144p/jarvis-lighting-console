@@ -218,11 +218,7 @@
 }
 @media (min-width: 2200px) and (min-height: 1250px) {
   :root { --fixtures-w: clamp(340px, 16vw, 520px); --prog-w: clamp(440px, 21vw, 660px); --pb-h: 250px; }
-  body[data-bottom="buttons"] .workspace { --pb-h: clamp(300px, 38vh, 600px); }
-  body[data-bottom="timeline"] .workspace { --pb-h: clamp(290px, 36vh, 560px); }
 }
 @media (min-width: 3000px) and (min-height: 1700px) {
   :root { --fixtures-w: clamp(460px, 15vw, 720px); --prog-w: clamp(600px, 20vw, 880px); --pb-h: 340px; }
-  body[data-bottom="buttons"] .workspace { --pb-h: clamp(400px, 38vh, 820px); }
-  body[data-bottom="timeline"] .workspace { --pb-h: clamp(380px, 36vh, 760px); }
 }

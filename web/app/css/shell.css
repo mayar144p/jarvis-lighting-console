@@ -1,0 +1,345 @@
+/* Haze - the desk's look: the frame.
+ *
+ * The same in every mode: the title bar; under it the lights (side), the
+ * work area and the master rail; the status bar at the foot.  Set up,
+ * Program and Live (body[data-mode]) only change what the work area holds:
+ *   Set up    the jobs before a show, in order (no dock: nothing plays yet)
+ *   Program   the programmer over the dock
+ *   Live      the dock on the whole work area, the group faders under it,
+ *             what plays now above it; no side panel
+ * The desktop app's windows (?window=stage|desk|playbacks) each show one part.
+ */
+
+/* ------------------------------------------------------------- the frame */
+.app {
+  height: 100vh; height: 100dvh;
+  display: grid; grid-template-rows: var(--bar) auto minmax(0, 1fr) var(--status);
+  background: var(--base);
+}
+.workspace {
+  --side-w: clamp(calc(264px * var(--ctl)), 19vw, calc(340px * var(--ctl)));
+  --work-w: clamp(calc(440px * var(--ctl)), 34vw, calc(660px * var(--ctl)));
+  --rail-w: calc(104px * var(--ctl));
+  --cols: var(--side-w) minmax(0, 1fr) var(--rail-w);
+  --areas: "side work rail";
+  grid-row: 3; min-height: 0; position: relative;
+  display: grid; gap: 1px; background: var(--line);
+  grid-template-columns: var(--cols); grid-template-rows: minmax(0, 1fr); grid-template-areas: var(--areas);
+}
+.workspace > * { min-width: 0; min-height: 0; }
+.workspace > .side { grid-area: side; position: relative; }
+.workspace > .stage-wrap { grid-area: stage; display: none; }
+.workspace > .work { grid-area: work; position: relative; }
+.workspace > .rail { grid-area: rail; }
+body.rail-left .workspace { --cols: var(--rail-w) var(--side-w) minmax(0, 1fr); --areas: "rail side work"; }
+/* the 3D in the desk's own window (Settings -> Screen & 3D): between the
+   lights and the work, which keeps a column of its own */
+:root.has3d .workspace { --cols: var(--side-w) minmax(0, 1fr) var(--work-w) var(--rail-w); --areas: "side stage work rail"; }
+:root.has3d body.rail-left .workspace { --cols: var(--rail-w) var(--side-w) minmax(0, 1fr) var(--work-w); --areas: "rail side stage work"; }
+:root.has3d .workspace > .stage-wrap { display: block; }
+/* Live: no side panel - the buttons get the room */
+body[data-mode="live"] .workspace { --cols: minmax(0, 1fr) var(--rail-w); --areas: "work rail"; }
+body[data-mode="live"].rail-left .workspace { --cols: var(--rail-w) minmax(0, 1fr); --areas: "rail work"; }
+:root.has3d body[data-mode="live"] .workspace { --cols: minmax(0, 1fr) var(--work-w) var(--rail-w); --areas: "stage work rail"; }
+:root.has3d body[data-mode="live"].rail-left .workspace { --cols: var(--rail-w) minmax(0, 1fr) var(--work-w); --areas: "rail stage work"; }
+body[data-mode="live"] .workspace > .side { display: none; }
+/* the 3D on the whole screen (its full-screen key, Esc to leave) */
+body.stage-full .workspace { --cols: minmax(0, 1fr); --areas: "stage"; }
+body.stage-full .workspace > :not(.stage-wrap) { display: none; }
+.stage-no3d { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 24px; text-align: center; }
+
+/* a panel's inner edge: drag to make it wider (double-click: as it came) */
+.ws-grip { position: absolute; top: 0; bottom: 0; width: 9px; z-index: 6; cursor: ew-resize; touch-action: none; }
+.side > .ws-grip { right: -5px; }
+.work > .ws-grip { left: -5px; }
+.ws-grip::after { content: ""; position: absolute; top: 50%; left: 3px; width: 3px; height: calc(48px * var(--ctl)); margin-top: calc(-24px * var(--ctl)); border-radius: 2px; background: var(--lit); opacity: 0; transition: opacity .15s; }
+.ws-grip:hover::after, .ws-grip.on::after { opacity: 1; }
+
+/* ------------------------------------------------------------- title bar */
+/* left: the show and what leaves this computer · middle: the mode ·
+   right: the tempo, the command line, undo and the desk's own tools */
+.topbar {
+  grid-row: 1; display: flex; align-items: center; gap: 6px; min-width: 0;
+  padding: 0 8px 0 12px; background: var(--base); border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+.topbar > * { flex: none; }
+.tb-spacer { flex: 1 1 0; min-width: 8px; }
+.tb-sep { width: 1px; height: calc(20px * var(--ctl)); margin: 0 4px; background: var(--line-strong); flex: none; }
+.brand { display: inline-flex; align-items: center; gap: 8px; height: var(--h); padding-right: 4px; font-weight: 700; letter-spacing: .02em; }
+/* the mark: two lights, their beams crossing in the haze (web/icons/icon.svg) */
+.brand svg { width: calc(20px * var(--ctl)); height: calc(20px * var(--ctl)); color: var(--lit); fill: var(--lit); }
+/* a key in the bar: the same face as every key on the desk */
+.tb-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--h); padding: 0 10px; border: 0; border-radius: var(--r);
+  background: var(--raised); color: var(--text); font-weight: 500; white-space: nowrap;
+}
+.tb-btn:hover:not(:disabled) { background: var(--hover); }
+.tb-btn:active:not(:disabled) { background: var(--pressed); }
+.tb-btn:disabled { color: var(--text-3); cursor: default; }
+.tb-btn.icon { width: var(--h); padding: 0; }
+.tb-btn.plain { background: none; color: var(--text-2); }
+.tb-btn.plain:hover:not(:disabled) { background: var(--raised); color: var(--text); }
+/* keys that belong together share an edge */
+.tb-pair { display: inline-flex; gap: 1px; }
+.tb-pair > .tb-btn { border-radius: 0; }
+.tb-pair > .tb-btn:first-child { border-top-left-radius: var(--r); border-bottom-left-radius: var(--r); }
+.tb-pair > .tb-btn:last-child { border-top-right-radius: var(--r); border-bottom-right-radius: var(--r); }
+.show-btn { max-width: calc(280px * var(--ctl)); background: none; font-weight: 600; }
+.show-btn:hover:not(:disabled) { background: var(--raised); }
+.show-name { overflow: hidden; text-overflow: ellipsis; }
+.show-btn .chev { color: var(--text-3); }
+
+/* what leaves this computer: a lamp and a word, and the key that changes it */
+.out-state b { font-weight: 600; }
+.out-state small { color: var(--text-2); font-size: var(--t-xs); font-weight: 500; }
+.out-state small:empty { display: none; }
+.output[data-state="blind"] .out-state { color: var(--blind); }
+.output[data-state="blind"] .out-state .lamp { background: var(--blind); }
+.output[data-state="armed"] .out-state .lamp { background: var(--text-2); }
+.output[data-state="live"] .out-state { background: var(--live); color: var(--text); }
+.output[data-state="live"] .out-state small { color: var(--text); opacity: .8; }
+.output[data-state="live"] .out-state .lamp { background: var(--text); }
+.output[data-state="live"] .arm { background: var(--live-face); color: var(--live-ink); }
+/* Live, the same key stops sending - it fills while held */
+#out-arm.holding { background-image: linear-gradient(var(--live), var(--live)); background-repeat: no-repeat; background-size: 0 100%; animation: hold-key .6s linear forwards; color: var(--text); }
+@keyframes hold-key { to { background-size: 100% 100%; } }
+.fx-arm { color: var(--blind); }
+.fx-arm.on { background: var(--blind-face); box-shadow: inset 0 0 0 1px var(--blind-line); }
+.fx-kill { color: var(--live-ink); }
+.fx-kill.hot { background: var(--live-face); box-shadow: inset 0 0 0 1px var(--live-line); }
+.op-pill { background: var(--select); box-shadow: inset 0 0 0 1px var(--lit); font-weight: 600; }
+.blind-pill { background: var(--blind-face); color: var(--blind); font-weight: 600; }
+.mode-seg button { min-width: calc(84px * var(--ctl)); }
+
+/* the tempo: the BPM, four lamps for the beats of the bar, where it comes from */
+.tempo-tap b { min-width: 3.4ch; text-align: right; font-weight: 600; }
+.tempo-tap small { margin-left: -2px; color: var(--text-3); font-size: var(--t-xs); }
+.tempo-tap em { color: var(--text-2); font-size: var(--t-xs); font-style: normal; }
+.tempo-tap em:empty { display: none; }
+.tempo.live .tempo-tap em { color: var(--go); }
+.tempo-beats { display: inline-flex; gap: 3px; }
+.tempo-beats i { width: 6px; height: 6px; border-radius: 50%; background: var(--pressed); }
+.tempo-beats i.on { background: var(--text-3); }
+.tempo-beats i.hit { background: var(--text); }
+.tempo-beats i:first-child.hit { background: var(--lit); }
+.tempo.tapped .tempo-tap { background: var(--pressed); }
+.tempo.hearing .tempo-tap small::after { content: " · sound"; }
+.tempo.auto .tempo-tap::after { content: "Auto"; color: var(--go); font-size: var(--t-xs); }
+.tempo-more { width: calc(20px * var(--ctl)); }
+
+/* the command line and Copilot */
+.palette-btn { width: clamp(150px, 15vw, 240px); justify-content: flex-start; background: var(--well); box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--text-3); }
+.palette-btn:hover:not(:disabled) { background: var(--well); color: var(--text-2); box-shadow: inset 0 0 0 1px var(--text-3); }
+.palette-btn span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.tb-btn.ai.on { background: var(--lit); color: var(--lit-ink); font-weight: 600; }
+.undo-more { width: calc(18px * var(--ctl)); }
+.err-btn { background: var(--blind-face); color: var(--blind); font-weight: 600; }
+/* the lock: an icon while the show can be edited, its word when it can't */
+.tb-btn.lock[data-state="design"] { width: var(--h); padding: 0; }
+.tb-btn.lock[data-state="design"] #lock-label { display: none; }
+.tb-btn.lock[data-state="operate"] { background: var(--blind-face); color: var(--blind); font-weight: 600; }
+.tb-btn.lock[data-state="locked"] { background: var(--live-face); color: var(--live-ink); font-weight: 600; }
+/* a newer Haze is out: a quiet key by the name */
+.update-pill { height: var(--h-s); padding: 0 8px; border: 0; border-radius: var(--r); background: var(--go-face); color: var(--go); font-size: var(--t-s); font-weight: 600; }
+
+/* a narrow window: the bar folds a stage at a time (topbar.js), only while it doesn't fit */
+.topbar[data-fit] :is(#out-sub, #tempo-src) { display: none; }
+.topbar:is([data-fit="2"], [data-fit="3"], [data-fit="4"], [data-fit="5"]) .brand-name { display: none; }
+.topbar:is([data-fit="2"], [data-fit="3"], [data-fit="4"], [data-fit="5"]) .palette-btn { width: calc(130px * var(--ctl)); }
+.topbar:is([data-fit="3"], [data-fit="4"], [data-fit="5"]) .palette-btn :is(span, kbd) { display: none; }
+.topbar:is([data-fit="3"], [data-fit="4"], [data-fit="5"]) .palette-btn { width: var(--h); padding: 0; justify-content: center; }
+.topbar:is([data-fit="4"], [data-fit="5"]) .mode-seg button { min-width: 0; padding: 0 8px; }
+.topbar:is([data-fit="4"], [data-fit="5"]) .show-btn { max-width: calc(140px * var(--ctl)); }
+.topbar:is([data-fit="4"], [data-fit="5"]) .undo-more { display: none; }
+.topbar[data-fit="5"] .show-btn { max-width: calc(96px * var(--ctl)); }
+.topbar[data-fit="5"] :is(#fx-arm, #fx-kill, .tempo-tap) { padding: 0 6px; }
+.topbar[data-fit="5"] .tempo-beats { display: none; }
+
+/* ------------------------------------------- the desktop app's own window */
+/* no system title bar: the desk's bar is the window's - drag it to move */
+.frameless .topbar { padding-right: 0; -webkit-app-region: drag; }
+.frameless .topbar > * { -webkit-app-region: no-drag; }
+.frameless .topbar > :is(.tb-spacer, .tb-sep) { -webkit-app-region: drag; }
+.mac.frameless .topbar { padding-left: 80px; }
+.desk-menu-btn { margin-left: -6px; padding: 0 6px; border-radius: var(--r); cursor: pointer; }
+.desk-menu-btn:hover, .desk-menu-btn:focus-visible { background: var(--raised); outline: none; }
+.win-ctl { display: flex; align-self: stretch; margin-left: 4px; }
+.win-btn { display: grid; place-items: center; width: calc(44px * var(--ctl)); padding: 0; border: 0; border-radius: 0; background: none; color: var(--text-2); }
+.win-btn svg { width: calc(11px * var(--ctl)); height: calc(11px * var(--ctl)); fill: none; stroke: currentColor; stroke-width: 1.1; }
+.win-btn:hover { background: var(--raised); color: var(--text); }
+.win-btn:active { background: var(--pressed); }
+.win-btn.close:hover { background: var(--live); color: var(--text); }
+/* the 3D window has the same at the end of its toolbar */
+.frameless[data-window="stage"] .vis-bar { -webkit-app-region: drag; padding-right: calc(184px * var(--ctl)); }
+.frameless .vis-bar > * { -webkit-app-region: no-drag; }
+.frameless .vis-bar > .vis-gap { -webkit-app-region: drag; }
+.mac.frameless[data-window="stage"] .vis-bar { padding-left: 80px; }
+.vis-bar .win-ctl { position: absolute; top: 0; right: 0; height: calc(38px * var(--ctl)); margin: 0; }
+.vis-bar .win-ctl .win-btn { height: 100%; }
+
+/* ------------------------------------------------------------ status bar */
+/* one thing to know each: a lamp and plain words; the numbers on hover */
+.statusbar {
+  grid-row: 4; display: flex; align-items: center; gap: 16px; min-width: 0; overflow: hidden;
+  padding: 0 12px; background: var(--base); border-top: 1px solid var(--line);
+  color: var(--text-2); font-size: var(--t-xs); white-space: nowrap;
+}
+.statusbar > * { flex: none; }
+.st-item { display: inline-flex; align-items: center; gap: 6px; }
+.st-item.bad { color: var(--live-ink); }
+.statusbar .st-grow { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+.statusbar .st-grow.warn { color: var(--blind); }
+.st-conn { display: inline-flex; gap: 4px; }
+.st-chip { height: calc(18px * var(--ctl)); padding: 0 6px; border: 0; border-radius: 3px; background: var(--raised); color: var(--text-2); font-size: var(--t-xs); }
+.st-chip:hover { background: var(--hover); color: var(--text); }
+.st-chip.warn { color: var(--blind); }
+.st-chip.bad { color: var(--live-ink); }
+
+/* ------------------------------------------------------------- work area */
+.work { display: flex; flex-direction: column; background: var(--panel); }
+.work > .programmer { flex: 1 1 auto; container-type: inline-size; }
+.work > .modehub { display: none; flex-direction: column; min-height: 0; }
+.work > .dock { flex: none; height: var(--dock-h, var(--dock-def)); }
+/* the dock's height under the programmer, per tab (drag its top edge to change it) */
+.work { --dock-def: clamp(calc(220px * var(--ctl)), 32vh, calc(400px * var(--ctl))); }
+body[data-bottom="buttons"] .work { --dock-def: clamp(calc(260px * var(--ctl)), 40vh, calc(480px * var(--ctl))); }
+body[data-bottom="timeline"] .work { --dock-def: clamp(calc(250px * var(--ctl)), 38vh, calc(440px * var(--ctl))); }
+/* Program: the corner key gives the dock the whole work area */
+body.dock-max .work > .programmer { display: none; }
+body.dock-max .work > .dock { flex: 1; height: auto; border-top: 0; }
+/* Set up: its jobs where the programmer is, and nothing to play */
+body[data-mode="setup"] .work > .programmer, body[data-mode="setup"] .work > .dock { display: none; }
+body[data-mode="setup"] .work > .modehub { display: flex; flex: 1; }
+/* Live: the dock is the screen; what plays now above it, only while something does */
+body[data-mode="live"] .work > .programmer { display: none; }
+body[data-mode="live"] .work > .modehub { display: flex; flex: none; }
+body[data-mode="live"] .work > .modehub.quiet { display: none; }
+body[data-mode="live"] .modehub > .panel-head { display: none; }
+body[data-mode="live"] .modehub .mode-hub-body { flex: none; padding: 0; overflow: visible; }
+body[data-mode="live"] .work > .dock { flex: 1; height: auto; border-top: 0; }
+
+/* Live's strip: the song and its part, what comes next, the autopilot */
+.hub-body.now { display: flex; align-items: center; gap: 20px; min-width: 0; height: calc(44px * var(--ctl)); padding: 0 var(--pad); border-bottom: 1px solid var(--line); white-space: nowrap; }
+.now-song, .now-auto { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.now-k { color: var(--text-3); font-size: var(--t-xs); }
+.now-name { max-width: 30ch; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.now-part { font-weight: 600; }
+.now-part:empty { display: none; }
+.now-next { overflow: hidden; text-overflow: ellipsis; color: var(--text-2); font-size: var(--t-s); }
+.now-progress { flex: none; width: calc(120px * var(--ctl)); height: 4px; overflow: hidden; border-radius: 2px; background: var(--well); }
+.now-progress i { display: block; width: 0; height: 100%; background: var(--text-2); }
+
+/* ------------------------------------------------------------------ dock */
+/* the buttons, the cues, the timeline, the group faders - one at a time;
+   each tab's own tools beside the tabs, in one bar */
+.dock { position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-top: 1px solid var(--line); container: dock / inline-size; }
+.pb-grip { position: absolute; top: -5px; left: 0; right: 0; height: 9px; z-index: 6; cursor: ns-resize; touch-action: none; }
+.pb-grip::after { content: ""; position: absolute; top: 3px; left: 50%; width: calc(48px * var(--ctl)); height: 3px; margin-left: calc(-24px * var(--ctl)); border-radius: 2px; background: var(--lit); opacity: 0; transition: opacity .15s; }
+.pb-grip:hover::after, .pb-grip.on::after { opacity: 1; }
+body.dock-max .pb-grip, body[data-mode="live"] .pb-grip { display: none; }
+.dock-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 6px; flex: none; min-width: 0; padding: calc(8px * var(--ctl)) var(--pad); }
+.dock-bar > *, .dock-tools > * { flex: none; }
+.dock-tools { display: contents; }
+.dock-bar .grow { flex: 1 1 0; min-width: 0; }
+body[data-mode="live"] #pb-mode [data-mode="groups"] { display: none; }
+/* keys only Live needs: Autopilot, full screen */
+.live-only { display: none; }
+body[data-mode="live"] .live-only { display: inline-flex; }
+.dock-body { flex: 1; display: flex; min-width: 0; min-height: 0; }
+.dock-body > :is(.qb, .tl, .pb-strip) { flex: 1; min-width: 0; }
+.dock-empty { margin: auto; padding: 24px; text-align: center; }
+/* the button pages, by name: big enough for a finger in Live */
+.qb-pages { display: flex; flex: 0 1 auto; gap: 4px; min-width: calc(120px * var(--ctl)); overflow-x: auto; scrollbar-width: none; overscroll-behavior: contain; }
+.qb-pages button { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: calc(64px * var(--ctl)); height: var(--h); padding: 0 12px; border: 0; border-radius: var(--r); background: var(--raised); color: var(--text-2); font-weight: 600; }
+.qb-pages button:hover { background: var(--hover); color: var(--text); }
+.qb-pages button.on { background: var(--pressed); color: var(--text); box-shadow: inset 0 -2px var(--lit); }
+.qb-pages button.qb-newpage { min-width: var(--h); padding: 0; background: none; color: var(--text-3); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.qb-pages button.qb-back { min-width: 0; background: none; color: var(--text-2); }
+.qb-pages button.drop { box-shadow: inset 0 0 0 2px var(--lit); }
+body[data-mode="live"] .qb-pages button { min-width: calc(92px * var(--ctl)); height: var(--h-l); padding: 0 14px; }
+.qb-quant { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--t-s); }
+#qb-lock.on { background: var(--blind-face); color: var(--blind); }
+/* a narrow dock: the page tabs get a row of their own */
+@container dock (max-width: 1080px) {
+  .qb-pages { order: 50; flex: 1 0 100%; }
+  .qb-quant > span, .tl-bpm > span, .tl-snap > span { display: none; }
+}
+/* the playback pages (P1, P2...): how many of each page's playbacks run */
+.pb-pages { display: inline-flex; gap: 2px; }
+.pb-pages button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: calc(40px * var(--ctl)); height: var(--h); padding: 0 10px; border: 0; border-radius: var(--r); background: none; color: var(--text-2); font-size: var(--t-s); font-weight: 600; }
+.pb-pages button:hover { color: var(--text); }
+.pb-pages button.on { background: var(--pressed); color: var(--text); box-shadow: inset 0 -2px var(--lit); }
+.pb-pages button.unused:not(.on) { color: var(--text-3); }
+.pb-pages .pg-run { min-width: 16px; padding: 0 4px; border-radius: 7px; background: var(--live); color: var(--text); font-size: var(--t-xs); line-height: 14px; text-align: center; pointer-events: none; }
+/* the cue list of the playback in hand, beside the playbacks */
+.pb-cues { display: flex; flex-direction: column; flex: none; width: clamp(220px, 26%, 340px); min-height: 0; border-left: 1px solid var(--line); background: var(--panel); }
+
+/* the group faders: the dock's own tab in Program, a strip under the buttons in Live */
+.grp-dock { display: none; position: relative; min-height: 0; }
+body[data-bottom="groups"]:not([data-mode="live"]) .dock-body { display: none; }
+body[data-bottom="groups"]:not([data-mode="live"]) .grp-dock { display: flex; flex: 1; }
+body[data-mode="live"] .grp-dock { display: flex; flex: none; height: var(--strip-h, calc(168px * var(--ctl))); border-top: 1px solid var(--line); }
+body[data-mode="live"] .grp-dock.none { display: none; }
+body[data-mode="live"] .grp-dock.folded { height: calc(12px * var(--ctl)); }
+.grp-dock.folded .grp-masters { display: none; }
+.grp-grip { display: none; }
+body[data-mode="live"] .grp-grip { display: block; position: absolute; top: -5px; left: 0; right: 0; height: 9px; z-index: 6; cursor: ns-resize; touch-action: none; }
+body[data-mode="live"] .grp-dock.folded .grp-grip { top: 0; bottom: 0; height: auto; }
+.grp-grip::after { content: ""; position: absolute; top: 3px; left: 50%; width: calc(48px * var(--ctl)); height: 3px; margin-left: calc(-24px * var(--ctl)); border-radius: 2px; background: var(--line-strong); opacity: 0; transition: opacity .15s; }
+.grp-dock.folded .grp-grip::after { top: calc(50% - 1.5px); opacity: 1; }
+.grp-grip:hover::after, .grp-grip.on::after, .grp-grip:focus-visible::after { opacity: 1; background: var(--lit); }
+.grp-masters { flex: 1; display: flex; gap: 8px; min-width: 0; padding: 10px var(--pad) 12px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.grp-masters.more-r { mask-image: linear-gradient(to right, black calc(100% - 40px), transparent); }
+.grp-masters.more-l { mask-image: linear-gradient(to left, black calc(100% - 40px), transparent); }
+.grp-masters.more-l.more-r { mask-image: linear-gradient(to right, transparent, black 40px, black calc(100% - 40px), transparent); }
+/* one group: its name on its colour, the fader in its colour, the level and how many lights */
+.master.grp { flex: 1 0 calc(118px * var(--ctl)); max-width: calc(220px * var(--ctl)); display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-radius: var(--r); background: var(--base); }
+.master.grp .m-strip { display: flex; align-items: center; gap: 6px; flex: none; height: calc(24px * var(--ctl)); padding: 0 8px; background: color-mix(in srgb, var(--c) 24%, var(--raised)); box-shadow: inset 0 -2px var(--c); }
+.master.grp .m-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-s); font-weight: 600; }
+.master.grp .m-colour { flex: none; width: calc(12px * var(--ctl)); height: calc(12px * var(--ctl)); padding: 0; border: 0; border-radius: 2px; background: var(--c); }
+.master.grp .m-in { flex: 1; display: flex; justify-content: center; gap: 10px; min-height: 0; padding: 8px; }
+.master.grp .vfader { height: auto; align-self: stretch; }
+.master.grp .m-read { display: flex; flex-direction: column; justify-content: flex-end; min-width: 0; }
+.master.grp .m-num { font-size: var(--t-l); font-weight: 600; }
+.master.grp .m-read small { color: var(--text-3); font-size: var(--t-xs); white-space: nowrap; }
+
+/* ----------------------------------------------------------- master rail */
+/* the grand master, Release all and BLACKOUT: the same place in every mode */
+.rail { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 12px 10px; background: var(--panel); }
+.rail > .master { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 0; }
+.rail .m-name { color: var(--text-2); font-size: var(--t-xs); }
+.rail .vfader { flex: 1; width: calc(40px * var(--ctl)); height: auto; min-height: 80px; }
+.rail .m-num { font-size: var(--t-l); font-weight: 600; }
+.pb-relall { flex-direction: column; gap: 0; height: calc(44px * var(--ctl)); padding: 0 6px; line-height: 1.1; white-space: normal; text-align: center; }
+.pb-relall b { color: var(--text-2); font-size: var(--t-xs); }
+.pb-relall b:empty { display: none; }
+/* a half-second hold lets go of it all (playbacks.js): the key fills while held */
+.pb-relall.holding { background-image: linear-gradient(var(--pressed), var(--pressed)); background-repeat: no-repeat; background-size: 0 100%; animation: hold-key .5s linear forwards; }
+.blackout { flex: none; height: calc(96px * var(--ctl)); padding: 0 4px; border: 0; border-radius: var(--r); background: var(--live-face); box-shadow: inset 0 0 0 1px var(--live-line); color: var(--live-ink); font-weight: 700; letter-spacing: .05em; }
+.blackout:hover { background: color-mix(in srgb, var(--live) 20%, var(--live-face)); }
+.blackout:active { background: color-mix(in srgb, var(--live) 34%, var(--live-face)); }
+.blackout.on { background: var(--live); box-shadow: none; color: var(--text); }
+.blackout.on::after { content: "is on"; display: block; font-size: var(--t-xs); font-weight: 600; letter-spacing: 0; }
+
+/* --------------------------------- the desktop app: one part per window */
+/* (?window=... - web/app/main.js; the app opens each on its own monitor) */
+[data-window] .app { grid-template-rows: var(--bar) auto minmax(0, 1fr) 0; }
+[data-window] .statusbar { display: none; }
+[data-window="stage"] .app { grid-template-rows: 0 0 minmax(0, 1fr) 0; }
+[data-window="stage"] .topbar { display: none; }
+[data-window="stage"] .workspace { --cols: minmax(0, 1fr); --areas: "stage"; }
+[data-window="stage"] .workspace > :not(.stage-wrap) { display: none; }
+[data-window="stage"] .workspace > .stage-wrap { display: block; }
+/* the lights and the programmer (the dock is the playbacks window's) */
+[data-window="desk"] .workspace { --cols: var(--side-w) minmax(0, 1fr) var(--rail-w); --areas: "side work rail"; }
+[data-window="desk"] .work > :not(.programmer) { display: none; }
+[data-window="desk"] .work > .programmer { display: flex; flex: 1; }
+/* the dock on the whole window, with the master */
+[data-window="playbacks"] .workspace { --cols: minmax(0, 1fr) var(--rail-w); --areas: "work rail"; }
+[data-window="playbacks"] .workspace > .side { display: none; }
+[data-window="playbacks"] .work > :not(.dock) { display: none; }
+[data-window="playbacks"] .work > .dock { display: flex; flex: 1; height: auto; border-top: 0; }
+[data-window="playbacks"] .pb-grip { display: none; }
+
+:root[data-motion="reduced"] :is(.ws-grip, .pb-grip, .grp-grip)::after { transition: none; }

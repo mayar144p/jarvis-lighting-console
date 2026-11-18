@@ -1,10 +1,12 @@
-// The hub beside the 3D view in the Set up and Live modes (Program has the
-// programmer there).
+// What Set up and Live put in the work area, where Program has the
+// programmer.
 //   Set up  every job before a show, in order - the lights, the room, the
 //           connections, the checks - each with how it stands now
-//   Live    what is playing and what comes next, the tempo, the autopilot,
-//           the hits; master and blackout are on the dock's right
-import { $, h, confirmBox, grab } from "./ui.js";
+//   Live    one slim strip above the buttons, only while something plays by
+//           itself: the song and its part, what comes next, the autopilot.
+//           (The buttons are the screen; the tempo is in the title bar, the
+//           master and blackout on the rail.)
+import { $, h, confirmBox } from "./ui.js";
 import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { needs3d } from "./view3d.js";
@@ -135,7 +137,6 @@ function tempoLine(s) {
 
 // -------------------------------------------------------------------- Live
 let liveEls = null;
-let holding = 0;                       // hits held down now: no repaint under a finger
 
 function partsNow() {
   const tl = snap().timeline || {};
@@ -155,88 +156,47 @@ function partsNow() {
 function paintLiveNow() {
   if (!liveEls) return;
   const p = partsNow();
-  liveEls.part.textContent = p.cur ? p.cur.name : (p.playing ? "-" : "");
+  liveEls.part.textContent = p.cur ? p.cur.name : "";
   liveEls.next.textContent = p.next
-    ? `${p.next.name} in ${Math.max(0, Math.ceil(p.bars))} bar${Math.ceil(p.bars) === 1 ? "" : "s"}`
-    : (p.playing ? "the end of the song" : "");
+    ? `then ${p.next.name} in ${Math.max(0, Math.ceil(p.bars))} bar${Math.ceil(p.bars) === 1 ? "" : "s"}`
+    : (p.playing ? "then the end of the song" : "");
   const span = p.cur && p.next ? (p.next.t - p.cur.t) * ((snap().timeline || {}).bpm || 120) / 240 : 0;
   liveEls.bar.style.width = span > 0 ? `${Math.max(0, Math.min(100, 100 - (p.bars / span) * 100))}%` : "0%";
-  const t = snap().tempo || {};
-  liveEls.beat.textContent = t.beat ? "●".repeat(t.beat) + "○".repeat(Math.max(0, 4 - t.beat)) : "";
 }
 
-const HITS = new Set(["strobe", "flash", "blinder", "blackout", "kill", "fog", "sfx", "colour", "color"]);
-
+// The strip is there only while the desk plays something by itself - the
+// timeline running, a song followed from the DJ's decks, the autopilot.
+// With nothing of that, the buttons have the whole work area.
+let liveKey = "";
 function paintLive() {
-  if (holding) return;                 // repainted when the finger lifts
   const s = snap();
   const sg = s.songs || {};
   const song = (sg.songs || []).find((x) => x.id === (sg.following || sg.current));
-  const t = s.tempo || {};
   const ap = s.autopilot || {};
-  const q = s.quick || {};
-  const active = new Set(q.active || []);
-  const hits = (q.buttons || []).filter((b) => HITS.has(b.kind)).slice(0, 12);
-  const pressBtn = (b) => {
-    const el = h("button.live-hit" + (active.has(b.id) ? ".on" : ""), { type: "button", title: `${b.label} (${b.mode === "hold" ? "held while pressed" : "press"})` }, b.label);
-    let finger = null;                           // the finger on it: one per button
-    el.addEventListener("pointerdown", (e) => {
-      if (finger !== null) return;
-      finger = e.pointerId;
-      grab(el, e.pointerId);
-      holding++;
-      el.classList.add("on");
-      run("quick_press", { id: b.id, down: true });
-    });
-    const up = (e) => {
-      if (finger === null || e.pointerId !== finger) return;
-      finger = null;
-      holding = Math.max(0, holding - 1);
-      run("quick_press", { id: b.id, down: false });
-    };
-    el.addEventListener("pointerup", up);
-    el.addEventListener("pointercancel", up);
-    el.addEventListener("lostpointercapture", up);
-    return el;
-  };
-  const part = h("div.live-part"), next = h("div.live-next muted"), bar = h("i"), beat = h("span.live-beat");
-  liveEls = { part, next, bar, beat };
-  // Now, Tempo and Autopilot in one compact band at the top: what is
-  // playing, the beat, and whether the desk is running looks by itself
-  const body = h("div.hub-body.live",
-    h("div.live-band",
-      h("div.lb-now",
-        h("div.lb-head", h("span.live-k", sg.following ? "Following the master deck" : song ? "Song" : "Now"),
-          h("span.live-song", song ? song.name : (sg.deck ? `Track ${sg.deck} (no song)` : "No song playing"))),
-        h("div.lb-part", part, next), h("div.live-progress", bar)),
-      h("div.lb-cells",
-        h("div.lb-cell", { title: tempoLine(s) },
-          h("span.live-k", "Tempo"),
-          h("div.live-bpm", h("b", String(Math.round((t.bpm || 0) * 10) / 10)), h("small", " BPM"), beat),
-          h("div.live-row", h("button.btn.small", { onclick: () => run("tempo_tap", {}) }, "Tap"),
-            h("button.btn.small", { title: "The phrase (8 bars) starts on this beat", onclick: () => run("tempo_phrase", {}, { toast: true }) }, "Phrase"))),
-        h("div.lb-cell",
-          h("span.live-k", "Autopilot"),
-          h("div.lb-ap" + (ap.on ? ".on" : ""), ap.on ? `every ${ap.bars} bars` + (ap.bars_left != null ? ` · next in ${ap.bars_left}` : "") : sg.fallback ? "between songs" : "off"),
-          h("div.live-row",
-            h("button.btn.small" + (ap.on ? "" : ".primary"), { onclick: () => run("autopilot", { state: !ap.on }, { toast: true }) }, ap.on ? "Stop" : "Start"),
-            h("button.btn.small", { disabled: !ap.on, title: "The next look now", onclick: () => run("autopilot_next", {}, { toast: true }) }, "Next"),
-            h("button.btn.small.ghost", { title: "Autopilot settings", "aria-label": "Autopilot settings", onclick: () => import("./autopilot.js").then((m) => m.openAutopilot()) }, "⋯")))),
-      h("div.live-row.lb-songs",
-        h("button.btn.small", { onclick: () => import("./songs.js").then((m) => m.openSongs()) }, "Songs…"),
-        h("label.check", h("input", { type: "checkbox", checked: !!sg.follow, onchange: (e) => run("song_follow", { state: e.target.checked }, { toast: true }) }),
-          h("span", "Follow the DJ decks")))),
-    // on a short screen this row comes first (app.css): blackout and the master in reach
-    h("div.live-bo",
-      h("button.btn" + (s.blackout ? ".on" : ""), { title: "Blackout (X)", onclick: () => run("blackout", { state: s.blackout ? 0 : 1 }) }, s.blackout ? "BLACKOUT on" : "BLACKOUT"),
-      h("span.muted.small", `Master ${s.master ?? 100}%`)),
-    h("div.live-k.hits-k", "Hits"),
-    hits.length ? h("div.live-hits", ...hits.map(pressBtn)) : null,
-    // the same buttons are already in the dock when it shows Buttons (app.css)
-    hits.length ? h("p.muted.small.live-hits-below", "In the Buttons panel below.")
-      : h("p.muted.small.live-nohits", "Strobe, flash and blinder buttons show here: press Edit on the Buttons panel to make them."),
-  );
-  $("#mode-hub-body").replaceChildren(body);
+  const tr = (s.timeline || {}).transport || {};
+  const playing = !!(tr.playing || sg.following);
+  const busy = playing || !!ap.on;
+  const box = $("#mode-hub");
+  box.classList.toggle("quiet", !busy);
   $("#mode-hub-title").textContent = "Live";
+  // (drawn again only when what it says changes: its buttons stay under a finger)
+  const key = JSON.stringify([busy, playing, sg.following, song && song.name, sg.deck, ap.on, ap.bars, ap.bars_left]);
+  if (key === liveKey && $("#mode-hub-body").firstChild) { paintLiveNow(); return; }
+  liveKey = key;
+  if (!busy) { liveEls = null; $("#mode-hub-body").replaceChildren(); return; }
+  const part = h("b.now-part"), next = h("span.now-next"), bar = h("i");
+  liveEls = { part, next, bar };
+  $("#mode-hub-body").replaceChildren(h("div.hub-body.live.now",
+    playing ? h("div.now-song", { title: tempoLine(s) },
+      h("span.now-k", sg.following ? "Following the DJ" : "Playing"),
+      h("b.now-name", song ? song.name : (sg.deck ? `Track ${sg.deck}` : "The timeline")),
+      part, next, h("span.now-progress", bar)) : null,
+    ap.on ? h("div.now-auto",
+      h("span.now-k", "Autopilot"),
+      h("span.now-next", `a new look every ${ap.bars} bars` + (ap.bars_left != null ? `, the next in ${ap.bars_left}` : "")),
+      h("button.btn.small", { title: "The next look now", onclick: () => run("autopilot_next", {}, { toast: true }) }, "Next look"),
+      h("button.btn.small", { title: "Stop the autopilot: the look stays as it is", onclick: () => run("autopilot", { state: false }, { toast: true }) }, "Stop")) : null,
+    h("span.grow"),
+    h("button.btn.small.ghost", { title: "Songs: a light show per song, follow the DJ's decks", onclick: () => import("./songs.js").then((m) => m.openSongs()) }, "Songs…")));
   paintLiveNow();
 }

@@ -1,160 +1,120 @@
-// Workspaces (backlog A10 item 6): the screen arranged for the job - the
-// fixture list and the programmer shown or not, which side each is on,
-// how wide, the bottom dock (faders / buttons / timeline) and its height,
-// and the programmer's tab.  Four ready ones and your own; each one keeps
-// the screen as you left it.  Switch from the top bar or with Alt+1..9.
-// Kept per computer (each operator's own), not in the show.
-import { $, $$, h, menu, toast, promptBox, confirmBox, choiceBox } from "./ui.js";
-import { BUILTIN, clean, gridFor, MIN_W, MAX_W, MODES, MODE_NAMES } from "./wslayouts.js";
+// The three modes on screen: Set up, Program, Live.  One frame for all of
+// them - the lights on the left, the work in the middle, the master rail
+// on the right - and each mode shows what its job needs (wslayouts.js says
+// what).  What a mode was left showing - the dock's tab, the dock over the
+// whole work area - and the side panel's width are kept per computer (each
+// operator's own), not in the show.  F1 / F2 / F3 or the switch in the
+// title bar change mode.
+import { $, $$, h, toast, choiceBox } from "./ui.js";
+import { clean, frameFor, MIN_W, MAX_W, MODES, MODE_NAMES } from "./wslayouts.js";
 import { renderHub } from "./modehub.js";
 import { state, on } from "./store.js";
 import { HAS_3D } from "./view3d.js";
 
-const KEY = "haze.workspaces";
+const KEY = "haze.modes";
 
-let saved = { active: "programming", list: [], lastByMode: {} };
+let saved = clean({});
 let applying = false;
 
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || "null");
-    if (raw && Array.isArray(raw.list)) saved = { active: String(raw.active || "programming"), list: raw.list.filter((w) => w && w.id).map(clean),
-      lastByMode: raw.lastByMode && typeof raw.lastByMode === "object" ? raw.lastByMode : {} };
-  } catch (e) { /* private window or a damaged entry: the ready ones */ }
-  for (const b of BUILTIN) if (!saved.list.some((w) => w.id === b.id)) saved.list.splice(BUILTIN.indexOf(b), 0, clean({ ...b }));
-  if (!saved.list.some((w) => w.id === saved.active)) saved.active = "programming";
+    if (raw) { saved = clean(raw); return; }
+    // a desk from before the three modes kept "workspaces": the mode it was
+    // left in carries over, the rest starts as the desk comes
+    const old = JSON.parse(localStorage.getItem("haze.workspaces") || "null");
+    const was = old && Array.isArray(old.list) && old.list.find((w) => w && w.id === old.active);
+    if (was) saved = clean({ mode: was.mode });
+    localStorage.removeItem("haze.workspaces");
+  } catch (e) { /* private window or a damaged entry: how the desk comes */ }
 }
 function store() {
   try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) { /* private window */ }
 }
 
-export const workspaces = () => saved.list.map((w) => ({ ...w }));
-export const activeWorkspace = () => saved.list.find((w) => w.id === saved.active) || saved.list[0];
+/** The mode on screen, as {id, name, mode} (the tools and the tour ask). */
+export const activeWorkspace = () => ({ id: saved.mode, name: MODE_NAMES[saved.mode], mode: saved.mode });
 
 const ws = () => $(".workspace");
-const dockPx = () => parseInt(ws().style.getPropertyValue("--pb-h"), 10) || 0;
+const px = (name) => parseInt(ws().style.getPropertyValue(name), 10) || 0;
 
-// the screen as it is now
-function capture(into) {
-  const b = document.body;
-  const sel = $("#prog-tabs button[aria-selected=\"true\"]");
-  Object.assign(into, clean({
-    ...into,
-    fix: !b.classList.contains("ws-nofix"), prog: !b.classList.contains("ws-noprog"), swap: b.classList.contains("ws-swap"),
-    // (with the 3D view off everywhere, a workspace keeps its own choice)
-    stage: HAS_3D ? !b.classList.contains("ws-nostage") : into.stage !== false, cues: b.classList.contains("ws-cues"),
-    fixAt: into.fixAt, progAt: into.progAt, dockAt: into.dockAt,
-    fixW: parseInt(ws().style.getPropertyValue("--fixtures-w"), 10) || 0,
-    progW: parseInt(ws().style.getPropertyValue("--prog-w"), 10) || 0,
-    bottom: b.dataset.bottom || "faders", dock: dockPx(), tab: sel ? sel.dataset.tab : "",
-  }));
-}
+// the screen as it is now, kept for the mode in use
 function remember() {
   if (applying) return;
-  const w = activeWorkspace();
-  if (!w) return;
-  capture(w);
+  const b = document.body, m = saved.mode;
+  const sel = $("#prog-tabs button[aria-selected=\"true\"]");
+  const next = clean({ ...saved, sideW: px("--side-w"), workW: px("--work-w"), tab: sel ? sel.dataset.tab : saved.tab });
+  if (m !== "setup") next.by[m].bottom = b.dataset.bottom || next.by[m].bottom;
+  saved = clean(next);
   store();
-  paintButton();
 }
 
-function apply(w) {
+function paintModes() {
+  for (const mb of $$("#mode-seg button")) {
+    const lit = mb.dataset.mode === saved.mode;
+    mb.classList.toggle("on", lit);
+    mb.setAttribute("aria-pressed", String(lit));
+  }
+  const mx = $("#dock-max");
+  if (mx) {
+    const f = frameFor(saved);
+    mx.hidden = f.mode !== "program";
+    mx.classList.toggle("on", f.max);
+    mx.setAttribute("aria-pressed", String(f.max));
+    mx.title = f.max ? "Give the programmer its room back" : "The dock over the whole work area (the programmer hides)";
+  }
+}
+
+function apply() {
+  const f = frameFor(saved);
   applying = true;
   try {
     const b = document.body, el = ws();
-    b.classList.toggle("ws-nofix", !w.fix);
-    b.classList.toggle("ws-noprog", !w.prog);
-    b.classList.toggle("ws-swap", !!w.swap);
-    b.classList.toggle("ws-nostage", w.stage === false || !HAS_3D);
-    b.classList.toggle("ws-cues", !!w.cues);
-    // the job: Set up and Live put their hub where the programmer is
-    b.dataset.mode = w.mode;
-    saved.lastByMode = { ...(saved.lastByMode || {}), [w.mode]: w.id };
-    // where each panel sits: the grid from the workspace (wslayouts.js)
-    const g = gridFor(HAS_3D ? w : { ...w, stage: false });
-    el.style.setProperty("--ws-cols", g.cols);
-    el.style.setProperty("--ws-rows", g.rows);
-    el.style.setProperty("--ws-areas", g.areas);
-    floatAt($("#fixtures-panel"), g.fixAt, w.fixPos);
-    floatAt($("#programmer"), g.progAt, w.progPos);
-    floatAt($("#mode-hub"), g.progAt, w.progPos);
-    b.classList.toggle("ws-docktop", g.top);
-    if (w.fixW) el.style.setProperty("--fixtures-w", w.fixW + "px"); else el.style.removeProperty("--fixtures-w");
-    if (w.progW) el.style.setProperty("--prog-w", w.progW + "px"); else el.style.removeProperty("--prog-w");
-    // the dock's height lives per mode (playbacks.js reads it when the mode is picked)
-    try {
-      if (w.dock) localStorage.setItem("haze.dockh." + w.bottom, String(w.dock));
-      else localStorage.removeItem("haze.dockh." + w.bottom);
-    } catch (e) { /* private window */ }
-    const mode = $(`#pb-mode button[data-mode="${w.bottom}"]`);
-    if (mode) mode.click();
-    const tab = w.tab && $(`#prog-tabs button[data-tab="${w.tab}"]`);
-    if (tab && w.prog) tab.click();
+    // the job: Set up has its own screen where the programmer is, Live has the dock
+    b.dataset.mode = f.mode;
+    b.classList.toggle("ws-nostage", !HAS_3D);
+    b.classList.toggle("dock-max", f.max);
+    if (saved.sideW) el.style.setProperty("--side-w", saved.sideW + "px"); else el.style.removeProperty("--side-w");
+    if (saved.workW) el.style.setProperty("--work-w", saved.workW + "px"); else el.style.removeProperty("--work-w");
+    const dockTab = f.dock && $(`#pb-mode button[data-mode="${f.bottom}"]`);
+    if (dockTab) dockTab.click();
+    const tab = saved.tab && f.programmer && $(`#prog-tabs button[data-tab="${saved.tab}"]`);
+    if (tab && !tab.hidden && tab.getAttribute("aria-selected") !== "true") tab.click();
   } finally {
     applying = false;
   }
-  paintButton();
-  renderHub(w.mode);
-  import("./welcome.js").then((m) => m.offerModeTour(w.mode)).catch(() => {});
-  window.dispatchEvent(new Event("resize"));      // the 3D view fits its new space
+  paintModes();
+  renderHub(f.mode);
+  import("./welcome.js").then((m) => m.offerModeTour(f.mode)).catch(() => {});
+  window.dispatchEvent(new Event("resize"));      // what is drawn to fit (the 3D, the timeline) fits its new room
 }
 
-/** Switch to a mode: the workspace last used for it (or its ready one). */
+/** Switch to a mode: Set up, Program or Live, as it was left. */
 export function useMode(m) {
   if (!MODES.includes(m)) return false;
-  const want = (saved.lastByMode || {})[m];
-  const w = saved.list.find((x) => x.id === want && x.mode === m) || saved.list.find((x) => x.mode === m);
-  // the toast only when the top bar can't show the workspace's name (720p)
-  const named = ($("#ws-name") || {}).offsetWidth > 0;
-  return w ? useWorkspace(w.id, { quiet: named }) : false;
-}
-
-// A side panel in its place: a side of the screen (the grid), or floating
-// over the 3D view at its saved corner (kept on screen).
-function floatAt(panel, at, p) {
-  panel.dataset.side = at;
-  if (at !== "float") {
-    for (const k of ["left", "top", "max-height"]) panel.style.removeProperty(k);
-    return;
-  }
-  // inside the 3D view's area: never over the dock or off the screen (with
-  // no 3D view in this workspace, the workspace's own area - it collapsed
-  // to its title when it measured a 3D view that wasn't there)
-  const box = ws().getBoundingClientRect();
-  let st = $("#stage-wrap").getBoundingClientRect();
-  if (st.width < 200 || st.height < 200) {
-    const dock = document.querySelector(".playbacks");
-    const bottom = dock && dock.offsetParent ? dock.getBoundingClientRect().top : box.bottom;
-    st = { left: box.left, top: box.top, width: box.width, height: Math.max(240, bottom - box.top) };
-  }
-  const x0 = st.left - box.left, y0 = st.top - box.top;
-  const x = Math.max(x0, Math.min((p && p.x) || 0, x0 + st.width - 160));
-  const y = Math.max(y0, Math.min((p && p.y) || 0, y0 + st.height - 120));
-  panel.style.left = x + "px";
-  panel.style.top = y + "px";
-  panel.style.maxHeight = Math.max(320, y0 + st.height - y - 8) + "px";
-}
-function refloat() {
-  const w = activeWorkspace();
-  if (!w) return;
-  if (w.fixAt === "float") floatAt($("#fixtures-panel"), "float", w.fixPos);
-  if (w.progAt === "float") { floatAt($("#programmer"), "float", w.progPos); floatAt($("#mode-hub"), "float", w.progPos); }
-}
-
-/** Switch to a workspace by id or by its place (1..9).  `quiet`: no toast
- *  (a mode button already shows where you are; the toast covered the 3D's
- *  buttons). */
-export function useWorkspace(which, { quiet = false } = {}) {
-  const w = typeof which === "number" ? saved.list[which - 1] : saved.list.find((x) => x.id === which);
-  if (!w) return false;
-  const was = activeWorkspace();
+  const was = saved.mode;
   remember();                                     // the one we leave keeps how it was
-  saved.active = w.id;
+  saved.mode = m;
   store();
-  apply(w);
-  if (!quiet) toast(`Workspace: ${w.name}`);
-  if (w.mode === "live" && (!was || was.mode !== "live")) offerLock();
+  apply();
+  if (m === "live" && was !== "live") offerLock();
   return true;
+}
+
+/** The modes by their older names and places (the checks and saved
+ *  shortcuts use them): "programming" is Program, 1..3 are the modes in order. */
+export function useWorkspace(which) {
+  const m = typeof which === "number" ? MODES[which - 1] : which === "programming" ? "program" : which;
+  return useMode(m);
+}
+
+/** Program: the dock over the whole work area, or back under the programmer. */
+export function setDockMax(on) {
+  if (saved.mode !== "program") return;
+  remember();
+  saved.by.program.max = !!on;
+  store();
+  apply();
 }
 
 // Into Live with the show still open for editing: offer the lock, once a
@@ -178,215 +138,33 @@ async function offerLock() {
   }
 }
 
-function toggle(field) {
-  const w = activeWorkspace();
-  capture(w);
-  w[field] = !w[field];
-  if (!w.fix && !w.prog && w.stage !== false && field !== "swap") toast("The 3D view and the dock fill the screen");
-  if (field === "stage" && w.stage === false) toast("No 3D view: the programmer and the buttons get the room");
-  apply(w);
-  store();
-}
-
-function place(field, value) {
-  const w = activeWorkspace();
-  capture(w);
-  w[field] = value;
-  w.swap = false;
-  apply(w);
-  store();
-}
-
-// Drag a side panel by its title: to a side of the screen (drop it near
-// that edge), or anywhere over the 3D view to float it there.  A floating
-// panel follows the pointer.
-const EDGE = 0.18;                     // the outer 18% of the screen is "that side"
-function dropAt(x) {
-  const f = x / window.innerWidth;
-  return f < EDGE ? "left" : f > 1 - EDGE ? "right" : "float";
-}
-function wireMove(panel, field) {
-  const handle = panel.querySelector(".panel-head h2");
-  if (!handle) return;
-  handle.style.cursor = "grab";
-  handle.title = "Drag near a side of the screen to put this panel there, or over the 3D view to float it";
-  const posField = field === "fixAt" ? "fixPos" : "progPos";
-  let x0 = 0, y0 = 0, dx = 0, dy = 0, on = false, moved = false, hint = null;
-  handle.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
-    on = true;
-    moved = false;
-    x0 = e.clientX;
-    y0 = e.clientY;
-    const r = panel.getBoundingClientRect();
-    dx = e.clientX - r.left;
-    dy = e.clientY - r.top;
-    handle.setPointerCapture(e.pointerId);
-  });
-  handle.addEventListener("pointermove", (e) => {
-    if (!on || (!moved && Math.hypot(e.clientX - x0, e.clientY - y0) < 24)) return;
-    moved = true;
-    const at = dropAt(e.clientX);
-    if (!hint) { hint = h("div.ws-drop"); document.body.append(hint); }
-    hint.dataset.side = at;
-    if (at === "float") {
-      // the outline where the panel will float
-      const r = panel.getBoundingClientRect();
-      Object.assign(hint.style, { left: `${e.clientX - dx}px`, top: `${e.clientY - dy}px`,
-        width: `${Math.min(r.width, 360)}px`, height: `${Math.min(r.height, 520)}px` });
-    } else {
-      for (const k of ["left", "top", "width", "height"]) hint.style.removeProperty(k);
-    }
-  });
-  const end = (e) => {
-    if (!on) return;
-    on = false;
-    if (!hint) return;
-    hint.remove();
-    hint = null;
-    const at = dropAt(e.clientX);
-    if (at === "float") {
-      const box = ws().getBoundingClientRect();
-      const w = activeWorkspace();
-      capture(w);
-      w[posField] = { x: Math.round(e.clientX - dx - box.left), y: Math.round(e.clientY - dy - box.top) };
-      w[field] = "float";
-      w.swap = false;
-      apply(w);
-      store();
-    } else {
-      place(field, at);
-    }
-  };
-  handle.addEventListener("pointerup", end);
-  handle.addEventListener("pointercancel", () => { on = false; if (hint) { hint.remove(); hint = null; } });
-}
-
-async function saveAs() {
-  const name = await promptBox("New workspace", "Name", "", { ok: "Save", placeholder: "e.g. Festival busking" });
-  if (!name || !name.trim()) return;
-  const w = clean({ id: "u" + Date.now().toString(36), name: name.trim(), mode: (activeWorkspace() || {}).mode });
-  capture(w);
-  w.name = name.trim().slice(0, 40);
-  saved.list.push(w);
-  saved.active = w.id;
-  store();
-  paintButton();
-  toast(`Saved "${w.name}" - Alt+${Math.min(saved.list.length, 9)} brings it back`);
-}
-
-async function rename(w) {
-  const name = await promptBox("Rename workspace", "Name", w.name, { ok: "Rename" });
-  if (!name || !name.trim()) return;
-  w.name = name.trim().slice(0, 40);
-  store();
-  paintButton();
-}
-
-async function remove(w) {
-  if (!(await confirmBox("Delete workspace", `Delete "${w.name}"? The screen stays as it is.`, { ok: "Delete", danger: true }))) return;
-  saved.list = saved.list.filter((x) => x !== w);
-  if (saved.active === w.id) saved.active = saved.list[0].id;
-  store();
-  paintButton();
-}
-
-function reset(w) {
-  const b = BUILTIN.find((x) => x.id === w.id);
-  if (!b) return;
-  Object.assign(w, clean(b));
-  store();
-  if (saved.active === w.id) apply(w);
-  toast(`${w.name}: back to how it came`);
-}
-
-function openMenu(anchor) {
-  remember();
-  const cur = activeWorkspace();
-  const builtin = BUILTIN.some((b) => b.id === cur.id);
-  // a layout change keeps the menu open (drawn again with its new ticks);
-  // picking a workspace or saving closes it
-  const again = () => openMenu(anchor);
-  // (Set up / Program / Live are the mode switch beside this button: only
-  // the other layouts are listed here, not the same three again)
-  const MODES = new Set(["setup", "live", "programming"]);
-  const others = saved.list.map((w, i) => [w, i]).filter(([w]) => !MODES.has(w.id));
-  menu(anchor, [
-    ...others.map(([w, i]) => ({
-      label: (w.id === cur.id ? "✓ " : "") + w.name,
-      hint: i < 9 ? `Alt+${i + 1}` : "",
-      run: () => useWorkspace(w.id),
-    })),
-    others.length ? "-" : null,
-    { label: (cur.fix ? "✓ " : "") + "Fixture list", hint: "show or hide", keep: again, run: () => toggle("fix") },
-    { label: (cur.prog ? "✓ " : "") + "Programmer", hint: "show or hide", keep: again, run: () => toggle("prog") },
-    { label: (cur.cues ? "✓ " : "") + "Cue list beside the faders", hint: "the playback in focus", keep: again, run: () => toggle("cues") },
-    { label: `Fixture list on the ${cur.fixAt === "left" ? "right" : "left"}`, hint: "or drag it by its title", keep: again, run: () => place("fixAt", cur.fixAt === "left" ? "right" : "left") },
-    { label: `Programmer on the ${cur.progAt === "right" ? "left" : "right"}`, hint: "or drag it by its title", keep: again, run: () => place("progAt", cur.progAt === "right" ? "left" : "right") },
-    cur.fixAt === "float"
-      ? null
-      : { label: "Fixture list floating over the 3D", hint: "drag it by its title", keep: again, run: () => place("fixAt", "float") },
-    cur.progAt === "float"
-      ? null
-      : { label: "Programmer floating over the 3D", hint: "drag it by its title", keep: again, run: () => place("progAt", "float") },
-    { label: cur.dockAt === "top" ? "Faders / buttons at the bottom" : "Faders / buttons at the top", keep: again, run: () => place("dockAt", cur.dockAt === "top" ? "bottom" : "top") },
-    { label: "Widths back to normal", hint: "or double-click a panel's edge", disabled: !cur.fixW && !cur.progW, keep: again, run: () => { cur.fixW = cur.progW = 0; apply(cur); store(); } },
-    "-",
-    { label: "Save as a new workspace…", run: saveAs },
-    { label: `Rename "${cur.name}"…`, run: () => rename(cur) },
-    builtin
-      ? { label: `Reset "${cur.name}"`, hint: "how it came", run: () => reset(cur) }
-      : { label: `Delete "${cur.name}"…`, danger: true, disabled: saved.list.length <= 1, run: () => remove(cur) },
-  ].filter(Boolean));
-}
-
-function paintButton() {
-  const cur = activeWorkspace();
-  for (const mb of $$("#mode-seg button")) {
-    const on = !!cur && mb.dataset.mode === cur.mode;
-    mb.classList.toggle("on", on);
-    mb.setAttribute("aria-pressed", String(on));
-  }
-  const b = $("#ws-btn");
-  if (!b) return;
-  const w = activeWorkspace();
-  // the mode's own name is on the mode switch: this says only a layout of its own
-  const MODES = new Set(["setup", "live", "programming"]);
-  $("#ws-name").textContent = w && !MODES.has(w.id) ? w.name : "";
-  b.title = `Layout${w ? `: ${w.name}` : ""} - the panels, other layouts, save your own (Alt+1..9)`;
-}
-
-// Drag a side panel's inner edge to make it wider or narrower; double-click
-// puts it back.
-function wireGrip(panel, cssVar, field) {
+// Drag a panel's inner edge to make it wider or narrower; double-click
+// puts it back.  `sign`: +1 when dragging right widens it (the side panel),
+// -1 when dragging left does (the work area beside the 3D).
+function wireGrip(panel, cssVar, sign) {
   const grip = h("div.ws-grip", { role: "separator", "aria-orientation": "vertical", title: "Drag to resize - double-click for the normal width" });
   panel.append(grip);
-  let x0 = 0, w0 = 0, on = false;
+  let x0 = 0, w0 = 0, held = false;
   grip.addEventListener("pointerdown", (e) => {
     e.preventDefault();
-    on = true;
+    held = true;
     x0 = e.clientX;
     w0 = panel.getBoundingClientRect().width;
     grip.setPointerCapture(e.pointerId);
     grip.classList.add("on");
   });
   grip.addEventListener("pointermove", (e) => {
-    if (!on) return;
-    // the edge that faces the 3D view: dragging toward it widens the panel
-    const r = panel.getBoundingClientRect(), stage = $("#stage-wrap").getBoundingClientRect();
-    const sign = panel.dataset.side === "float" || r.left < stage.left ? 1 : -1;
+    if (!held) return;
     const w = Math.max(MIN_W, Math.min(MAX_W, Math.round(w0 + sign * (e.clientX - x0))));
     ws().style.setProperty(cssVar, w + "px");
     window.dispatchEvent(new Event("resize"));
   });
-  const end = () => { if (on) { on = false; grip.classList.remove("on"); remember(); } };
+  const end = () => { if (held) { held = false; grip.classList.remove("on"); remember(); } };
   grip.addEventListener("pointerup", end);
   grip.addEventListener("pointercancel", end);
   grip.addEventListener("dblclick", () => {
     ws().style.removeProperty(cssVar);
-    const w = activeWorkspace();
-    w[field] = 0;
-    store();
+    remember();
     window.dispatchEvent(new Event("resize"));
   });
 }
@@ -394,43 +172,23 @@ function wireGrip(panel, cssVar, field) {
 export function initWorkspaces() {
   if (document.documentElement.dataset.window) return;   // a second window keeps its own fixed layout
   load();
-  const btn = $("#ws-btn");
-  if (btn) btn.addEventListener("click", () => openMenu(btn));
-  wireGrip($("#fixtures-panel"), "--fixtures-w", "fixW");
-  wireGrip($("#programmer"), "--prog-w", "progW");
-  wireGrip($("#mode-hub"), "--prog-w", "progW");
-  wireMove($("#fixtures-panel"), "fixAt");
-  wireMove($("#programmer"), "progAt");
-  wireMove($("#mode-hub"), "progAt");
+  wireGrip($("#fixtures-panel"), "--side-w", 1);
+  if (HAS_3D) wireGrip($("#work"), "--work-w", -1);
   for (const mb of $$("#mode-seg button")) mb.addEventListener("click", () => useMode(mb.dataset.mode));
+  const mx = $("#dock-max");
+  if (mx) mx.addEventListener("click", () => setDockMax(!frameFor(saved).max));
   // a new, empty show starts where it needs to: Set up (once per visit)
   let checked = false;
   on("snapshot", () => {
     if (checked || !state.snap) return;
     checked = true;
-    const cur = activeWorkspace();
-    if (!(state.snap.patch || []).length && cur && cur.mode !== "setup") {
+    if (!(state.snap.patch || []).length && saved.mode !== "setup") {
       useMode("setup");
       toast(`${MODE_NAMES.setup}: no lights yet - add them here, then Program`);
     }
   });
-  // whatever changes the screen is kept in the workspace in use
+  // whatever changes the screen is kept for the mode in use
   const later = () => setTimeout(remember, 0);
   for (const sel of ["#pb-mode", "#prog-tabs"]) { const el = $(sel); if (el) el.addEventListener("click", later); }
-  const grip = $("#pb-grip");
-  if (grip) { grip.addEventListener("pointerup", later); grip.addEventListener("dblclick", later); }
-  document.addEventListener("keydown", (e) => {
-    if (!e.altKey || e.ctrlKey || e.metaKey) return;
-    const m = /^Digit([1-9])$/.exec(e.code);
-    if (!m || $$(".modal").length) return;
-    const t = e.target;
-    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-    e.preventDefault();
-    useWorkspace(Number(m[1]));
-  });
-  apply(activeWorkspace());
-  // the grid settles after apply (the 3D view's size changes): place again
-  requestAnimationFrame(refloat);
-  let t = 0;
-  window.addEventListener("resize", () => { clearTimeout(t); t = setTimeout(refloat, 120); });
+  apply();
 }

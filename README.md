@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="web/icons/icon.svg" width="112" alt="Haze logo: three beams from one light">
+  <img src="web/icons/icon.svg" width="112" alt="Haze logo: two lights, their beams crossing in the haze">
 </p>
 
 <h1 align="center">Haze</h1>

@@ -1,4 +1,5 @@
-// Top bar: the show, the output state, undo, lock; and the status bar.
+// The title bar: the show, what leaves this computer, undo, the lock; and
+// the status bar under the desk.
 import { state, on, outputState } from "./store.js";
 import { post } from "./api.js";
 import { run } from "./actions.js";
@@ -12,10 +13,11 @@ const UNDO_NAMES = {
   venue_add: "venue add", aim_at: "aim", aim_spot: "aim", record_cue: "record cue", clear_programmer: "clear",
 };
 
+// the output's state in a word (the status bar says what it means)
 const LABELS = {
-  blind: ["BLIND", "nothing leaves this computer"],
-  armed: ["READY", "output stopped"],
-  live: ["LIVE", ""],
+  blind: ["Blind", ""],
+  armed: ["Ready", "output stopped"],
+  live: ["Live", ""],
 };
 
 export async function goLive() {
@@ -30,7 +32,7 @@ export async function goLive() {
     if (!r.ok) return;
   }
   const r = await run("set_output", { state: 1, confirm: true });
-  if (r.ok) toast("LIVE - sending to " + host, "ok");
+  if (r.ok) toast("Live - sending to " + host, "ok");
 }
 
 function outputMenu(anchor) {
@@ -55,7 +57,9 @@ function renderOutput() {
   box.dataset.state = st;
   const [label, sub] = LABELS[st];
   $("#out-label").textContent = label;
-  $("#out-sub").textContent = st === "live" ? `→ ${(s.output && s.output.host) || ""}` : sub;
+  $("#out-sub").textContent = st === "live" ? `to ${(s.output && s.output.host) || "the lights"}` : sub;
+  $("#out-state").title = st === "live" ? "Live: the lights follow the desk. Click for Stop, Blind and Blackout"
+    : st === "blind" ? "Blind: nothing leaves this computer - safe to program. Click to go live" : "Ready: the output is stopped. Click to go live or back to blind";
   const arm = $("#out-arm");
   arm.textContent = st === "live" ? "Hold to stop" : "Go live…";
   arm.title = st === "live" ? "Hold to stop sending DMX: the lights hold their last look, every effect goes off (spark heaters, sprays, fog, lasers) - a tap can't stop a show" : "Start sending DMX to the rig";
@@ -66,9 +70,9 @@ function renderUndo() {
   const b = $("#undo-btn");
   b.disabled = !u.can_undo;
   const what = UNDO_NAMES[u.undo] || String(u.undo || "").replace(/_/g, " ");
-  $("#undo-label").textContent = u.can_undo ? "Undo " + (what.length > 22 ? what.slice(0, 21) + "…" : what) : "Undo";
-  $("#undo-btn").title = u.can_undo ? `Undo ${what} (Ctrl+Z)` : "Undo (Ctrl+Z)";
-  b.title = u.can_undo ? `Undo ${String(u.undo || "").replace(/_/g, " ")} (Ctrl+Z)` : "Nothing to undo";
+  // what it would undo is one hover away (and in the list beside it)
+  b.title = u.can_undo ? `Undo ${what} (Ctrl+Z)` : "Nothing to undo";
+  b.setAttribute("aria-label", u.can_undo ? `Undo ${what}` : "Undo");
   $("#redo-btn").disabled = !u.can_redo;
   const more = $("#undo-more");
   if (more) more.disabled = !(u.steps || []).length;
@@ -88,7 +92,7 @@ function renderLock() {
   const b = $("#lock-btn");
   b.dataset.state = lk;
   document.body.dataset.lock = lk;              // the panels show it (app.css)
-  $("#lock-label").textContent = lk === "locked" ? "LOCKED" : lk === "operate" ? "OPERATE" : (LOCKS[lk] || LOCKS.design)[0];
+  $("#lock-label").textContent = (LOCKS[lk] || LOCKS.design)[0];
   b.title = (LOCKS[lk] || LOCKS.design)[1];
 }
 
@@ -122,6 +126,15 @@ function renderShow() {
 }
 
 // ------------------------------------------------------------ status bar
+// One thing to know each: a lamp (green: as it should be, amber: worth
+// knowing, red: wrong) and plain words.  The numbers are one hover away.
+const LAMP = { ok: ".go", warn: ".blind", bad: ".live" };
+function item(el, tone, text, title = "") {
+  el.className = "st-item" + (tone ? " " + tone : "");
+  el.replaceChildren(h("i.lamp" + (LAMP[tone] || "")), text);
+  el.title = title;
+}
+
 function renderStatus() {
   const s = state.snap;
   if (!s) return;
@@ -130,48 +143,45 @@ function renderStatus() {
   const out = $("#st-out");
   // the error count is for the whole run; only a recent one is news
   const failing = o.errors && o.recent_error !== false;
-  out.className = st === "live" ? (failing ? "bad" : "ok") : "warn";
-  // plain words first; the numbers are one hover away
-  out.textContent = st === "live"
-    ? (failing ? `● LIVE - ${o.errors} send error(s)` + (o.last_error ? `: ${String(o.last_error).slice(0, 90)}` : "") : "● LIVE - the lights follow the console")
-    : st === "blind" ? "○ BLIND - safe to program, nothing reaches the lights" : "○ Output stopped";
-  out.title = st === "live" ? `${o.frames_sent || 0} frames sent · ${o.hz || 0} Hz`
-    : st === "blind" ? `${o.simulated_frames || 0} frames simulated` : "";
+  // (the title bar already says Blind or Live: this says what that means)
+  item(out, st === "live" ? (failing ? "bad" : "ok") : "warn",
+    st === "live"
+      ? (failing ? `${o.errors} send error${o.errors === 1 ? "" : "s"}` + (o.last_error ? `: ${String(o.last_error).slice(0, 90)}` : "") : "The lights follow the desk")
+      : st === "blind" ? "Safe to program: nothing reaches the lights" : "Output stopped",
+    st === "live" ? `${o.frames_sent || 0} frames sent · ${o.hz || 0} Hz`
+      : st === "blind" ? `${o.simulated_frames || 0} frames simulated` : "");
   // the freeze watchdog: the lights stopped getting frames (and why was saved)
   const stall = o.stall || (o.last_stall && Date.now() / 1000 - (o.last_stall.at || 0) < 600 ? o.last_stall : null);
   if (stall) {
-    out.className = "bad";
-    out.textContent = o.stall ? `⚠ The desk is held up (${stall.seconds} s) - the lights are holding their last look. A report is saved: data/freeze_reports/${stall.report}`
-      : `⚠ The desk was held up for ${stall.seconds} s a moment ago - send data/freeze_reports/${stall.report} so it can be fixed`;
-    out.title = "The desk's output was held up. The report says what held it.";
+    item(out, "bad", o.stall ? `The desk is held up (${stall.seconds} s) - the lights are holding their last look. A report is saved: data/freeze_reports/${stall.report}`
+      : `The desk was held up for ${stall.seconds} s a moment ago - send data/freeze_reports/${stall.report} so it can be fixed`,
+      "The desk's output was held up. The report says what held it.");
   }
   // a backup desk standing by: its output is off on purpose
   const sb = s.standby || {};
   if (sb.following) {
-    out.className = sb.error ? "bad" : "warn";
-    out.textContent = `○ BACKUP DESK - following ${sb.host}` + (sb.error ? ` · ⚠ ${String(sb.error).slice(0, 70)}` : ", output off until it takes over");
+    item(out, sb.error ? "bad" : "warn", `Backup desk, following ${sb.host}` + (sb.error ? `: ${String(sb.error).slice(0, 70)}` : " - output off until it takes over"));
   } else if (sb.took_over && sb.main_back) {
-    out.className = "bad";
-    out.textContent = "⚠ The main desk is back and this backup desk is sending too: stop one of them";
+    item(out, "bad", "The main desk is back and this backup desk is sending too: stop one of them");
   }
   // frame timing: a steady beat, or the lights stutter
   const tm = $("#st-timing");
   const t = o.timing;
   tm.classList.toggle("hidden", !t);
   if (t) {
-    tm.className = t.state === "steady" ? "ok" : t.state === "uneven" ? "warn" : "bad";
-    tm.textContent = t.state === "steady" ? "● smooth" : t.state === "uneven" ? "● a few late frames" : "● frames stuttering";
-    tm.title = `DMX timing, last ${Math.round(t.window * t.period_ms / 1000)} s: every ${t.period_ms} ms; `
+    item(tm, t.state === "steady" ? "ok" : t.state === "uneven" ? "warn" : "bad",
+      t.state === "steady" ? "Smooth" : t.state === "uneven" ? "A few late frames" : "Frames stuttering",
+      `DMX timing, last ${Math.round(t.window * t.period_ms / 1000)} s: every ${t.period_ms} ms; `
       + `slowest gap ${t.worst_ms} ms, ${t.late} late frame(s)`
-      + (t.state === "steady" ? "" : ". Close other screens or heavy programs on this computer.");
+      + (t.state === "steady" ? "" : ". Close other screens or heavy programs on this computer."));
   }
   const net = $("#st-net");
-  net.textContent = `to the DMX node at ${o.host || "?"}`;
+  net.textContent = `${(o.transport || "artnet") === "artnet" ? "Art-Net" : String(o.transport).toUpperCase()} to ${o.host || "?"}`;
   net.title = `${(o.transport || "artnet").toUpperCase()} → ${o.host || ""}`;
   $("#st-last").textContent = state.lastAction || "";
   const stale = s.stale_heads || [];
   if (stale.length) {
-    $("#st-last").textContent = `⚠ cues point at ${stale.length} unpatched fixture(s): ${stale.slice(0, 6).join(", ")}`;
+    $("#st-last").textContent = `Cues point at ${stale.length} unpatched light${stale.length === 1 ? "" : "s"}: ${stale.slice(0, 6).join(", ")}`;
     $("#st-last").className = "st-grow warn";
   } else {
     $("#st-last").className = "st-grow";
@@ -180,8 +190,7 @@ function renderStatus() {
 
 function renderLink() {
   const el = $("#st-feed");
-  el.className = state.connected ? "ok" : "bad";
-  el.textContent = state.connected ? "● connected" : "○ reconnecting…";
+  item(el, state.connected ? "ok" : "bad", state.connected ? "Connected" : "Reconnecting…");
   const banner = $("#banner");
   if (!state.connected && state.linkError && state.everConnected) {
     banner.className = "banner";
@@ -197,7 +206,7 @@ function syncBlind() {
   const el = $("#blind-pill");
   if (!el) return;
   el.hidden = !b.on;
-  el.textContent = b.cue ? `PREVIEW · cue ${b.cue}` : "PREVIEW";
+  el.textContent = b.cue ? `Preview · cue ${b.cue}` : "Preview";
 }
 
 function syncOperator() {
@@ -205,7 +214,7 @@ function syncOperator() {
   const el = $("#op-pill");
   if (!el) return;
   el.hidden = !o.on;
-  el.textContent = o.on ? (o.busy ? "AI RUNNING · thinking…" : "AI RUNNING" + (o.last ? " · " + o.last : "")) : "";
+  el.textContent = o.on ? (o.busy ? "AI running · thinking…" : "AI running" + (o.last ? " · " + o.last : "")) : "";
 }
 
 // Fold the bar a stage at a time (undo's words, then the Copilot / Design
@@ -287,7 +296,6 @@ export function initTopbar() {
     if (await confirmBox("Stop sending", "Stop sending DMX? The rig holds its last look.", { ok: "Stop", danger: true })) run("set_output", { state: 0 }, { toast: true });
   });
   $("#out-state").addEventListener("click", (e) => outputMenu(e.currentTarget));
-  $("#out-state").style.cursor = "pointer";
   $("#undo-btn").addEventListener("click", () => run("undo", {}, { toast: true }));
   // the last changes in words: undo back to any of them (one at a time,
   // newest first, so each comes back with a Ctrl+Shift+Z)

@@ -4975,49 +4975,66 @@ def test_dj_master_and_phrase() -> None:
 
 
 def test_workspaces() -> None:
-    """Workspaces (A10 item 6): ready ones for programming, busking,
-    theatre and running a show, each a sane layout; a damaged saved one
-    can't break the screen; the top bar has the switcher and Alt+1..9."""
-    print("Workspaces: the screen arranged for the job")
+    """The three modes, in one frame: the lights on the left, the work in
+    the middle, the master rail on the right.  Set up has no dock, Program
+    the programmer over it, Live the dock on the whole work area; what a
+    computer saved can't break the screen; F1 / F2 / F3 and the title bar's
+    switch change mode."""
+    print("Modes: one frame, the screen arranged for the job")
     import shutil
     import subprocess
     web = ROOT / "web"
     html = (web / "index.html").read_text(encoding="utf-8")
     src = (web / "app" / "workspaces.js").read_text(encoding="utf-8")
     main = (web / "app" / "main.js").read_text(encoding="utf-8")
-    check("the switcher is in the top bar and starts with the desk", 'id="ws-btn"' in html and "initWorkspaces()" in main)
-    check("Alt+1..9 switches (by the key, so a Mac's Alt symbols don't matter)", "Digit([1-9])" in src)
+    check("the switch is in the title bar and starts with the desk",
+          'id="mode-seg"' in html and "initWorkspaces()" in main and 'id="ws-btn"' not in html)
+    check("no layouts menu, floating panels or 'Workspace:' toast any more",
+          "Workspace:" not in src and "floatAt" not in src and "Digit([1-9])" not in src)
+    check("the frame: side panel, work area, master rail", 'id="work"' in html and 'id="rail"' in html
+          and html.index('id="fixtures-panel"') < html.index('id="work"') < html.index('id="rail"'))
     check("a second window keeps its own layout", "dataset.window" in src)
     node = shutil.which("node")
     if not node:
-        check("(node not installed: the layouts not checked)", True, "")
+        check("(node not installed: the modes not checked)", True, "")
         return
     js = """
 const W = await import(process.argv[1]);
-console.log(JSON.stringify({ ids: W.BUILTIN.map((w) => w.id), ok: W.BUILTIN.map((w) => JSON.stringify(W.clean(w)) === JSON.stringify(w)),
-  bad: W.clean({ id: "x", name: "y".repeat(90), fix: 0, fixW: 5000, progW: 10, bottom: "<b>", dock: -3, tab: "<img>" }),
-  nostage: W.BUILTIN.find((w) => w.id === "nostage"), theatre: W.BUILTIN.find((w) => w.id === "theatre"),
-  grid: W.gridFor(W.clean({ ...W.BUILTIN.find((w) => w.id === "nostage") })),
-  none: W.gridFor(W.clean({ id: "x", fix: false, prog: false, stage: false })) }));
+const f = (s, m) => W.frameFor(s, m);
+console.log(JSON.stringify({ bottoms: W.BOTTOMS, names: W.BOTTOM_NAMES,
+  bad: W.clean({ mode: "<b>", sideW: 5000, workW: 10, tab: "<img>", by: { program: { bottom: "x", max: "yes" }, live: { bottom: "groups" } } }),
+  none: W.clean(null),
+  setup: f({}, "setup"), program: f({}, "program"), live: f({}, "live"),
+  max: f({ by: { program: { max: true } } }, "program"),
+  liveGroups: f({ by: { live: { bottom: "groups" } } }, "live"),
+  progGroups: f({ by: { program: { bottom: "groups" } } }, "program") }));
 """
     url = (web / "app" / "wslayouts.js").as_uri()
     r = subprocess.run([node, "--input-type=module", "-e", js, url], capture_output=True, text=True, timeout=30)
     got = json.loads(r.stdout or "{}") if r.returncode == 0 else {}
-    check("the layouts load in node", r.returncode == 0, r.stderr[-300:])
+    check("the modes load in node", r.returncode == 0, r.stderr[-300:])
     if not got:
         return
-    check("six ready ones: Set up, Live, then programming, theatre, the desk (palettes), no 3D",
-          got["ids"] == ["setup", "live", "programming", "theatre", "desk", "nostage"], str(got["ids"]))
-    check("each ready one is already a clean layout", all(got["ok"]), str(got["ok"]))
+    check("the dock's four tabs: Buttons, Cues, Timeline, Group faders",
+          got["bottoms"] == ["buttons", "faders", "timeline", "groups"]
+          and [got["names"][k] for k in got["bottoms"]] == ["Buttons", "Cues", "Timeline", "Group faders"], str(got["names"]))
     bad = got["bad"]
-    check("a damaged one: widths kept in range, the dock a known mode, no stray markup",
-          bad["fixW"] == 620 and bad["progW"] == 220 and bad["bottom"] == "faders" and bad["dock"] == 0
-          and bad["tab"] == "" and len(bad["name"]) == 40 and bad["fix"] is True, str(bad))
-    check("no 3D: the buttons, the programmer and the fixture list, the programmer takes the 3D's room",
-          got["nostage"]["stage"] is False and got["nostage"]["bottom"] == "buttons"
-          and "stage" not in got["grid"]["areas"] and "minmax(0, 1fr)" in got["grid"]["cols"], str(got["grid"]))
-    check("...no 3D and no panels: the dock fills the screen", got["none"]["areas"] == '"pb"', str(got["none"]))
-    check("Theatre shows the cue list beside the faders", got["theatre"]["cues"] is True)
+    check("a damaged save: widths kept in range, a known mode and tab, no stray markup",
+          bad["mode"] == "program" and bad["sideW"] == 620 and bad["workW"] == 220 and bad["tab"] == ""
+          and bad["by"]["program"] == {"bottom": "buttons", "max": True} and bad["by"]["live"]["bottom"] == "groups", str(bad))
+    check("nothing saved: Program, the dock on Buttons", got["none"]["mode"] == "program"
+          and got["none"]["by"]["program"]["bottom"] == "buttons", str(got["none"]))
+    st, pr, lv = got["setup"], got["program"], got["live"]
+    check("Set up: the lights and its own screen, no dock (nothing plays while setting up)",
+          st["side"] and st["hub"] and not st["dock"] and not st["programmer"], str(st))
+    check("Program: the lights, the programmer over the dock", pr["side"] and pr["programmer"] and pr["dock"] and not pr["max"], str(pr))
+    check("Live: no side panel, the dock on the whole work area, the group faders as a strip, what plays now",
+          not lv["side"] and lv["dock"] and lv["max"] and lv["strip"] and lv["now"] and not lv["programmer"], str(lv))
+    check("the master rail in every mode", st["rail"] and pr["rail"] and lv["rail"])
+    check("Program: the dock can have the whole work area (the programmer hides)",
+          got["max"]["max"] and not got["max"]["programmer"], str(got["max"]))
+    check("Live has the group faders under every tab, so no Group faders tab there",
+          got["liveGroups"]["bottom"] == "buttons" and got["progGroups"]["bottom"] == "groups", str(got["liveGroups"]))
 
 
 def test_bug_report_never_waits_on_git() -> None:
@@ -6137,21 +6154,13 @@ console.log(JSON.stringify(out));
                 e.act("clear_programmer")
         finally:
             e.shutdown()
-    if node:
-        js = r"""
-const W = await import(process.argv[1]);
-console.log(JSON.stringify({ both: W.gridFor(W.clean({ fixAt: "right", progAt: "right", dockAt: "top" })),
-  old: W.gridFor(W.clean({ swap: true })), hidden: W.gridFor(W.clean({ fix: false })) }));
-"""
-        r = subprocess.run([node, "--input-type=module", "-e", js, (ROOT / "web" / "app" / "wslayouts.js").as_uri()],
-                           capture_output=True, text=True, timeout=30)
-        g = _json.loads(r.stdout or "{}") if r.returncode == 0 else {}
-        check("workspaces: both panels on one side (the fixture list at the edge), the dock on top",
-              g.get("both", {}).get("areas") == '"pb pb pb" "stage prog fixtures"' and g["both"]["rows"].startswith("var(--pb-h)"), str(g.get("both")))
-        check("...an old 'swap sides' workspace keeps its look", g.get("old", {}).get("areas") == '"prog stage fixtures" "pb pb pb"')
-        check("...a hidden panel takes no column", g.get("hidden", {}).get("areas") == '"stage prog" "pb pb"')
+    css = desk_css()
     ws = (ROOT / "web" / "app" / "workspaces.js").read_text(encoding="utf-8")
-    check("panels move by dragging their title, or from the workspace menu", "wireMove" in ws and 'place("fixAt"' in ws)
+    pbj = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
+    check("the master rail goes on the left or the right of the screen (kept on this computer)",
+          "body.rail-left .workspace" in css and '"haze.mastersSide"' in pbj)
+    check("the side panel (and, with the 3D, the work area) sizes by its inner edge",
+          'wireGrip($("#fixtures-panel"), "--side-w", 1)' in ws and '"--work-w"' in ws)
 
 
 def test_arrange_turn_and_move() -> None:
@@ -6346,20 +6355,9 @@ def test_batch_e() -> None:
         check("an imported GDTF's gobo slots carry the maker's pictures",
               any(s.get("img", "").startswith("gdtf:") and s["name"] == "Star" for s in slots), str(slots))
 
-    # floating panels: the grid leaves them out, positions are kept
-    node = shutil.which("node")
-    if node:
-        js = (ROOT / "web" / "app" / "wslayouts.js").as_uri()
-        out = subprocess.run([node, "--input-type=module", "-e",
-                              f"import {{gridFor, clean}} from {_json.dumps(js)};"
-                              "const g = gridFor({fixAt: 'float', progAt: 'right'}); const c = clean({fixAt: 'float', fixPos: {x: '40', y: -3}});"
-                              "console.log(JSON.stringify({areas: g.areas, at: c.fixAt, pos: c.fixPos}))"],
-                             capture_output=True, text=True, timeout=30)
-        got = _json.loads(out.stdout or "{}")
-        check("a floating panel takes no column, over the 3D at its kept place",
-              got.get("areas") == '"stage prog" "pb pb"' and got.get("at") == "float" and got.get("pos") == {"x": 40, "y": 0}, out.stdout + out.stderr)
-    ws = (ROOT / "web" / "app" / "workspaces.js").read_text(encoding="utf-8")
-    check("...dragged anywhere over the 3D, or near a side to dock", "dropAt(" in ws and '"float"' in ws)
+    # every part has its place in the frame: nothing floats over the 3D
+    check("no floating panels: every part has its place in the frame", '[data-side="float"]' not in desk_css()
+          and "floatAt" not in (ROOT / "web" / "app" / "workspaces.js").read_text(encoding="utf-8"))
     sj = stage_js()
     check("lens flare: a streak through a lens that faces the camera", "streakMap" in sj and "b.streak" in sj)
     rc = (ROOT / "tools" / "rulecheck.py").read_text(encoding="utf-8")
@@ -7398,17 +7396,16 @@ def test_modes_and_checkin() -> None:
 
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     ws = (ROOT / "web" / "app" / "workspaces.js").read_text(encoding="utf-8")
-    check("the top bar switches Set up / Program / Live; the hub sits where the programmer is",
+    check("the title bar switches Set up / Program / Live; Set up's screen sits where the programmer is",
           'id="mode-seg"' in html and all(f'data-mode="{m}"' in html for m in ("setup", "program", "live"))
-          and 'id="mode-hub"' in html and "b.dataset.mode = w.mode" in ws and "export function useMode" in ws, "")
+          and 'id="mode-hub"' in html and "b.dataset.mode = f.mode" in ws and "export function useMode" in ws, "")
     check("a new, empty show opens in Set up", "useMode(\"setup\")" in ws and "(state.snap.patch || []).length" in ws, "")
     node = shutil.which("node")
     if node:
         app = (ROOT / "web" / "app").as_uri()
         js = (f"const W=await import('{app}/wslayouts.js');const R=await import('{app}/rigmatch.js');"
-              "const b=Object.fromEntries(W.BUILTIN.map(w=>[w.id,W.clean(w)]));"
-              "console.log(JSON.stringify({modes:Object.values(b).map(w=>w.id+':'+w.mode),"
-              "setupRows:W.gridFor(b.setup).rows,setupAreas:W.gridFor(b.setup).areas,progRows:W.gridFor(b.programming).rows,"
+              "console.log(JSON.stringify({modes:W.MODES,"
+              "setup:W.frameFor({},'setup'),prog:W.frameFor({},'program'),"
               "old:W.clean({id:'u1',name:'Mine'}).mode,"
               "kinds:['Chauvet DJ SlimPAR Q12','ADJ Mega Par Profile','Moving Head Spot 16ch','RGBW Bar 12ch','Clay Paky Sharpy','ETC Source Four 26'].map(R.kindOf),"
               "pairs:R.pairUp([{head:5,model:'LED PAR 4ch',channels:4},{head:6,model:'Moving Head Spot 16ch',channels:16},{head:7,model:'Hazer'}],"
@@ -7416,11 +7413,10 @@ def test_modes_and_checkin() -> None:
               "chips:R.connectionChips({tempo:{prodj:true,decks:2,master_deck:1},osc:{on:true,port:8000,count:3},hue:{paired:true,links:4},standby:{following:true,host:'10.0.0.2:8787'}},[{name:'APC mini mk2',layout:'Akai APC mini'}]).map(c=>c.text),"
               "quiet:R.connectionChips({tempo:{prodj:true,decks:0}}).map(c=>c.k+':'+c.text),none:R.connectionChips({}).length}))")
         out = json.loads(subprocess.run([node, "--input-type=module", "-e", js], capture_output=True, text=True, encoding="utf-8", timeout=30).stdout or "{}")
-        check("the ready workspaces: Set up and Live modes, the rest Program",
-              "setup:setup" in out.get("modes", []) and "live:live" in out.get("modes", [])
-              and "programming:program" in out.get("modes", []) and out.get("old") == "program", out.get("modes"))
-        check("Set up has no faders row (nothing plays while setting up)",
-              out.get("setupRows") == "minmax(0, 1fr)" and "pb" not in out.get("setupAreas", "") and "var(--pb-h)" in out.get("progRows", ""), out)
+        check("three modes: Set up, Program, Live (an older saved layout opens in Program)",
+              out.get("modes") == ["setup", "program", "live"] and out.get("old") == "program", out.get("modes"))
+        check("Set up has no dock (nothing plays while setting up); Program has",
+              out.get("setup", {}).get("dock") is False and out.get("prog", {}).get("dock") is True, out)
         check("a light's kind from its name (a 'Par Profile' is a PAR, a Source Four a spot)",
               out.get("kinds") == ["par", "par", "spot", "bar", "beam", "spot"], out.get("kinds"))
         check("check-in pairs each missing light with one of its kind found here, each found light once",
@@ -8161,14 +8157,17 @@ def test_b6_layouts() -> None:
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     ws = (web / "workspaces.js").read_text(encoding="utf-8")
     st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
-    check("a layout with no 3D view (and the 3D stops drawing)", "ws-nostage" in ws
-          and "body.ws-nostage .stage-wrap { display: none; }" in css and 'classList.contains("ws-nostage")' in st, "")
-    check("full-screen buttons: pages, Edit, Layout and a Blackout of their own", 'id="qb-bo"' in html and ".qb.qb-full .qb-bo" in css, "")
-    check("small screens: the dock follows the window, group faders fold and scroll, 5 fixture rows, panel minimums",
-          "clamp(140px, 27vh, 196px)" in css and 'id="grp-fold-btn"' in html and ".grp-masters.folded" in css
-          and ".fx-table-wrap { min-height: 150px; }" in css and ".fixtures, .programmer, .modehub { min-width: 220px; }" in css, "")
-    check("Live on 1280 x 720: one BLACKOUT (the dock's), hits, tempo and autopilot first", ".live-bo { display: none; }" in css
-          and ".hub-body.live .live-bo { display: flex" not in css, "")
+    qbj = (web / "quickbuttons.js").read_text(encoding="utf-8")
+    check("no 3D in the desk's window: no 3D column (the 3D opts in), and the 3D stops drawing", "ws-nostage" in ws
+          and ".workspace > .stage-wrap { grid-area: stage; display: none; }" in css
+          and ":root.has3d .workspace > .stage-wrap { display: block; }" in css and 'classList.contains("ws-nostage")' in st, "")
+    check("Live: the buttons on the whole work area - no separate full-screen page; its key fills the monitor",
+          'id="qb-faders"' not in html and "qb-fullscreen" not in css and 'id="qb-full"' in html and "requestFullscreen" in qbj, "")
+    check("small screens: the dock follows the window, group faders fold and scroll, 5 fixture rows, the side panel's minimum",
+          "--dock-def: clamp(" in css and 'id="grp-fold-btn"' in html and ".grp-dock.folded" in css
+          and ".fx-table-wrap { min-height: 150px; }" in css and "--side-w: clamp(calc(264px * var(--ctl))" in css, "")
+    check("one BLACKOUT on screen, on the master rail, in every mode", html.count('id="bo-btn"') == 1 and 'id="qb-bo"' not in html
+          and ".live-bo" not in css and html.index('id="rail"') < html.index('id="bo-btn"'), "")
     pb = (web / "playbacks.js").read_text(encoding="utf-8")
     check("Theatre: the cue list beside the faders, a tap is GO to that cue", 'id="pb-cues"' in html and "function renderCues" in pb
           and '"cue_go"' in pb, "")
@@ -8376,8 +8375,9 @@ def test_led_sfx() -> None:
     check("the programmer shows Colour and Level for an effects machine with LEDs",
           'hd.body.class === "sfx" && (hd.map || []).some((r) => LED_ROLES.has(r))' in pj, "")
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
-    check("full screen has its own ARM FX and KILL FX (the top bar is hidden there)",
-          'id="qb-arm"' in html and 'id="qb-kill"' in html and "export function toggleArm" in (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8"), "")
+    check("Arm FX and Kill FX: always in the title bar (no screen hides it any more)",
+          'id="fx-arm"' in html and 'id="fx-kill"' in html and 'id="qb-arm"' not in html
+          and "export function toggleArm" in (ROOT / "web" / "app" / "fxpanel.js").read_text(encoding="utf-8"), "")
 
 
 def test_lights_fader() -> None:
@@ -8494,7 +8494,7 @@ def test_lights_fader() -> None:
     check("the screen: Effect speed and Strobe speed faders; a group's menu puts its faders on the page",
           '"Effect speed"' in qb and '"Strobe speed"' in qb and "faderHome" in qb and "qmini" in qb
           and "state.lite.master" in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
-          and "renderSideFaders" in qb and "stripMenu" in qb and "haze.qbStrip" in qb and '!b.note ? null : h("small", b.note)' in qb and '"Description"' in qb and 'id="qb-faders"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+          and '!b.note ? null : h("small", b.note)' in qb and '"Description"' in qb and 'id="grp-dock"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
           and "quick_group_controls" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8"), "")
     css = desk_css()
     check("a fader tile shows its name: on the value's line, two lines when tall, one line in S rows",
@@ -9322,7 +9322,9 @@ def test_desk_view() -> None:
     check("the windows: Group, Position, Colour, Beam; the strip: select, flip, record, windows, keypad",
           all(k in dv for k in ('"Group"', '"position", "Position"', '"colour", "Colour"', '"beam", "Beam"',
                                 '"select_step"', '"flip"', '"run_command"', "ENTER", "openCueList")), "")
-    check("the Desk workspace opens on it", 'id: "desk"' in ws and 'tab: "desk"' in ws, "")
+    wsj = (ROOT / "web" / "app" / "workspaces.js").read_text(encoding="utf-8")
+    check("the programmer's Palettes tab, and the desk keeps the tab you left", 'data-tab="desk"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+          and "sel.dataset.tab" in wsj and "saved.tab" in wsj and "export const BOTTOMS" in ws, "")
     pl = (ROOT / "web" / "app" / "plot.js").read_text(encoding="utf-8")
     check("the plot: Plan / Front / Side, head numbers / names / DMX, click and box select, Design mode moves lights",
           all(k in pl for k in ('"plan", "Plan"', '"front", "Front"', '"side", "Side"', '"nos", "Head numbers"',
@@ -10037,7 +10039,6 @@ def test_touch_surface() -> None:
           "if (dragging !== null) return;" in ui and "if (finger !== null) return;" in qb
           and "if (down !== null) return;" in qb
           and "if (finger !== null) return;" in (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
-          and "if (finger !== null) return;" in (ROOT / "web" / "app" / "modehub.js").read_text(encoding="utf-8")
           and "if (finger !== null) return;" in (ROOT / "web" / "app" / "wheels.js").read_text(encoding="utf-8"), "")
     check("a finger held on a live button opens no menu (the mouse's right-click still does)",
           "if (!byTouch(e)) speedMenu(el, b)" in qb and "export const byTouch" in ui, "")
@@ -10166,7 +10167,8 @@ def test_screen_sizes() -> None:
     css = desk_css()
     check("1440p-class and 4K-class breakpoints", "@media (min-width: 2200px) and (min-height: 1250px)" in css
           and "@media (min-width: 3000px) and (min-height: 1700px)" in css and "--ts-base: 1.15" in css and "--ts-base: 1.45" in css, "")
-    check("...each with wider panels and a taller dock", css.count("--fixtures-w: clamp(") >= 3 and css.count("--pb-h: clamp(") >= 6, "")
+    check("...each with wider panels and a taller dock (they grow with the step)",
+          "--side-w: clamp(calc(264px * var(--ctl))" in css and css.count("--dock-def: clamp(calc(") >= 3 and "--rail-w: calc(104px * var(--ctl))" in css, "")
     left = re.findall(r"font-size: \d+(?:\.\d+)?px|font: [^;{}]*?(?<![\w.(])\d+(?:\.\d+)?px(?! \* var)", css)
     check("every text size follows the screen (no fixed px text left)", not left, str(left[:5]))
     check("control heights follow it too", "--h: calc(28px * var(--ctl))" in css and "--row: calc(28px * var(--ctl))" in css
@@ -10198,8 +10200,9 @@ def test_desktop_frame() -> None:
           and 'ipcMain.on("win:run"' in mj and 'act: (what) => ipcRenderer.send("win:do"' in pj, "")
     check("minimise / maximise / close on the top bar, the logo opens the Desk menu",
           'btn("min", "Minimise"' in wc and 'btn("close", "Close"' in wc and "openDeskMenu(brand)" in wc, "")
-    check("the bar moves the window, its buttons stay clickable", ".frameless .topbar, .frameless[data-window=\"stage\"] .vis-bar { -webkit-app-region: drag; }" in css
-          and ".frameless .topbar > *, .frameless .vis-bar > * { -webkit-app-region: no-drag; }" in css, "")
+    check("the bar moves the window, its buttons stay clickable", ".frameless .topbar { padding-right: 0; -webkit-app-region: drag; }" in css
+          and ".frameless .topbar > * { -webkit-app-region: no-drag; }" in css
+          and '.frameless[data-window="stage"] .vis-bar { -webkit-app-region: drag;' in css and ".frameless .vis-bar > * { -webkit-app-region: no-drag; }" in css, "")
     check("the 3D window comes to the front, and can be kept on top", "win.moveTop();" in mj and "win.focus();" in mj
           and '"Keep the 3D view on top"' in mj and 'setAlwaysOnTop(!!on, "floating")' in mj, "")
     mn = (ROOT / "web" / "app" / "main.js").read_text(encoding="utf-8")
@@ -10352,7 +10355,7 @@ def test_room_by_pointing() -> None:
     check("a palette tile is lit only while the selection holds it, and a second tap takes it off",
           "const lit = paletteOn(kind, p);" in pj and 'if (lit) run("clear_attrs"' in pj and ".pal-item.on {" in css, "")
     check("a wide programmer: room map + pan/tilt pad side by side, the pad keeps its shape, swatches stay swatch-sized",
-          ".programmer { container-type: inline-size; }" in css and ".mv-pt .pad { width: 100%; aspect-ratio: 1.6;" in css
+          ".work > .programmer { flex: 1 1 auto; container-type: inline-size; }" in css and ".mv-pt .pad { width: 100%; aspect-ratio: 1.6;" in css
           and "repeat(auto-fill, minmax(calc(40px * var(--ctl)), calc(60px * var(--ctl))))" in css, "")
 
     from app import engine as eng
@@ -10392,9 +10395,9 @@ def test_room_by_pointing() -> None:
 
     pb = (ROOT / "web" / "app" / "playbacks.js").read_text(encoding="utf-8")
     css = desk_css()
-    check("the dock's master faders: a grip sizes the group faders (nearly shut folds them), they go left or right, no fold button",
+    check("Live's group faders: a grip sizes the strip (nearly shut folds it), the master rail goes left or right, no fold button",
           'class="grp-grip" id="grp-fold-btn"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
-          and '"haze.grpW"' in pb and '"haze.mastersSide"' in pb and "body.masters-left .masters" in css, "")
+          and '"haze.grpH"' in pb and '"haze.mastersSide"' in pb and "body.rail-left .workspace" in css, "")
 
     from app import engine as eng
     with tempfile.TemporaryDirectory() as td:
@@ -10551,7 +10554,9 @@ def test_visual_polish() -> None:
     check("one look for selected / on (chips, segments, tabs, toggles, tiles)",
           "--sel-bg:" in css and css.count("background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-fg);") >= 15, "")
     mh = (web / "modehub.js").read_text(encoding="utf-8")
-    check("Live: Now, Tempo and Autopilot in one compact band", 'h("div.live-band"' in mh and "div.live-pair" not in mh and ".lb-cells {" in css, "")
+    check("Live: what plays now in one slim strip above the buttons, only while something plays",
+          'h("div.hub-body.live.now"' in mh and 'box.classList.toggle("quiet", !busy)' in mh
+          and "body[data-mode=\"live\"] .work > .modehub.quiet { display: none; }" in css and ".lb-cells {" not in css, "")
     ui = (web / "ui.js").read_text(encoding="utf-8")
     check("a menu item's description sits under it; a key or a count stays at the right",
           'h("small.mi-desc", it.hint)' in ui and "String(it.hint).length > 14" in ui, "")
@@ -10645,7 +10650,7 @@ def test_dock_and_desk_fit() -> None:
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     check("a fader's cap travels inside its track", "cap.style.bottom = `calc((100% - var(--cap-h)) * ${pct})`" in ui and "--cap-h:" in css, "")
     check("group faders: a finger's width each, full names, a strip that scrolls and fades where more wait",
-          ".grp-masters > .master.grp { flex: none; width:" in css and 'h("span.m-name", g.name)' in pb
+          ".master.grp { flex: 1 0 calc(118px * var(--ctl));" in css and 'h("span.m-name", g.name)' in pb
           and "function scrollHints()" in pb and ".grp-masters.more-r" in css, "")
     check("only the playbacks in use show, and one + after them; a card never taller than the dock",
           "const shown = new Set(page.filter((pb) => (pb.stack || []).length || pb.n === plus)" in pb
@@ -10705,9 +10710,6 @@ def test_programmer_overhaul() -> None:
           and "--ts: calc(var(--ts-base) * var(--ts-user) * var(--ts-gig))" in css
           and "TEXT_SCALE" in (web / "theme.js").read_text(encoding="utf-8"), "")
     check("the programmer's foot doesn't move (the why is a tooltip)", 'if (w) w.textContent = "";' in pj, "")
-    check("a floating programmer keeps a size (no 3D view: the workspace's area) and sizes by its corner",
-          "if (st.width < 200 || st.height < 200)" in (web / "workspaces.js").read_text(encoding="utf-8")
-          and '.programmer[data-side="float"] { resize: both;' in css.replace(".fixtures[data-side=\"float\"], ", ""), "")
     check("Pan / Tilt / Dimmer knobs on Palettes (a window of their own)", "export function mountWheels(box, list)" in (web / "wheels.js").read_text(encoding="utf-8"), "")
     dv = (web / "deskview.js").read_text(encoding="utf-8")
     check("desk view windows follow the pointer pixel by pixel (an outline shows where they land)",
@@ -10731,8 +10733,8 @@ def test_programmer_overhaul() -> None:
     wh = (web / "wheels.js").read_text(encoding="utf-8")
     check("a wheel the selection doesn't have is greyed in its place (the row never shifts)", 'el.classList.add("off")' in wh and ".wheel.off {" in css, "")
     ws = (web / "workspaces.js").read_text(encoding="utf-8")
-    check("the workspace menu stays open for layout toggles; no 3D view toggle there", "keep: again" in ws and '"3D view", hint: "show or hide' not in ws
-          and "if (it.keep) {" in (web / "ui.js").read_text(encoding="utf-8"), "")
+    check("no layouts menu: the three modes are the switch, and no 3D view toggle hides in a menu",
+          "function openMenu" not in ws and '"3D view", hint: "show or hide' not in ws, "")
     check("Palettes has a 3D view button (the desktop app's 3D window, or a window of its own)", "export function open3d()" in (web / "view3d.js").read_text(encoding="utf-8")
           and "m.open3d()" in dv, "")
 
