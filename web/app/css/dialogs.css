@@ -410,3 +410,18 @@ body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after { content: "Lo
 .remote-card > div { display: grid; gap: 4px; min-width: 0; }
 .remote-url { font-size: var(--t); user-select: all; overflow-wrap: anywhere; }
 .remote-tips { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+
+.dmx-map { display: flex; flex-direction: column; gap: 14px; max-height: 70vh; overflow: auto; }
+.dmx-uni h4 { margin: 0 0 6px; }
+.dmx-uni h4 small { color: var(--text-3); font-weight: 400; }
+.dmx-grid { display: grid; grid-template-columns: repeat(32, 1fr); gap: 2px; max-width: 760px; }
+.dmx-grid i { aspect-ratio: 1; border-radius: 2px; background: var(--hover); display: block; }
+.dmx-grid i.clash { background: var(--live); box-shadow: 0 0 0 1px var(--text) inset; }
+.dmx-list { display: flex; flex-direction: column; gap: 4px; font-size: var(--t); }
+.dmx-row { display: grid; grid-template-columns: 12px 110px 1fr 50px auto; gap: 10px; align-items: center; min-height: calc(30px * var(--ctl)); }
+.dmx-row i { width: 12px; height: 12px; border-radius: 3px; display: block; }
+.dmx-row.bad span:nth-child(3) { color: var(--live-ink); font-weight: 600; }
+.clash-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.clash-row span { flex: 1 1 140px; }
+.ct-list { max-height: 50vh; overflow: auto; margin-top: 10px; display: grid; gap: 8px; }
+.ct-item { padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; display: grid; gap: 6px; }

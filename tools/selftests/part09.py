@@ -8165,7 +8165,7 @@ def test_b6_layouts() -> None:
           'id="qb-faders"' not in html and "qb-fullscreen" not in css and 'id="qb-full"' in html and "requestFullscreen" in qbj, "")
     check("small screens: the dock follows the window, group faders fold and scroll, 5 fixture rows, the side panel's minimum",
           "--dock-def: clamp(" in css and 'id="grp-fold-btn"' in html and ".grp-dock.folded" in css
-          and ".fx-table-wrap { min-height: 150px; }" in css and "--side-w: clamp(calc(264px * var(--ctl))" in css, "")
+          and ".fx-table-wrap { position: relative; flex: 1; min-height: 150px;" in css and "--side-w: clamp(calc(264px * var(--ctl))" in css, "")
     check("one BLACKOUT on screen, on the master rail, in every mode", html.count('id="bo-btn"') == 1 and 'id="qb-bo"' not in html
           and ".live-bo" not in css and html.index('id="rail"') < html.index('id="bo-btn"'), "")
     pb = (web / "playbacks.js").read_text(encoding="utf-8")

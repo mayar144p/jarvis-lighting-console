@@ -6,6 +6,7 @@ import { openAddDialog, openChannels, openProfileEditor, openCsvImport, openMoti
 import { post, get } from "./api.js";
 import { isDrawn, modelDefs } from "./real3d.js";
 import { openBugReport } from "./bugreport.js";
+import { groupColour } from "./groupcolour.js";
 
 let anchor = null;                 // last plain-clicked head, for shift ranges
 let filterText = "";
@@ -124,24 +125,15 @@ try { openFolders = new Set(JSON.parse(localStorage.getItem("haze.openFolders") 
 const keepFolders = () => { try { localStorage.setItem("haze.openFolders", JSON.stringify([...openFolders])); } catch (e) { /* fine */ } };
 const userGroups = () => (state.snap && state.snap.groups) || [];
 
-function folderIcon(open) {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("class", "folder-ic");
-  svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", open ? "M1.5 4.5V12a1 1 0 001 1h10.2a1 1 0 00.95-.68L15 8H4.3a1 1 0 00-.95.68L1.5 13M1.5 4.5v-1a1 1 0 011-1h3l1.5 1.5h5a1 1 0 011 1V8"
-    : "M1.5 3.5a1 1 0 011-1h3.2l1.5 1.5h6.3a1 1 0 011 1v7a1 1 0 01-1 1h-11a1 1 0 01-1-1z");
-  svg.append(path);
-  return svg;
-}
-
 function folderRow(g, members, open) {
+  // the group's colour (as on its fader and on the phone), where a folder icon was
+  const sq = h("i.grp-sq", { "aria-hidden": "true" });
+  sq.style.setProperty("--c", groupColour(g, userGroups().indexOf(g)));
   return h("tr.folder" + (open ? ".open" : ""), { dataset: { group: g.n, fold: members.map((x) => x.head_no).join(","), head: members[0].head_no } },
     h("td.c-name", { colSpan: 3 }, h("div.folder-line",
-      h("button.fold-btn", { title: open ? "Close the folder" : "Open the folder", "aria-label": open ? `Close ${g.name}` : `Open ${g.name}`,
+      h("button.fold-btn", { title: open ? "Close the group" : "Show its lights", "aria-label": open ? `Close ${g.name}` : `Open ${g.name}`,
         "aria-expanded": open ? "true" : "false" }, open ? "▾" : "▸"),
-      folderIcon(open),
+      sq,
       h("b.folder-name", { title: `Select the ${members.length} light(s) in ${g.name} - hover to see them in the 3D view` }, g.name),
       h("span.folder-count", String(members.length)))));
 }
