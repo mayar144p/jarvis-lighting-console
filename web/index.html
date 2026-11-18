@@ -17,6 +17,7 @@
 <link rel="stylesheet" href="/app/css/base.css">
 <link rel="stylesheet" href="/app/css/parts.css">
 <link rel="stylesheet" href="/app/css/shell.css">
+<link rel="stylesheet" href="/app/css/buttons.css">
 <script>/* a phone opening the desk gets the remote (web/remote.html): the full desk needs a big screen.  ?desk=1 keeps the desk. */try{var q=new URLSearchParams(location.search);if(q.get("desk")==="1")sessionStorage.setItem("haze.fulldesk","1");var sm=Math.min(screen.width,screen.height)<600,touch=matchMedia("(pointer: coarse)").matches&&!matchMedia("(pointer: fine)").matches;if(sm&&touch&&!sessionStorage.getItem("haze.fulldesk")){var t=sessionStorage.getItem("haze.token");if(t)sessionStorage.setItem("haze.remote.code",t);if(q.get("code"))q.set("code",q.get("code"));q.delete("window");var s=q.toString();location.replace("/remote.html"+(s?"?"+s:""));}}catch(e){}</script>
 <script type="importmap">
 { "imports": { "three": "/vendor/three/three.webgpu.js",
@@ -449,11 +450,14 @@
           <div class="qb-pages" id="qb-pages" role="group" aria-label="Button pages"></div>
           <button class="btn small" id="qb-suggest" hidden title="Fill this page with buttons that suit your rig">Suggest buttons</button>
           <span class="grow"></span>
+          <span class="tool-group">
           <label class="qb-quant" title="Every button fires on the next beat or bar of the tempo (a button can say otherwise in Edit); pressed just after the beat, it fires straight away"><span>On the beat</span>
             <select class="select small" id="qb-quant"><option value="0">Off</option><option value="0.5">½ beat</option><option value="1">Beat</option><option value="2">2 beats</option><option value="4">Bar</option><option value="8">2 bars</option><option value="16">4 bars</option><option value="32">Phrase (8 bars)</option></select></label>
           <button class="btn small live-only" id="qb-autopilot" title="Autopilot: a cue list plays itself, a new look on the phrase">Autopilot…</button>
           <button class="btn small" id="qb-release" title="Let go of every latched button">Release buttons</button>
           <button class="btn small ghost qb-profile" id="qb-profile" aria-haspopup="menu" title="Button profiles: a whole set of pages for a kind of show (Default, Halloween...)">Default</button>
+          </span>
+          <span class="tool-group">
           <span class="tb-sep" aria-hidden="true"></span>
           <button class="btn small ghost" id="qb-colrow" hidden title="A row of colour buttons for some lights: pressing one turns the others off">Colour row…</button>
           <button class="btn small ghost" id="qb-pages-btn" hidden title="Every page: name, order, add, empty">Pages…</button>
@@ -463,6 +467,7 @@
             <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></svg></button>
           <button class="btn small ghost icon live-only" id="qb-full" aria-label="Full screen" title="The desk on the whole monitor (Esc to leave)">
             <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg></button>
+          </span>
         </div>
         <div class="dock-tools" data-for="faders" hidden>
           <div class="pb-pages" id="pb-pages" role="group" aria-label="Playback pages"></div>
@@ -497,6 +502,8 @@
           <div class="pb-mini" id="pb-mini" hidden></div>
           <div class="qb-body">
             <div class="qb-grid" id="qb-grid"></div>
+            <!-- Edit page: a button's settings, beside the page -->
+            <aside class="qb-inspector" id="qb-inspector" hidden aria-label="Button settings"></aside>
           </div>
         </div>
         <div class="tl" id="tl" hidden>

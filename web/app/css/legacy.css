@@ -296,36 +296,12 @@ body.arranging #arrange-btn { color: #fbbf24; border-color: rgba(251, 191, 36, .
 
 .pb-strip { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(calc(118px * var(--ctl)), 1fr); gap: 1px; overflow-x: auto; background: var(--border); }
 
-.qb { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 6px 8px; gap: 6px; overflow: hidden; }
 /* the bar never runs under the faders beside it: it wraps onto a second
    line when the dock is narrow, and many pages scroll in their own strip */
 
 /* Release all lets go of every latched button: outlined in red, apart from Lock */
 
 /* Live: the page's playbacks as small executors above the buttons */
-.pb-mini { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 6px; }
-body:not([data-mode="live"]) .pb-mini { display: none; }
-.pbm { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 6px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.pbm[hidden] { display: none; }
-.pbm.active { border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
-.pbm-top { display: flex; gap: 5px; align-items: baseline; min-width: 0; }
-.pbm-n { font: 700 var(--fs-xs) var(--mono); color: var(--muted); }
-.pbm-top b { font-size: var(--fs-s); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pbm small { font-size: var(--fs-s); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pbm-bar { height: 4px; background: var(--border-2); border-radius: 2px; overflow: hidden; }
-.pbm-lvl { display: block; height: 100%; background: var(--accent); }
-.pbm-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
-.pbm-btns button { height: calc(34px * var(--ctl)); border-radius: 5px; border: 1px solid var(--border-2); background: var(--surface-3); font-weight: 700; font-size: var(--fs-s); display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
-.pbm-go { background: color-mix(in srgb, var(--ok) 18%, var(--surface-2)) !important; border-color: color-mix(in srgb, var(--ok) 55%, transparent) !important; color: #86efac; }
-.pbm-flash.on { background: var(--text); color: var(--bg); }
-body.gig .pbm-btns button { height: calc(44px * var(--ctl)); }
-.qb-grid { flex: 1; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); grid-auto-rows: 1fr; gap: 6px; min-height: 0; }
-.qbtn b { font-weight: 700; line-height: 1.15; text-align: center; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.qbtn:hover { border-color: var(--tint); }
-.qbtn.down, .qbtn.on { background: var(--tint); color: var(--bg); border-color: var(--tint); box-shadow: 0 0 18px color-mix(in srgb, var(--tint) 60%, transparent); }
-.qbtn.down small, .qbtn.on small { color: rgba(11, 11, 13, .7); }
-.qbtn.pending { outline: 2px dashed var(--tint); outline-offset: -4px; animation: qb-wait .25s steps(2) infinite; }
-@keyframes qb-wait { 50% { outline-color: transparent; } }
 
 /* timeline */
 
@@ -371,11 +347,7 @@ body.gig .pbm-btns button { height: calc(44px * var(--ctl)); }
 .lvl-key { position: absolute; width: 11px; height: 11px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--ok); border: 2px solid #052e16; cursor: grab; touch-action: none; }
 .tl-playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: #f43f5e; z-index: 3; pointer-events: none; box-shadow: 0 0 8px rgba(244,63,94,.7); }
 .tl-hint { margin: 0; color: var(--muted); font-size: var(--fs-xs); }
-.qb-empty { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
-  border: 1px dashed var(--border-2); border-radius: var(--radius); color: var(--text-2); text-align: center; padding: 16px; }
-.qb-empty b { color: var(--text); font-size: var(--fs-l); }
-.qbtn.empty { background: transparent; border-style: dashed; border-color: var(--border-2); color: var(--muted); font-size: var(--fs-xl); }
-.qbtn.empty.blank { border-color: transparent; cursor: default; }
+
 /* Edit: the spare "+" tab (a new page), and a tab a dragged button can be dropped on */
 
 /* executors: ten slots, always in their place */
@@ -746,9 +718,6 @@ body.gig .pb .pb-lvl { width: calc(44px * var(--ctl)); }
 .qe-name, .qe-tag { width: 100%; }
 .qe-num { width: calc(130px * var(--ctl)); }
 .qe-note { font-size: var(--fs-s); color: var(--muted); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.qbtn.drop { outline: 2px dashed var(--accent); outline-offset: 2px; }
-.qbtn[draggable="true"] { cursor: grab; }
-.qbtn small { color: var(--muted); font-size: var(--fs-xs); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* programmer tabs: one row, an icon over each word, equal widths - never
    a second row, never hidden off the edge */
@@ -871,8 +840,7 @@ body.gig .btn.small { min-height: calc(40px * var(--ctl)); }
 body.gig .btn.icon { min-width: calc(44px * var(--ctl)); }
 body.gig .chip { height: auto; min-height: calc(40px * var(--ctl)); padding: 0 14px; font-size: var(--fs-m); border-radius: 20px; }
 body.gig .tabs button { height: calc(44px * var(--ctl)); padding: 0 12px; font-size: var(--fs-l); }
-body.gig .qbtn { min-height: calc(64px * var(--ctl)); }
-body.gig .qbtn small { font-size: var(--fs-xs); }
+
 body.gig .quick button { height: calc(44px * var(--ctl)); font-size: var(--fs-l); }
 body.gig .row-menu { opacity: 1; }
 body.gig .fx-table td { height: calc(48px * var(--ctl)); }
@@ -979,32 +947,16 @@ body.gig .seg button { min-height: calc(40px * var(--ctl)); }
 .cue-table input[type="text"] { font-weight: 600; }
 .cue-table th { vertical-align: middle; }
 .cue-table th svg { width: 13px; height: 13px; vertical-align: -2px; }
-.qbtn { --tint: #9a9aa6;
-  position: relative; border: 1px solid color-mix(in srgb, var(--tint) 45%, transparent); border-radius: 8px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--tint) 16%, #0e131b), #0b0f15);
-  color: var(--text); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px;
-  font-size: var(--fs-s); min-height: calc(40px * var(--ctl)); padding: 4px; touch-action: none; user-select: none; overflow: hidden; position: relative; }
-.qkey { position: absolute; top: 4px; right: 5px; font: 700 var(--fs-xs) var(--mono); padding: 1px 4px; border-radius: 4px; border: 1px solid var(--border-2); color: var(--muted); background: rgba(0, 0, 0, .3); }
+
 .qe-key { width: calc(56px * var(--ctl)); text-align: center; text-transform: uppercase; font-weight: 700; }
 /* tile icons and big tiles */
-.qicon { width: calc(18px * var(--ctl)); height: calc(18px * var(--ctl)); flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; color: var(--tint); }
-.qbtn.on .qicon, .qbtn.down .qicon { color: var(--bg); }
-.qbtn.qbig b { font-size: 1.25em; }
-.qbtn.qbig .qicon { width: calc(30px * var(--ctl)); height: calc(30px * var(--ctl)); }
+
 .qe-icons { display: flex; flex-wrap: wrap; gap: 6px; }
 .qe-icon { min-width: calc(40px * var(--ctl)); height: calc(40px * var(--ctl)); display: grid; place-items: center; border-radius: 8px; border: 1px solid var(--border-2); background: transparent; color: var(--text); --tint: var(--text); }
 .qe-icon.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
-.qline { display: flex; align-items: center; justify-content: center; gap: 5px; max-width: 100%; min-width: 0; }
-.qline .qicon { width: 15px; height: 15px; }
-.qbtn.qbig .qline { flex-direction: column; gap: 4px; }
-.qbtn.qbig .qline .qicon { width: calc(30px * var(--ctl)); height: calc(30px * var(--ctl)); }
+
 .qe-note.warn { color: var(--warn, var(--blind)); }
-.qbtn.qwide b { font-size: 1.15em; }
-.qbtn.qwide .qline .qicon { width: calc(18px * var(--ctl)); height: calc(18px * var(--ctl)); }
-.qbtn.on .qrate, .qbtn.down .qrate { color: rgba(11, 11, 13, .75); }
-.qrate.one { display: none; }
-body.gig .qrate { display: inline-block; bottom: 2px; right: 2px; padding: 6px 8px; font-size: var(--fs-xs); border-radius: 6px; border: 1px solid color-mix(in srgb, var(--tint) 50%, transparent); background: rgba(0, 0, 0, .35); }
-.qrate { position: absolute; bottom: 3px; right: 5px; font: 700 var(--fs-xs) var(--mono); color: var(--tint); cursor: pointer; }
+
 .dv-tile.flashing { background: #fff; color: var(--bg); box-shadow: 0 0 14px rgba(255,255,255,.6); }
 .cue-fx { font-size: var(--fs-xs); color: var(--accent); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
 .cue-parts { margin-left: 4px; font-size: var(--fs-xs); padding: 2px 6px; }
@@ -1192,58 +1144,16 @@ tr.parked td:first-child::after { content: " P"; color: #fbbf24; font-weight: 80
 .swatch-mini { width: calc(24px * var(--ctl)); height: calc(24px * var(--ctl)); border-radius: 6px; border: 2px solid var(--border); cursor: pointer; }
 .swatch-mini.on { background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-fg); }
 /* buttons page: control tiles */
-.qctl { cursor: default; display: flex; flex-direction: column; align-items: stretch; justify-content: space-between; gap: 4px; user-select: none; touch-action: none; }
-.qctl .qval { font: 700 var(--fs-xl) var(--mono); color: var(--text); text-align: left; }
-.qctl .qsub { color: var(--muted); font-size: var(--fs-xs); }
+
 /* a fader tile is a slider, not a button: quiet face, a thick track, a big knob
    (input.qfader-in: stronger than the page's own input[type=range] look) */
-.qctl.qfader { background: var(--panel, #15171c) !important; box-shadow: none !important; border-style: solid; padding: 5px 8px; gap: 2px; }
-.qctl.qfader .qfader-name { flex: 1 1 auto; min-width: 0; max-width: none; font-size: var(--fs-m); font-weight: 700; text-align: left;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.qfader-top { display: flex; align-items: center; gap: 6px; min-width: 0; flex: none; }
-.qfader-top .qval { font-size: var(--fs-l); flex: none; white-space: nowrap; }
-.qfader-top .qminis { flex: none; }
 
 /* one cell: the name and its buttons on top, the value beside the slider */
-.qctl.qfader:not(.qbig):not(.qwide) { display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-areas: "name name minis" "val slider slider"; align-content: space-between; align-items: center; column-gap: 6px; }
-.qctl.qfader:not(.qbig):not(.qwide) .qfader-top { display: contents; }
-.qctl.qfader:not(.qbig):not(.qwide) .qfader-name { grid-area: name; }
-.qctl.qfader:not(.qbig):not(.qwide) .qval { grid-area: val; font-size: var(--fs-m); }
-.qctl.qfader:not(.qbig):not(.qwide) .qminis { grid-area: minis; }
-.qctl.qfader:not(.qbig):not(.qwide) input.qfader-in { grid-area: slider; margin: 0; min-width: 0; }
+
 /* the smallest rows (S): all on one line - name, slider, value */
-.qb-grid[data-height="s"] .qctl.qfader:not(.qbig) { display: flex; flex-direction: row; align-items: center; gap: 6px; padding: 3px 8px; }
-.qb-grid[data-height="s"] .qctl.qfader:not(.qbig) .qfader-top { display: contents; }
-.qb-grid[data-height="s"] .qctl.qfader:not(.qbig) .qfader-name { flex: 0 1 auto; min-width: 3em; order: 0; }
-.qb-grid[data-height="s"] .qctl.qfader:not(.qbig) input.qfader-in { flex: 1 1 40px; min-width: calc(40px * var(--ctl)); margin: 0; order: 1; }
-.qb-grid[data-height="s"] .qctl.qfader:not(.qbig) .qval { order: 2; font-size: var(--fs-m); }
-.qb-grid[data-height="s"] .qctl.qfader:not(.qbig) .qminis { order: 3; }
-.qb-grid[data-height="s"] .qctl.qfader:not(.qbig) .qminis { display: none; }
+
 /* a narrow tile: no room for ↺ ◉ (double-click the slider: back to its default) */
-.qctl.qfader { container-type: inline-size; }
-@container (max-width: 150px) {
-  .qfader-top .qminis { display: none; }
-  .qb-grid[data-height="s"] .qfader-top .qval { display: none; }
-}
-.qminis { display: flex; gap: 3px; }
-.qmini { min-width: calc(24px * var(--ctl)); height: calc(24px * var(--ctl)); padding: 0 4px; border-radius: 6px; border: 1px solid var(--border); background: transparent;
-  color: var(--muted); font-size: var(--fs-m); line-height: 1; cursor: pointer; }
-.qmini:hover { color: var(--text); border-color: var(--tint); }
-input.qfader-in { width: 100%; height: calc(26px * var(--ctl)); margin: auto 0 0; cursor: pointer; flex: none; }
-input.qfader-in::-webkit-slider-runnable-track { height: 10px; border-radius: 5px; background: rgba(255,255,255,.14); }
-input.qfader-in::-webkit-slider-thumb { width: calc(22px * var(--ctl)); height: calc(28px * var(--ctl)); margin-top: -9px; border-radius: 6px; background: #e5e7eb; border: 3px solid var(--tint); }
-input.qfader-in::-moz-range-track { height: 10px; border-radius: 5px; background: rgba(255,255,255,.14); }
-input.qfader-in::-moz-range-progress { height: 10px; border-radius: 5px; background: var(--tint); }
-input.qfader-in::-moz-range-thumb { width: calc(20px * var(--ctl)); height: calc(26px * var(--ctl)); border-radius: 6px; background: #e5e7eb; border: 3px solid var(--tint); }
-.qxy { position: relative; flex: 1; min-height: calc(60px * var(--ctl)); border-radius: 6px; background: rgba(255,255,255,.04);
-  background-image: linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px); background-size: 25% 25%; cursor: crosshair; }
-.qxy-dot { position: absolute; left: 50%; top: 50%; width: calc(16px * var(--ctl)); height: calc(16px * var(--ctl)); margin: -8px 0 0 -8px; border-radius: 50%; border: 2px solid var(--tint); background: rgba(0,0,0,.4); }
-.qtempo, .qcuelist { cursor: pointer; }
-.qcuelist .qback { position: absolute; right: 6px; top: 6px; }
-.qctl.qcuelist { position: relative; }
-.qestop { --tint: var(--live) !important; background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--live) 25%, transparent) 0 10px, color-mix(in srgb, var(--live) 12%, transparent) 10px 20px) !important; border-color: var(--live) !important; }
-.qestop b { color: #fecaca; letter-spacing: .08em; }
+
 /* the buttons page on the whole screen */
 
 /* (what's under it isn't seen - and is squeezed while it's up: not drawn) */
@@ -1261,15 +1171,8 @@ input.qfader-in::-moz-range-thumb { width: calc(20px * var(--ctl)); height: calc
 .page-row.on .page-n { color: var(--accent); font-weight: 700; }
 .page-n { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
 
-.qctl.qfader.qbig { align-items: center; }
 /* tall and narrow: the name gets its own two lines, the value and its buttons under it */
-.qctl.qfader.qbig .qfader-top { flex-wrap: wrap; justify-content: center; row-gap: 3px; width: 100%; }
-.qctl.qfader.qbig .qfader-name { flex-basis: 100%; text-align: center; white-space: normal; overflow-wrap: anywhere;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.2; }
-.qctl.qfader.qbig input.qfader-in { writing-mode: vertical-lr; direction: rtl; flex: 1; width: calc(36px * var(--ctl)); height: auto; min-height: calc(80px * var(--ctl)); margin: 4px auto; }
-.qctl.qfader.qbig input.qfader-in::-webkit-slider-runnable-track { width: 10px; height: 100%; }
-.qctl.qfader.qbig input.qfader-in::-webkit-slider-thumb { width: calc(28px * var(--ctl)); height: calc(22px * var(--ctl)); margin-top: 0; margin-left: -9px; }
-.qctl.qfader.qbig .qval { text-align: center; }
+
 .mv-roam { margin-top: 8px; row-gap: 6px; }
 .no-pick .preview3d, .no-pick .form-grid { display: none; }
 /* FX tab -> Paint the rig */
@@ -1370,19 +1273,13 @@ input.qfader-in::-moz-range-thumb { width: calc(20px * var(--ctl)); height: calc
 .aim-map .am-mid path { stroke: var(--muted); stroke-width: .06; }
 .aim-map .am-mid circle { fill: none; stroke: var(--muted); stroke-width: .05; }
 .prog-editing { background: var(--accent-bg); border-bottom-color: var(--accent); }
-.qbtn.qlabel { background: transparent; border-color: transparent; cursor: default; justify-content: flex-end; align-items: flex-start; color: var(--tint); }
-.qbtn.qlabel b { font-size: var(--fs-m); text-transform: uppercase; letter-spacing: .06em; }
+
 /* Edit: this button's lights aren't its row's */
-.qwarn { position: absolute; left: 3px; right: 3px; bottom: 3px; padding: 1px 4px; border-radius: 4px; background: #f59e0b; color: #1c1917;
-  font: 700 var(--fs-xs) var(--font, inherit); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; pointer-events: none; }
+
 /* a name beside its buttons: "SPOT 260 | Red | Blue | UV" */
-.qbtn.qlabel.qside { justify-content: center; align-items: flex-start; padding: 4px 10px; border-left: 3px solid var(--tint); border-radius: 4px; }
-.qbtn.qlabel.qside b { font-size: var(--fs-l); text-align: left; white-space: normal; overflow-wrap: anywhere; color: var(--text); }
 
 /* a heading stretched over several cells (over its row of buttons): the name in the middle */
-.qbtn.qlabel.qwide, .qbtn.qlabel.qbig { justify-content: center; align-items: center; }
-.qbtn.qlabel.qwide b, .qbtn.qlabel.qbig b { text-align: center; }
-.qbtn.qlabel.qside.qwide, .qbtn.qlabel.qside.qbig { border-left: 0; border-bottom: 2px solid var(--tint); border-radius: 0; }
+
 .qb-back { font-weight: 700; color: var(--accent); }
 .prog-held-row { display: flex; align-items: center; gap: 8px; font-size: var(--fs-s); padding: 2px 0; }
 .prog-held-row span { flex: 1; }
@@ -1423,14 +1320,9 @@ input.qfader-in::-moz-range-thumb { width: calc(20px * var(--ctl)); height: calc
 /* ------------------------------------- Buttons: room to play them */
 
 /* rows of the height picked in Layout (Small..Extra large); Fill shares the space */
-.qb-grid { grid-template-columns: repeat(var(--qb-cols, 8), minmax(0, 1fr)); grid-template-rows: repeat(var(--qb-rows, 3), var(--qb-rowh, 72px)); grid-auto-rows: var(--qb-rowh, 72px); align-content: start; overflow-y: auto; }
-.qb-grid[data-height="fit"] { grid-template-rows: repeat(var(--qb-rows, 3), minmax(calc(56px * var(--ctl)), 1fr)); grid-auto-rows: minmax(calc(56px * var(--ctl)), 1fr); align-content: stretch; }
-.qbtn b { font-size: var(--fs-l); }
-.qbtn small { font-size: var(--fs-xs); }
+
 #out-sub { white-space: nowrap; }
 @media (max-width: 1500px) { #out-sub { display: none; } }
-.qbtn small.qkeeps { white-space: normal; text-transform: none; letter-spacing: 0; font-size: var(--fs-xs); line-height: 1.2;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; text-align: center; }
 
 /* Level tab: the four actions in an even grid under the fader */
 .tab-pane[data-pane="intensity"] > .row-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -1500,43 +1392,16 @@ body.hint-seen #stage-hint:not(.must) { display: none; }
 /* (?window=... - see web/app/main.js; the app opens each on its own monitor) */
 
 /* Button looks (Edit -> a button -> Look; Edit -> Layout) */
-.qb-grid[data-height="s"] { --qb-rowh: 48px; }
-.qb-grid[data-height="m"] { --qb-rowh: 72px; }
-.qb-grid[data-height="l"] { --qb-rowh: 104px; }
-.qb-grid[data-height="xl"] { --qb-rowh: 140px; }
-.qb-grid[data-height="l"] .qbtn b { font-size: var(--fs-l); }
-.qb-grid[data-height="xl"] .qbtn b { font-size: var(--fs-xl); }
-.qbtn.qs-square { border-radius: 2px; border-color: color-mix(in srgb, var(--tint) 65%, transparent); }
-.qbtn.qs-pill { border-radius: 999px; padding-inline: 14px; }
-.qbtn.qs-circle { border-radius: 50%; aspect-ratio: 1 / 1; height: 100%; width: auto; max-width: 100%; justify-self: center; align-self: center; padding: 8px; }
+
 /* a circle on a wide or tall tile is an oval that fills it */
-.qb-grid .qbtn.qs-circle.qwide, .qb-grid .qbtn.qs-circle.qbig { aspect-ratio: auto; width: 100%; height: 100%; }
-.qbtn.qf-solid { background: color-mix(in srgb, var(--tint) 62%, #0b0f15); border-color: color-mix(in srgb, var(--tint) 80%, #fff 0%); color: #fff; }
-.qbtn.qf-solid small { color: rgba(255, 255, 255, .78); }
-.qbtn.qf-solid .qicon { color: #fff; }
-.qbtn.qf-glow { box-shadow: 0 0 14px color-mix(in srgb, var(--tint) 38%, transparent), inset 0 0 12px color-mix(in srgb, var(--tint) 22%, transparent); border-color: var(--tint); }
-.qbtn.qf-solid.on, .qbtn.qf-solid.down { background: var(--tint); color: var(--bg); outline: 2px solid #fff; outline-offset: -4px; }
-.qbtn.qf-solid.on .qicon, .qbtn.qf-solid.down .qicon, .qbtn.qf-solid.on small { color: var(--bg); }
+
 /* "on" never by colour alone: a dot in the corner too */
-.qbtn.on::before { content: ""; position: absolute; top: 6px; left: 6px; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-.qbtn.qs-circle.on::before { top: 9%; left: 50%; margin-left: -4px; }
-.qbtn.qs-pill.on::before { top: 50%; left: 14px; margin-top: -4px; }
-.qbtn.qt-s b { font-size: var(--fs-xs); }
-.qbtn.qt-l b { font-size: var(--fs-xl); }
-.qbtn.qt-xl b { font-size: var(--fs-2xl); letter-spacing: .01em; }
-.qbtn.qt-l .qline .qicon { width: calc(20px * var(--ctl)); height: calc(20px * var(--ctl)); }
-.qbtn.qt-xl .qline .qicon { width: calc(26px * var(--ctl)); height: calc(26px * var(--ctl)); }
-.qbtn.qicononly .qline .qicon { width: calc(30px * var(--ctl)); height: calc(30px * var(--ctl)); }
-.qbtn.qicononly.qbig .qline .qicon, .qbtn.qicononly.qt-xl .qline .qicon { width: calc(48px * var(--ctl)); height: calc(48px * var(--ctl)); }
-.qbtn.qblink.on { animation: qb-blink 1.2s ease-in-out infinite; }
-@keyframes qb-blink { 50% { filter: brightness(.55); } }
-@media (prefers-reduced-motion: reduce) { .qbtn.qblink.on { animation: none; } }
+
 /* the editor's Look section */
 .qe-look { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--text) 3%, transparent); }
-.qe-preview { display: flex; gap: 16px; align-items: flex-end; justify-content: center; padding: 6px 0 2px; min-height: calc(60px * var(--ctl)); }
+
 .qe-prev-pair { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-.qe-preview .qbtn { pointer-events: none; }
-.qe-preview .qbtn.qs-circle { height: auto; }
+
 .qe-mini { font-size: var(--fs-xs); color: var(--muted); min-width: calc(46px * var(--ctl)); }
 
 /* New show / welcome: template cards */
@@ -1562,14 +1427,7 @@ body.hint-seen #stage-hint:not(.must) { display: none; }
 .tour-bubble p { margin: 0; color: var(--text-2); line-height: 1.45; }
 @media (prefers-reduced-motion: reduce) { .tour-ring { transition: none; } }
 
-/* Theme (Settings -> Screen & 3D): the panels, never the 3D view */
-/* Show dark dims the panels to red - but the state controls keep their own
-   colours (live red, blind amber, GO green, BLACKOUT, KILL FX): at a show is
-   when they matter.  (A filter reaches everything inside, so it goes on the
-   parts around them.) */
-.drawer, .cmdbar, .pb-strip .pb > :not(.pb-btns), .pb-btns > :not(.go),
-.qb > :not(.pb-mini), .pbm > :not(.pbm-btns) { filter: var(--panel-filter, none); }
-:root[data-theme="showdark"] body { background: #000; }
+
 
 /* on-screen encoder wheels (Programmer, under the tabs) */
 .prog-wheels { display: flex; align-items: center; gap: 12px; padding: 6px 10px; border-bottom: 1px solid var(--border); min-height: calc(74px * var(--ctl)); box-sizing: border-box; }
@@ -1990,7 +1848,7 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: va
 @media (hover: none) { .pb-top .btn.icon, .row-menu { opacity: 1; } }
 body.gig .pb-top .btn.icon { opacity: 1; }
 /* a press shows: brighter while held, on every key a finger hits */
-.pb-btns button:active, .qbtn:active, .dv-key:active{ filter: brightness(1.35); }
+.pb-btns button:active, .dv-key:active{ filter: brightness(1.35); }
 /* a text field shows the same focus ring as a button */
 input:focus-visible{ box-shadow: 0 0 0 2px var(--accent); }
 
@@ -2031,21 +1889,8 @@ input:focus-visible{ box-shadow: 0 0 0 2px var(--accent); }
 /* ---- faders on the buttons page and beside it: made for a finger --------
    A wide track that fills to the level (the --v quickbuttons.js keeps), a
    broad flat cap with a grip line - not a thin rail with a small knob. */
-input.qfader-in { --fill: var(--tint, var(--accent)); -webkit-appearance: none; appearance: none; background: transparent; touch-action: none; }
-input.qfader-in::-webkit-slider-runnable-track { height: calc(18px * var(--ctl)); border-radius: 9px;
-  background: linear-gradient(to right, color-mix(in srgb, var(--fill) 75%, transparent) var(--v, 100%), rgba(255, 255, 255, .09) var(--v, 100%));
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08); }
-input.qfader-in::-webkit-slider-thumb { -webkit-appearance: none; width: calc(16px * var(--ctl)); height: calc(36px * var(--ctl)); margin-top: calc(-9px * var(--ctl));
-  border-radius: 5px; border: 0; background: linear-gradient(90deg, #f1f2f5 0 44%, #50525c 44% 56%, #f1f2f5 56%); box-shadow: 0 2px 6px rgba(0, 0, 0, .55); }
-input.qfader-in:active::-webkit-slider-thumb { filter: brightness(1.15); }
+
 /* standing up (the side faders, a big fader button) */
-.qctl.qfader.qbig input.qfader-in { width: calc(52px * var(--ctl)); }
-.qctl.qfader.qbig input.qfader-in::-webkit-slider-runnable-track {
-  width: calc(26px * var(--ctl)); height: 100%; border-radius: 8px;
-  background: linear-gradient(to top, color-mix(in srgb, var(--fill) 75%, transparent) var(--v, 100%), rgba(255, 255, 255, .09) var(--v, 100%)); }
-.qctl.qfader.qbig input.qfader-in::-webkit-slider-thumb {
-  width: calc(46px * var(--ctl)); height: calc(18px * var(--ctl)); margin-top: 0; margin-left: calc(-10px * var(--ctl));
-  background: linear-gradient(180deg, #f1f2f5 0 42%, #50525c 42% 58%, #f1f2f5 58%); }
 
 /* the desk view as a board: windows on a 24 x 12 grid filling the height
    there is; drag a title to move, a corner to size (deskview.js) */

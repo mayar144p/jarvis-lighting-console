@@ -258,6 +258,9 @@ body[data-mode="live"] .live-only { display: inline-flex; }
 .qb-pages button.qb-back { min-width: 0; background: none; color: var(--text-2); }
 .qb-pages button.drop { box-shadow: inset 0 0 0 2px var(--lit); }
 body[data-mode="live"] .qb-pages button { min-width: calc(92px * var(--ctl)); height: var(--h-l); padding: 0 14px; }
+body[data-mode="live"] .qb-pages button:is(.qb-newpage, .qb-back) { min-width: var(--h-l); }
+/* keys that belong together wrap onto the next line together */
+.tool-group { display: inline-flex; flex: none; align-items: center; gap: 6px; }
 .qb-quant { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--t-s); }
 #qb-lock.on { background: var(--blind-face); color: var(--blind); }
 /* a narrow dock: the page tabs get a row of their own */
@@ -343,3 +346,14 @@ body[data-mode="live"] .grp-dock.folded .grp-grip { top: 0; bottom: 0; height: a
 [data-window="playbacks"] .pb-grip { display: none; }
 
 :root[data-motion="reduced"] :is(.ws-grip, .pb-grip, .grp-grip)::after { transition: none; }
+
+/* ---------------------------------------------------------- Show dark */
+/* (Settings -> Screen) dims the desk to red - but the controls that say
+   how things stand keep their own colours (Live red, Blind amber, GO green,
+   BLACKOUT, Kill FX): at a show is when they matter.  A filter reaches
+   everything inside, so it goes on the parts around them.  The programmer
+   and the lights keep their colours: a colour is picked by its look. */
+.topbar > :not(.output):not(.fxctl):not(.op-pill):not(.blind-pill), .statusbar, .drawer, .cmdbar,
+.dock-bar, .dock-body > .tl, .pb-cues, .grp-dock, .rail > :not(.blackout):not(.pb-relall),
+.pb-strip .pb > :not(.pb-btns), .pb-btns > :not(.go), .qb > :not(.pb-mini), .pbm > :not(.pbm-btns) { filter: var(--panel-filter, none); }
+:root[data-theme="showdark"] body { background: var(--black); }

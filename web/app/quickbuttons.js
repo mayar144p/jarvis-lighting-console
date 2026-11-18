@@ -151,6 +151,7 @@ export const currentPage = () => page;
 export function setPage(p) {
   const n = Math.max(1, Math.min((quick().pages || 32), Math.round(p)));
   if (n === page) return;
+  leavePanel();
   page = n;
   render(true);
   emit("qbpage", page);
@@ -267,7 +268,7 @@ function renderPages() {
   const pages = [];
   if (folderBack.length) {
     pages.push(h("button.qb-back", { title: `Back to ${pageName(folderBack[folderBack.length - 1])}`,
-      onclick: () => { page = folderBack.pop(); render(true); emit("qbpage", page); } }, "◂ Back"));
+      onclick: () => { leavePanel(); page = folderBack.pop(); render(true); emit("qbpage", page); } }, "◂ Back"));
   }
   for (let p = 1; p <= (q.pages || 32); p++) {
     // pages 1-4 always; later ones once used, or the next free one in Edit
@@ -278,20 +279,9 @@ function renderPages() {
       dataset: { page: p },
       title: spare ? "A new page: open it and add a button (or drop one here) - it stays once it has a button or a name"
         : editing ? "Click to open · double-click to rename" : names[p] || `Page ${p}`,
-      onclick: () => { folderBack.length = 0; page = p; render(true); emit("qbpage", page); },
+      // (Edit: a button dragged onto a page's tab moves there - wireEditDrag)
+      onclick: () => { leavePanel(); folderBack.length = 0; page = p; render(true); emit("qbpage", page); },
       ondblclick: () => renamePage(p),
-      // Edit: drop a button on a page's tab - it moves there (Alt: a copy)
-      ondragover: editing ? (e) => { e.preventDefault(); e.currentTarget.classList.add("drop"); } : null,
-      ondragleave: editing ? (e) => e.currentTarget.classList.remove("drop") : null,
-      ondrop: editing ? async (e) => {
-        e.preventDefault();
-        e.currentTarget.classList.remove("drop");
-        let from = null;
-        try { from = JSON.parse(e.dataTransfer.getData("text/plain")); } catch { return; }
-        if (!from || from.page === p) return;
-        const r = await run("quick_move", { page: from.page, slot: from.slot, to_page: p, to_slot: "free", copy: e.altKey });
-        if (r.ok) toast(`${e.altKey ? "Copied" : "Moved"} to ${names[p] || `page ${p}`}`, "ok");
-      } : null,
     }, spare ? "+" : names[p] || String(p)));
   }
   box.replaceChildren(...pages);
@@ -364,6 +354,35 @@ function lookClasses(b) {
     b.text && b.text !== "m" ? "qt-" + b.text : "", b.plain ? "qplain" : "", b.blink ? "qblink" : "",
     b.icon_only && b.icon ? "qicononly" : ""].filter(Boolean);
 }
+// What the grid shows of a button (buttons.css draws by it): its kind and
+// how it plays, its colour - a colour button's own, else the operator's
+// tint or the colour it flashes - with ink that reads on it, and a timed
+// shot's seconds.
+const lum = (hex) => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+  if (!m) return 0;
+  const n = parseInt(m[1], 16);
+  const [r, g, b] = [n >> 16, (n >> 8) & 255, n & 255].map((v) => { v /= 255; return v <= 0.04 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+function paintTile(el, b) {
+  el.dataset.kind = b.kind;
+  el.dataset.mode = ONE_SHOT.has(b.kind) ? "tap" : b.mode || "hold";
+  const c = b.kind === "colour" ? (b.colour || "#ffffff") : (b.tint || b.colour || "");
+  if (c) {
+    el.style.setProperty("--c", c);
+    el.style.setProperty("--ink", lum(c) > 0.3 ? "var(--lit-ink)" : "var(--text)");
+  }
+  el.classList.toggle("tinted", !!c && b.kind !== "colour");
+  const secs = !ONE_SHOT.has(b.kind) && +b.seconds > 0 ? +b.seconds : 0;
+  if (secs) { el.dataset.secs = String(secs); el.style.setProperty("--secs", `${secs}s`); }
+  el.classList.add(...lookClasses(b));
+  return el;
+}
+// fire and lasers wait for Arm FX: until then their tiles say so
+const NEEDS_ARM = new Set(["sfx", "laser"]);
+const fxArmed = () => !!(((state.lite && state.lite.sfx) || (state.snap && state.snap.sfx) || {}).armed);
+
 // the tile: its name, and under it only a description the operator wrote
 // (what it reaches and how it plays are in its tooltip - "1 light · hold"
 // under CONFETTI FIRE read as if it were a light)
@@ -420,65 +439,54 @@ function render(force = false) {
   for (let slot = 1; slot <= shown; slot++) {
     if (covered.has(slot)) continue;
     const b = byslot.get(slot);
-    const drop = (el) => {
-      if (!editing) return;
-      el.addEventListener("dragover", (e) => { e.preventDefault(); el.classList.add("drop"); });
-      el.addEventListener("dragleave", () => el.classList.remove("drop"));
-      el.addEventListener("drop", (e) => {
-        e.preventDefault();
-        el.classList.remove("drop");
-        const from = JSON.parse(e.dataTransfer.getData("text/plain") || "null");
-        if (from && !(from.page === page && from.slot === slot)) {
-          run("quick_move", { page: from.page, slot: from.slot, to_page: page, to_slot: slot, copy: e.altKey });
-        }
-      });
-    };
     if (!b) {
       // (playing: an empty cell is just space - no outline, nothing to read)
       const el = h("button.qbtn.empty" + (editing ? "" : ".blank"), {
-        title: editing ? "Set up this button" : null,
-        onclick: () => { if (editing) editButton(slot, null); },
+        title: editing ? "Set up a button here (or drag one here)" : null, dataset: { slot },
+        "aria-label": editing ? `Empty place ${slot}: set up a button` : null,
+        onclick: () => { if (editing) openEditor(slot, null); },
       }, editing ? "+" : "");
-      drop(el);
+      if (editing && slot === selSlot) el.classList.add("qsel");
       cells.push(el);
       continue;
     }
-    const tint = b.tint || b.colour || KIND_COLOUR[b.kind] || "#94a3b8";
     if (b.kind === "label" && !editing) {
       // a heading: words on the grid, nothing to press
-      const el = h("div.qbtn.qlabel" + (b.sits === "side" ? ".qside" : ""), { title: b.label, dataset: { id: b.id } }, h("b", b.label));
-      el.style.setProperty("--tint", tint);
-      el.classList.add(...lookClasses(b));
+      const el = paintTile(h("div.qbtn.qlabel" + (b.sits === "side" ? ".qside" : ""), { title: b.label, dataset: { id: b.id, slot } }, h("b", b.label)), b);
       place(el, slot);
       cells.push(el);
       continue;
     }
     if (CONTROL.has(b.kind) && !editing) {
-      const el = controlTile(b);
-      el.style.setProperty("--tint", tint);
+      const el = paintTile(controlTile(b), b);
+      el.dataset.slot = slot;
       place(el, slot);
       cells.push(el);
       continue;
     }
     const el = h("button.qbtn" + (b.kind === "estop" ? ".qestop" : "") + (active.has(b.id) ? ".on" : ""), {
-      title: `${b.label} · ${targetText(b.target)} · ${modeText(b)}${b.keeps ? " · " + b.keeps : ""}${editing ? " (click to edit, drag to move, Alt-drag to copy, right-click: copy / paste the look)" : ""}`,
+      title: `${b.label} · ${targetText(b.target)} · ${modeText(b)}${b.keeps ? " · " + b.keeps : ""}${editing ? " (click to set it up, drag to move - Alt: a copy - and its corner to size it; right-click: copy / paste the look)" : ""}`,
       "aria-label": b.label,
-      dataset: { id: b.id },
-      draggable: editing ? "true" : null,
+      dataset: { id: b.id, slot },
     }, ...tileContent(b),
+    NEEDS_ARM.has(b.kind) ? h("small.qarm", "Arm FX first") : null,
     b.key || b.midi !== undefined ? h("kbd.qkey", [b.key ? b.key.toUpperCase() : "", b.midi !== undefined ? `♪${b.midi}` : ""].filter(Boolean).join(" ")) : null,
     PACED.has(b.kind) ? h("span.qrate" + (b.rate || b.free ? "" : ".one"), { title: "Speed (tap to change)" },
       (b.rate ? rateText(b.rate) : "1×") + (b.free ? " ⏵" : "")) : null);
-    el.style.setProperty("--tint", tint);
-    el.classList.add(...lookClasses(b));
+    paintTile(el, b);
+    if (NEEDS_ARM.has(b.kind)) el.classList.toggle("needs-arm", !fxArmed());
     const warn = rowWarn(b, slot);
     if (warn) el.append(h("span.qwarn", { title: warn.title }, "⚠ " + warn.text));
     place(el, slot);
     if (editing) {
-      el.addEventListener("click", () => editButton(slot, b));
+      if (slot === selSlot) el.classList.add("qsel");
+      wireEditDrag(el, b, slot);
+      // (the keyboard: Enter / Space open it)
+      el.addEventListener("click", (e) => { if (e.detail === 0) openEditor(slot, b); });
       el.addEventListener("contextmenu", (e) => { e.preventDefault(); lookMenu(el, b); });
-      el.addEventListener("dragstart", (e) => e.dataTransfer.setData("text/plain", JSON.stringify({ page, slot })));
-      drop(el);
+      const grip = h("span.qresize", { title: "Drag to size it: buttons across and down", "aria-hidden": "true" });
+      wireResize(grip, el, b, slot);
+      el.append(grip);
     } else {
       if (PACED.has(b.kind)) {
         // live speed: scroll on the tile steps through the speeds, right-click picks one
@@ -534,6 +542,7 @@ function render(force = false) {
         h("button.btn", { onclick: () => { editing = true; render(true); } }, "Edit buttons"))));
   } else box.replaceChildren(...cells);
   renderPages();
+  $("#qb").classList.toggle("editing", editing);
   $("#qb-edit").classList.toggle("on", editing);
   $("#qb-edit").textContent = editing ? "Done" : "Edit page";
   $("#qb-edit").hidden = locked;
@@ -790,11 +799,9 @@ const TEXTS = [["s", "S"], ["m", "M"], ["l", "L"], ["xl", "XL"]];
 function lookSection(s, slot, btn, draw) {
   const lay = layoutOf(page);
   const b = { ...toButton(s), id: "preview" };
-  const tint = b.tint || b.colour || KIND_COLOUR[b.kind] || "#94a3b8";
   const prev = (on) => {
-    const el = h("div.qbtn" + (on ? ".on" : ""), { "aria-hidden": "true" }, ...tileContent(b));
-    el.style.setProperty("--tint", tint);
-    el.classList.add(...lookClasses(b), ...(s.h > 1 ? ["qbig"] : s.w > 1 ? ["qwide"] : []));
+    const el = paintTile(h("div.qbtn" + (on ? ".on" : ""), { "aria-hidden": "true" }, ...tileContent(b)), b);
+    el.classList.add(...(s.h > 1 ? ["qbig"] : s.w > 1 ? ["qwide"] : []));
     el.style.width = `${Math.min(s.w, 3) * 92 + (Math.min(s.w, 3) - 1) * 6}px`;
     el.style.height = `${s.h * ({ s: 48, m: 72, l: 104, xl: 140 }[lay.height] || 72) + (s.h - 1) * 6}px`;
     return el;
@@ -942,6 +949,156 @@ function editLayout() {
         const r = await run("quick_layout", { page, cols: s.cols, rows: s.rows, height: s.height, all_pages: s.all });
         if (r.ok) close();
       } }, "Save")],
+  });
+}
+
+// ---------------------------------------------------------- the Edit page
+// The page stays on screen while it is set up: a button's settings open in
+// a panel beside the grid (anywhere else, in a window of their own); a
+// button is dragged to another place or onto a page's tab (Alt: a copy),
+// and its corner dragged to size it.  Works with a finger as with a mouse.
+let panel = null;                      // the settings open beside the page: {close, dirty, title}
+let selSlot = 0;                       // the place they are for (lit on the grid)
+function dockPanel({ title, body, foot, dirty = () => false }) {
+  const box = $("#qb-inspector");
+  if (!box) return modal({ title, body, foot, wide: true });
+  const me = { title, dirty, close: () => {
+    if (panel !== me) return;
+    panel = null;
+    selSlot = 0;
+    box.hidden = true;
+    box.replaceChildren();
+    $$("#qb-grid .qsel").forEach((x) => x.classList.remove("qsel"));
+  } };
+  box.replaceChildren(
+    h("div.qb-inspector-head", h("h2", title),
+      h("button.icon-x", { type: "button", "aria-label": "Close", title: "Close (nothing is saved)", onclick: () => me.close() }, "×")),
+    h("div.qb-inspector-body", body),
+    h("div.qb-inspector-foot", ...foot.filter(Boolean)));
+  box.hidden = false;
+  panel = me;
+  return me.close;
+}
+// another page, Done, Live / Program: the settings beside the page close
+// (what wasn't saved is said, not kept)
+function leavePanel() {
+  if (!panel) return;
+  const p = panel;
+  if (p.dirty()) toast(`${p.title}: closed without saving`);
+  p.close();
+}
+async function openEditor(slot, b) {
+  if (panel && panel.dirty() && !(await confirmBox("Not saved", `Leave ${panel.title} without saving its changes?`, { ok: "Leave it" }))) return;
+  if (panel) panel.close();
+  selSlot = slot;
+  $$("#qb-grid [data-slot]").forEach((x) => x.classList.toggle("qsel", +x.dataset.slot === slot));
+  editButton(slot, b);
+}
+
+// a button dragged to another place, or onto a page's tab; a press without
+// moving opens its settings
+function wireEditDrag(el, b, slot) {
+  let start = null, ghost = null, over = null;
+  el.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || e.target.closest(".qresize")) return;
+    e.preventDefault();
+    start = { x: e.clientX, y: e.clientY, id: e.pointerId, dx: 0, dy: 0 };
+    grab(el, e.pointerId);
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    if (!ghost) {
+      if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < 6) return;
+      const r = el.getBoundingClientRect();
+      ghost = el.cloneNode(true);
+      ghost.classList.add("qb-ghost");
+      ghost.classList.remove("qsel");
+      Object.assign(ghost.style, { width: `${r.width}px`, height: `${r.height}px` });
+      start.dx = start.x - r.left;
+      start.dy = start.y - r.top;
+      document.body.append(ghost);
+    }
+    ghost.style.left = `${e.clientX - start.dx}px`;
+    ghost.style.top = `${e.clientY - start.dy}px`;
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    const t = under && (under.closest("#qb-grid [data-slot]") || under.closest("#qb-pages button[data-page]"));
+    const target = t === el ? null : t;
+    if (target !== over) {
+      if (over) over.classList.remove("drop");
+      over = target;
+      if (over) over.classList.add("drop");
+    }
+  });
+  const end = async (e, cancelled) => {
+    if (!start || e.pointerId !== start.id) return;
+    const dragged = !!ghost, t = over;
+    if (ghost) ghost.remove();
+    if (over) over.classList.remove("drop");
+    ghost = null; over = null; start = null;
+    if (cancelled) return;
+    if (!dragged) { openEditor(slot, b); return; }
+    if (!t) return;
+    leavePanel();
+    if (t.dataset.page) {
+      const p = +t.dataset.page;
+      if (p === page) return;
+      const r = await run("quick_move", { page, slot, to_page: p, to_slot: "free", copy: e.altKey });
+      if (r.ok) toast(`${e.altKey ? "Copied" : "Moved"} to ${pageName(p)}`, "ok");
+      return;
+    }
+    const to = +t.dataset.slot;
+    if (to && to !== slot) run("quick_move", { page, slot, to_page: page, to_slot: to, copy: e.altKey });
+  };
+  el.addEventListener("pointerup", (e) => end(e, false));
+  el.addEventListener("pointercancel", (e) => end(e, true));
+}
+
+// its corner dragged: how many places across and down (1 to 4); the
+// buttons in the way move over to the next free places, as from its settings
+function wireResize(grip, el, b, slot) {
+  grip.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    grab(grip, e.pointerId);
+    const grid = $("#qb-grid"), cs = getComputedStyle(grid);
+    const gap = parseFloat(cs.columnGap) || 4;
+    const lay = layoutOf(page);
+    const gr = grid.getBoundingClientRect();
+    const cellW = (gr.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - gap * (lay.cols - 1)) / lay.cols;
+    const r0 = el.getBoundingClientRect();
+    // the size it shows at (a big one with no room shows as one place)
+    const [w0, h0] = el.style.gridColumn ? spanOf(b) : [1, 1];
+    const cellH = (r0.height - gap * (h0 - 1)) / h0;
+    const maxW = Math.min(4, lay.cols - (slot - 1) % lay.cols);
+    const maxH = Math.min(4, lay.rows - Math.floor((slot - 1) / lay.cols));
+    const body = grid.parentElement, br = body.getBoundingClientRect();
+    const box = h("div.qb-sizing");
+    body.append(box);
+    let w = w0, hh = h0;
+    const draw = () => Object.assign(box.style, { left: `${r0.left - br.left}px`, top: `${r0.top - br.top}px`,
+      width: `${w * cellW + (w - 1) * gap}px`, height: `${hh * cellH + (hh - 1) * gap}px` });
+    draw();
+    const move = (ev) => {
+      w = Math.max(1, Math.min(maxW, Math.round((ev.clientX - r0.left + gap) / (cellW + gap))));
+      hh = Math.max(1, Math.min(maxH, Math.round((ev.clientY - r0.top + gap) / (cellH + gap))));
+      draw();
+    };
+    const up = async () => {
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", up);
+      grip.removeEventListener("pointercancel", up);
+      box.remove();
+      if (w === w0 && hh === h0) return;
+      leavePanel();
+      const { capture, ...keep } = b;
+      void capture;
+      const r = await run("quick_set", { page, slot, button: { ...keep, w, h: hh } });
+      if (r.ok && (r.moved || []).length) toast(`${r.moved.length} button(s) moved over to make room`);
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", up);
+    grip.addEventListener("pointercancel", up);
   });
 }
 
@@ -1198,6 +1355,7 @@ function editButton(slot, btn) {
   };
   qeTab = "does";
   draw();
+  const was = JSON.stringify(toButton(s));
 
   const save = async (toSlot = slot) => {
     const r = await run("quick_set", { page, slot: toSlot, button: toButton(s) });
@@ -1208,10 +1366,11 @@ function editButton(slot, btn) {
     }
     return r.ok;
   };
-  const close = modal({
-    title: `Button ${(quick().names || {})[page] || page}.${slot}`,
+  const close = (editing ? dockPanel : modal)({
+    title: btn ? `${btn.label || "Button"} (${(quick().names || {})[page] || page}.${slot})` : `New button (${(quick().names || {})[page] || page}.${slot})`,
     wide: true,
     body,
+    dirty: () => JSON.stringify(toButton(s)) !== was,
     foot: [
       btn ? h("button.btn.danger", { onclick: async () => { await run("quick_set", { page, slot, clear: true }); close(); } }, "Clear") : null,
       btn ? h("button.btn", { title: "Copy this button to the next empty slot", onclick: async () => {
@@ -1355,7 +1514,12 @@ export function initQuickButtons() {
       if (b.mode === "hold") press(b, false); else held.delete(b.id);
     }
   }, true);
-  $("#qb-edit").addEventListener("click", () => { editing = !editing; render(true); });
+  $("#qb-edit").addEventListener("click", async () => {
+    if (editing && panel && panel.dirty() && !(await confirmBox("Not saved", `Leave ${panel.title} without saving its changes?`, { ok: "Leave it" }))) return;
+    if (editing && panel) panel.close();
+    editing = !editing;
+    render(true);
+  });
   $("#qb-layout").addEventListener("click", editLayout);
   $("#qb-pages-btn").addEventListener("click", editPages);
   $("#qb-profile").addEventListener("click", (e) => profileMenu(e.currentTarget));
@@ -1390,9 +1554,11 @@ export function initQuickButtons() {
   on("lite", () => {
     const active = activeIds();
     const waiting = pendingIds();
+    const armed = fxArmed();
     $$("#qb-grid .qbtn[data-id]").forEach((el) => {
       el.classList.toggle("on", active.has(el.dataset.id));
       el.classList.toggle("pending", waiting.has(el.dataset.id));     // waiting for its beat
+      if (NEEDS_ARM.has(el.dataset.kind)) el.classList.toggle("needs-arm", !armed);
     });
     updateControls();
   });
