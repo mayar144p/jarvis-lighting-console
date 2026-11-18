@@ -1,14 +1,15 @@
-// On-screen encoder wheels (backlog A10 item 9), like a real desk's: under
-// the programmer tabs, the open tab's attributes for the selected lights.
-// Drag up / down (or scroll) to turn; hold Shift - or tap FINE - for fine.
-// Each wheel moves every selected light by the same share of its travel,
-// so a mixed rig keeps its spread.
+// The programmer's value bar, like a real desk's encoders: along its foot,
+// the open tab's attributes for the selected lights - each with its value
+// now (where the desk shows it: level, colour, pan and tilt) and a line
+// filled to it.  Drag one sideways (or scroll on it) to change it; hold
+// Shift - or tap Fine - for fine.  Each moves every selected light by the
+// same share of its travel, so a mixed rig keeps its spread.  (The palette
+// view's Knobs window keeps round knobs: mountWheels.)
 import { state, on } from "./store.js";
 import { act } from "./api.js";
 import { h, $ } from "./ui.js";
 
 const WHEELS = {
-  intensity: [["dimmer", "Dimmer"]],
   colour: [["red", "Red"], ["green", "Green"], ["blue", "Blue"], ["white", "White"], ["cyan", "Cyan"], ["magenta", "Magenta"], ["yellow", "Yellow"]],
   position: [["pan", "Pan"], ["tilt", "Tilt"]],
 
@@ -16,7 +17,7 @@ const WHEELS = {
 };
 const COARSE = 0.01, FINE = 0.001;                 // a share of the travel per notch
 let fine = false;
-let tab = "intensity";
+let tab = "colour";
 
 function rolesOfSelection() {
   const sel = new Set((state.lite && state.lite.selected) || (state.snap && state.snap.selected) || []);
@@ -72,6 +73,73 @@ function wheel(attr, label) {
   return h("div.wheel", knob, h("span.small", label));
 }
 
+// what a cell shows: the value the selected lights have now, where the desk
+// says it (their level, colour and aim - the 3D's own feed); "mix" when they
+// differ, "–" when it isn't known here
+const selHeads = () => (state.lite && state.lite.selected) || (state.snap && state.snap.selected) || [];
+const hexPart = (hex, i) => { const m = /^#?([0-9a-f]{6})$/i.exec(hex || ""); return m ? parseInt(m[1].slice(i * 2, i * 2 + 2), 16) / 255 : null; };
+function valueOf(attr) {
+  const looks = state.looks || {};
+  const vals = [];
+  for (const n of selHeads()) {
+    const lk = looks[n];
+    if (!lk) continue;
+    const v = attr === "pan" || attr === "tilt" ? lk[attr]
+      : attr === "red" ? hexPart(lk.hex, 0) : attr === "green" ? hexPart(lk.hex, 1) : attr === "blue" ? hexPart(lk.hex, 2) : undefined;
+    if (typeof v === "number") vals.push(v);
+  }
+  if (!vals.length) return null;
+  const pct = vals.map((v) => Math.round(Math.max(0, Math.min(1, v)) * 100));
+  return new Set(pct).size > 1 ? { mixed: true, v: pct[0] } : { v: pct[0] };
+}
+function cell(attr, label) {
+  const val = h("b.pv-val", "–");
+  const el = h("div.pv", { role: "slider", tabindex: 0, "aria-label": `${label}: drag sideways or scroll to change it, Shift for fine`,
+    "aria-valuetext": "–", dataset: { attr } }, h("span.pv-name", label), val, h("i.pv-bar"));
+  let finger = null;                             // one finger moves it
+  el.addEventListener("pointerdown", (e) => {
+    if (finger !== null || e.button !== 0) return;
+    finger = e.pointerId;
+    el.setPointerCapture(e.pointerId);
+    el.classList.add("on");
+    let last = e.clientX;
+    const move = (ev) => {
+      if (ev.pointerId !== finger) return;
+      const n = Math.trunc((ev.clientX - last) / 4);           // 4 px a notch, right = more
+      if (n) { last += n * 4; const was = fine; if (ev.shiftKey) fine = true; turn(attr, n); fine = was; }
+    };
+    const up = (ev) => {
+      if (ev.pointerId !== finger) return;
+      finger = null;
+      el.classList.remove("on");
+      for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) el.removeEventListener(t, up);
+      el.removeEventListener("pointermove", move);
+    };
+    el.addEventListener("pointermove", move);
+    for (const t of ["pointerup", "pointercancel", "lostpointercapture"]) el.addEventListener(t, up);
+  });
+  el.addEventListener("wheel", (e) => { e.preventDefault(); const was = fine; if (e.shiftKey) fine = true; turn(attr, e.deltaY < 0 ? 1 : -1); fine = was; }, { passive: false });
+  el.addEventListener("keydown", (e) => {
+    const n = { ArrowUp: 1, ArrowRight: 1, ArrowDown: -1, ArrowLeft: -1, PageUp: 10, PageDown: -10 }[e.key];
+    if (!n) return;
+    e.preventDefault();
+    const was = fine; if (e.shiftKey) fine = true; turn(attr, n); fine = was;
+  });
+  return el;
+}
+function showValues() {
+  const box = $("#prog-wheels");
+  if (!box || box.hidden) return;
+  for (const el of box.querySelectorAll(".pv")) {
+    const got = el.classList.contains("off") ? null : valueOf(el.dataset.attr);
+    const text = !got ? "–" : got.mixed ? "mix" : `${got.v}%`;
+    const b = el.querySelector(".pv-val");
+    if (b.textContent !== text) b.textContent = text;
+    el.setAttribute("aria-valuetext", text);
+    el.style.setProperty("--v", got ? `${got.v}%` : "0%");
+  }
+}
+
 export function renderWheels(name = tab) {
   tab = name;
   const box = $("#prog-wheels");
@@ -86,16 +154,18 @@ export function renderWheels(name = tab) {
   if (box.dataset.sig === sig) return;              // the same wheels: keep them (a drag in progress)
   box.dataset.sig = sig;
   const fineBtn = h("button.btn.small" + (fine ? ".on" : ""), { type: "button", "aria-pressed": String(fine),
-    title: "Fine: a tenth of the step (or hold Shift)", onclick: () => { fine = !fine; fineBtn.classList.toggle("on", fine); fineBtn.setAttribute("aria-pressed", String(fine)); } }, "FINE");
+    title: "Fine: a tenth of the step (or hold Shift)", onclick: () => { fine = !fine; fineBtn.classList.toggle("on", fine); fineBtn.setAttribute("aria-pressed", String(fine)); } }, "Fine");
   box.replaceChildren(...list.map(([a, l]) => {
-    const el = wheel(a, l);
+    const el = cell(a, l);
+    el.classList.add("f-" + name);
     if (!roles.has(a)) {
       el.classList.add("off");
-      el.title = roles.size ? `The selected lights have no ${l.toLowerCase()}` : "Select lights to turn this";
-      el.querySelector(".wheel-knob").tabIndex = -1;
+      el.title = roles.size ? `The selected lights have no ${l.toLowerCase()}` : "Select lights to change this";
+      el.tabIndex = -1;
     }
     return el;
-  }), fineBtn);
+  }), h("span.grow"), fineBtn);
+  showValues();
 }
 
 // Other places with wheels of their own (the palette view's Knobs window):
@@ -131,4 +201,5 @@ export function initWheels() {
   on("lite", refreshExtra);
   on("snapshot", () => renderWheels());
   on("lite", () => renderWheels());
+  on("looks", showValues);
 }

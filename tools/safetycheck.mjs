@@ -51,9 +51,10 @@ const closeCmd = () => p.evaluate(() => import("/app/cmdbar.js").then((m) => m.c
 await ws("program");
 await act("select_heads", { heads: [1] });
 await sleep(900);
-const tabs = await p.evaluate(() => [...document.querySelectorAll("#prog-tabs button:not([hidden]) span")]
+const tabs = await p.evaluate(() => [...document.querySelectorAll("#prog-tabs button:not([hidden])")]
   .map((s) => ({ t: s.textContent, cut: s.scrollWidth > s.clientWidth + 1, w: s.getBoundingClientRect().width })));
-check("every programmer tab shows its whole name at 1366 (Looks and Rig too)", tabs.length >= 8 && tabs.every((t) => !t.cut && t.w > 10), JSON.stringify(tabs));
+// (a PAR: Colour, Beam, Effects, Palettes, Looks, Rig - the level is the bar beside them)
+check("every programmer tab shows its whole name at 1366 (Looks and Rig too)", tabs.length >= 6 && tabs.every((t) => !t.cut && t.w > 10), JSON.stringify(tabs));
 
 // the keyboard: Enter never fires GO; a number starts a command
 await blur();

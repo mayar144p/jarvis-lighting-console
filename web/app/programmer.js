@@ -82,7 +82,10 @@ function applyTabVisibility() {
     b.hidden = !visible;
     b.title = visible ? b.dataset.title : "";
   });
-  if (show[tab] === false) showTab(show.laser ? "laser" : show.sfx ? "sfx" : show.intensity ? "intensity" : "looks");
+  // the level strip: for lights that have a level (not a confetti cannon)
+  const lvl = $("#level");
+  if (lvl) lvl.hidden = !show.intensity;
+  if (show[tab] === false) showTab(show.laser ? "laser" : show.sfx ? "sfx" : show.colour ? "colour" : "desk");
 }
 
 // ------------------------------------------------------------- header
@@ -437,8 +440,10 @@ function renderPad() {
   const dot = $("#pad-dot");
   if (look && (typeof look.pan === "number" || typeof look.tilt === "number")) {
     const pan = look.pan ?? 0.5, tilt = look.tilt ?? 0.5;
-    dot.style.left = pan * 100 + "%";
-    dot.style.top = (1 - tilt) * 100 + "%";
+    // (an axis the lights don't have: the dot stays in the middle of it)
+    const pad = $("#pad");
+    dot.style.left = (pad.classList.contains("no-pan") ? 0.5 : pan) * 100 + "%";
+    dot.style.top = (1 - (pad.classList.contains("no-tilt") ? 0.5 : tilt)) * 100 + "%";
     const parts = [];
     if (!padInfo || padInfo.pan) { const dg = degAt("pan", pan); parts.push(`pan ${dg !== null ? dg + "°" : Math.round(pan * 255)}`); }
     if (!padInfo || padInfo.tilt) { const dg = degAt("tilt", tilt); parts.push(`tilt ${dg !== null ? dg + "°" : Math.round(tilt * 255)}`); }
@@ -1656,10 +1661,8 @@ export function initProgrammer() {
   if (body && window.ResizeObserver) new ResizeObserver(() => body.style.setProperty("--ph", `${body.clientHeight}px`)).observe(body);
   wireActs();
   intFader = vfader($("#int-fader"), { min: 0, max: 100, onInput: (v) => { $("#int-num").textContent = v + "%"; sendIntensity(v); } });
-  $$("#int-quick button").forEach((b) => b.addEventListener("click", () => {
-    if (!hasSel()) { toast("Select fixtures first"); return; }
-    sendIntensity(+b.dataset.level);
-  }));
+  // double-click the level bar: full (drag it for the rest)
+  $("#int-fader").addEventListener("dblclick", () => { if (!hasSel()) { toast("Select fixtures first"); return; } sendIntensity(100); });
   $("#locate-btn").addEventListener("click", () => run("locate"));
   const hl = $("#hl-btn");
   hl.addEventListener("click", (e) => {

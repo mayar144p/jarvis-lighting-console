@@ -365,8 +365,9 @@ async function steps() {
 
   console.log("2. All -> Full");
   await click('.sel-actions [data-act="select_all"]', "All");
-  await click('#prog-tabs [data-tab="intensity"]', "Level tab");
-  await click('#int-quick [data-level="100"]', "Full");
+  // the level bar beside every tab: a double-click is full
+  try { await p.dblclick("#int-fader", { timeout: 20000 }); } catch (e) { check(false, `${tag}double-click the level bar (Full)`, String(e.message).split("\n")[0]); }
+  await p.waitForTimeout(600);
   ({ F, V } = await layers("Full"));
   const dark = lights(V).filter((h) => !(F[h] && +F[h].a > 0.5));
   check(!dark.length, `${tag}Full: every light is lit in the feed`, dark.slice(0, 12).map(name).join(", "));

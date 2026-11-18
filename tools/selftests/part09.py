@@ -10256,9 +10256,9 @@ def test_council_fixes() -> None:
     check("Update next to Record cue; Live shows the playbacks with GO", 'id="prog-update"' in html and 'id="pb-mini"' in html
           and "function renderMini" in pb, "")
     check("finger-sized faders and options; sliders let a scrolling finger pass",
-          ".pb .vfader { width: calc(36px * var(--ctl));" in css and "@media (hover: none) { .pb-top .btn.icon, .row-menu { opacity: 1; } }" in css
+          ".pb .vfader { width: calc(36px * var(--ctl));" in css and ".pb-top .btn.icon { opacity: 1; }" in css and ".row-menu { opacity: 1; }" in css
           and "touch-action: pan-y;" in css, "")
-    check("every programmer tab is named (Rig, not an icon)", "<span>Rig</span>" in html
+    check("every programmer tab is named (Rig, not an icon)", ">Rig</button>" in html
           and "#prog-tabs :is([data-tab=looks], [data-tab=tools]) span { display: none; }" not in css, "")
     ci = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     check("the show-safety check runs in CI", "node tools/safetycheck.mjs" in ci
@@ -10355,7 +10355,7 @@ def test_room_by_pointing() -> None:
     check("a palette tile is lit only while the selection holds it, and a second tap takes it off",
           "const lit = paletteOn(kind, p);" in pj and 'if (lit) run("clear_attrs"' in pj and ".pal-item.on {" in css, "")
     check("a wide programmer: room map + pan/tilt pad side by side, the pad keeps its shape, swatches stay swatch-sized",
-          ".work > .programmer { flex: 1 1 auto; container-type: inline-size; }" in css and ".mv-pt .pad { width: 100%; aspect-ratio: 1.6;" in css
+          "overflow-y: auto; padding: var(--pad); container-type: inline-size; }" in css and ".mv-pt .pad { width: 100%; aspect-ratio: 1.6;" in css
           and "repeat(auto-fill, minmax(calc(40px * var(--ctl)), calc(60px * var(--ctl))))" in css, "")
 
     from app import engine as eng
@@ -10552,7 +10552,8 @@ def test_visual_polish() -> None:
           "export function upgradeGlyphs" in ic and all(f'{k}:' in ic for k in ("caret", "music", "full", "pages", "camera"))
           and "upgradeGlyphs();" in (web / "main.js").read_text(encoding="utf-8"), "")
     check("one look for selected / on (chips, segments, tabs, toggles, tiles)",
-          "--sel-bg:" in css and css.count("background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-fg);") >= 15, "")
+          "--select:" in css and css.count("background: var(--select); border-color: var(--lit); color: var(--text);") >= 15
+          and ".btn.primary, .btn.on { background: var(--lit); color: var(--lit-ink);" in css, "")
     mh = (web / "modehub.js").read_text(encoding="utf-8")
     check("Live: what plays now in one slim strip above the buttons, only while something plays",
           'h("div.hub-body.live.now"' in mh and 'box.classList.toggle("quiet", !busy)' in mh
@@ -10680,7 +10681,7 @@ def test_dock_and_desk_fit() -> None:
     check("every desk view window has its own look: tile size (to fill), text size, tiles across, numbers - kept with its place",
           "function lookMenu(anchor, el, id)" in dv and "r.look = { ...(r.look || {}), ...change };" in dv
           and '.dv-win[data-size="fill"] .dv-tiles' in css and '.dv-win[data-text="xl"]' in css and ".dv-win[data-cols] .dv-tiles" in css, "")
-    check("what the programmer holds: chips in its title row, saying how many lights", '<div class="prog-in" id="prog-in" hidden></div>\n        <div class="prog-heads"' in html.replace("\r\n", "\n")
+    check("what the programmer holds: chips under its tabs, saying how many lights", 'class="prog-head"' in html and '<div class="prog-in" id="prog-in" hidden></div>' in html
           and "light${counts[g] === 1 ? \"\" : \"s\"}`) : null," in (web / "programmer.js").read_text(encoding="utf-8"), "")
 
 
@@ -10704,7 +10705,7 @@ def test_programmer_overhaul() -> None:
           and '.tab-pane[data-pane="position"][data-sub="point"]:not([hidden]) { flex: 1;' in css and "Aim at one click" not in html, "")
     check("Move in three columns, no folded rows", 'h("div.mv-col.mv-col-shapes"' in mv and 'h("div.mv-col.mv-col-knobs"' in mv
           and "More: direction, arc, lock" not in mv, "")
-    check("Dimmer, Colour and Beam made for a wide panel", '.tab-pane[data-pane="intensity"] #int-fader' in css
+    check("the level a bar beside every tab (the fade under it); Colour and Beam made for a wide panel", ".level .level-bar {" in css and 'id="int-fade"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
           and '.tab-pane[data-pane="colour"] #picker canvas' in css and ".beam-quick { display: grid;" in css, "")
     check("Text size: Standard / Large / Extra large, layout and all", ':root[data-textsize="xl"]' in css
           and "--ts: calc(var(--ts-base) * var(--ts-user) * var(--ts-gig))" in css

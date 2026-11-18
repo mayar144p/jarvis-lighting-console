@@ -22,9 +22,18 @@ input, textarea, select, [contenteditable="true"], pre, code, .selectable,
 img, svg { -webkit-user-drag: none; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
-/* hidden means hidden, whatever a part's own display says (one of the two
-   places the stylesheet forces a value; the other is Reduce motion) */
+/* hidden means hidden, whatever a part's own display says (the stylesheet
+   forces a value only here, in this file: hidden, the pointer's modes and
+   the guide pointing out a part below, and Reduce motion) */
 [hidden], .hidden { display: none !important; }
+/* modes that take the pointer over (the 3D's picking and walking, What's
+   this?) and the guide pointing out a part: they win over whatever the
+   part itself says - its own pointer is set by the code it runs */
+.stage canvas:is(.picking, .following) { cursor: crosshair !important; }
+.stage canvas.walking { cursor: grab !important; }
+body.whats-this, body.whats-this * { cursor: help !important; }
+.gc-pulse { outline: 2px solid var(--lit) !important; }
+.coach-lit { outline: 3px solid var(--lit) !important; box-shadow: 0 0 0 8px color-mix(in srgb, var(--lit) 18%, transparent) !important; }
 h1, h2, h3, h4, p { margin: 0; }
 h2 { font-size: var(--t); font-weight: 600; }
 h3 { margin: 16px 0 8px; font-size: var(--t-s); font-weight: 600; color: var(--text-2); }
@@ -41,7 +50,11 @@ a { color: var(--text); }
 ::-webkit-scrollbar-thumb { background: var(--pressed); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-corner { background: transparent; }
-/* Reduce motion (Settings -> Screen): nothing slides, fades or pulses */
+/* Reduce motion (Settings -> Screen, or the computer's own setting):
+   nothing slides, fades or pulses */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+}
 :root[data-motion="reduced"] *, :root[data-motion="reduced"] *::before, :root[data-motion="reduced"] *::after {
   animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important;
 }

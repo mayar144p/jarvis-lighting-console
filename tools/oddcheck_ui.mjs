@@ -110,14 +110,17 @@ check(ms >= 0, "a light patched on one screen appears on the other", ms >= 0 ? `
 await B.click('.sel-actions [data-act="select_all"]');
 ms = await until(A, () => /14/.test(document.querySelector("#sel-count").textContent));
 check(ms >= 0, "selecting on one screen selects on the other", ms >= 0 ? `${ms} ms` : await A.evaluate(() => document.querySelector("#sel-count").textContent));
+// the level set on its bar, as a finger does: a press where the level is
+const atLevel = async (page, level) => {
+  const box = await page.$eval("#int-fader", (el) => { const r = el.getBoundingClientRect(); const c = el.querySelector(".cap").offsetHeight || 18; return { x: r.left + r.width / 2, top: r.top, h: r.height, c }; });
+  await page.mouse.click(box.x, box.top + box.c / 2 + (1 - level / 100) * (box.h - box.c));
+};
 // Full in A -> B's level reads 100
-await A.click('#prog-tabs [data-tab="intensity"]');
-await B.click('#prog-tabs [data-tab="intensity"]');            // (the desk opens on Palettes)
-await A.click('#int-quick [data-level="100"]');
+await atLevel(A, 100);
 ms = await until(B, () => parseInt(document.querySelector("#int-num").textContent) === 100);
 check(ms >= 0, "Full on one screen reads 100 on the other", ms >= 0 ? `${ms} ms` : await B.evaluate(() => document.querySelector("#int-num").textContent));
 // both press at the same moment: different levels -> one consistent answer
-await Promise.all([A.click('#int-quick [data-level="25"]'), B.click('#int-quick [data-level="75"]')]);
+await Promise.all([atLevel(A, 25), atLevel(B, 75)]);
 await sleep(800);
 const [la, lb] = [await A.evaluate(() => document.querySelector("#int-num").textContent.trim()), await B.evaluate(() => document.querySelector("#int-num").textContent.trim())];
 check(la === lb && /^(25|75)/.test(la), "pressed on both at once, both screens agree", `${la} vs ${lb}`);
@@ -173,7 +176,7 @@ check(/Lost contact/.test(banner), "a banner says nothing reaches the rig", bann
 await B.click('#pb-mode [data-mode="faders"]').catch(() => {});
 const errsBefore = errors.A.length + errors.B.length;
 // press things while the desk is gone: nothing must break
-for (const sel of ['#int-quick [data-level="100"]', "#locate-btn", "#prog-clear", '#prog-tabs [data-tab="colour"]', "#bo-btn"]) {
+for (const sel of ["#int-fader", "#locate-btn", "#prog-clear", '#prog-tabs [data-tab="colour"]', "#bo-btn"]) {
   await A.click(sel, { timeout: 1500 }).catch(() => {});
   await sleep(150);
 }
@@ -194,12 +197,9 @@ await sleep(800);
 check(await count(A) === lightsBefore, "the rig is back as it was (autosave)", `${await count(A)} of ${lightsBefore}`);
 const bannerAfter = await A.evaluate(() => { const b = document.querySelector("#banner"); return b && !b.classList.contains("hidden") ? b.textContent : ""; });
 check(!/Lost contact/.test(bannerAfter), "the lost-contact banner goes away", bannerAfter.slice(0, 80));
-const tabs = await A.evaluate(() => [...document.querySelectorAll("#prog-tabs button")].filter((b) => !b.hidden).map((b) => b.dataset.tab).join(","));
-check(/intensity/.test(tabs), "after reconnecting the programmer still has its Level tab", tabs);
-if (/intensity/.test(tabs)) {
-  await A.click('#prog-tabs [data-tab="intensity"]');
-  await A.click('#int-quick [data-level="50"]');
-}
+const lvl = await A.evaluate(() => { const el = document.querySelector("#level"); return !!el && !el.hidden; });
+check(lvl, "after reconnecting the programmer still has its level bar", String(lvl));
+if (lvl) await atLevel(A, 50);
 ms = await until(B, () => parseInt(document.querySelector("#int-num").textContent) === 50);
 check(ms >= 0, "after the dropout both screens still work together", ms >= 0 ? `${ms} ms` : "");
 await A.screenshot({ path: join(outDir, "back.png") });

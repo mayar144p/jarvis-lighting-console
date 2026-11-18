@@ -314,7 +314,7 @@ const H = BIG
 const STEPS = [
   ["01-start", async () => {}],
   ["02-select-all", async (p) => { const { post } = await setup(p); await post("select_all"); await p.waitForTimeout(600); }],
-  ["03-level", tab("intensity"), { click: '.tab-pane[data-pane="intensity"]' }],
+  ["03-level", tab("colour"), { click: "#level" }],
   ["04-colour", tab("colour"), { click: '.tab-pane[data-pane="colour"]' }],
   ["05-beam", tab("beam"), { click: '.tab-pane[data-pane="beam"]' }],
   ["06-fx", tab("fx"), { click: '.tab-pane[data-pane="fx"]' }],

@@ -86,6 +86,8 @@
   --go-face: #14261b;
   --on-colour: #101112;
   --black: #000;
+  /* a white's colour temperature, warm to cold (the Colour tab's White strip) */
+  --kelvin: linear-gradient(90deg, #ff8a1f, #ffd9a8, #fff4e6, #e6f0ff, #b9d0ff);
 
   /* attribute families: a dot, a level line - never a whole control */
   --f-dim: #e3c04a;
@@ -166,60 +168,4 @@
 /* a 4K-class monitor at 100 % (3840 x 2160): */
 @media (min-width: 3000px) and (min-height: 1700px) {
   :root { --ts-base: 1.45; --ctl-base: 1.45; --gap: 12px; --pad: 18px; --r: 5px; --r-float: 10px; }
-}
-
-/* ------------------------------------------------- names from before (legacy)
-   The screens not rebuilt yet (css/legacy.css) still ask for the old names:
-   they get today's values.  This block goes with legacy.css. */
-:root {
-  --bg: var(--base);
-  --bg-2: var(--base);
-  --surface: var(--panel);
-  --surface-2: var(--raised);
-  --surface-3: var(--hover);
-  --border: var(--line);
-  --border-2: var(--line-strong);
-  --muted: var(--text-3);
-  --accent: var(--lit);
-  --accent-2: var(--lit-2);
-  --on-accent: var(--lit-ink);
-  --accent-bg: var(--select);
-  --live-strong: var(--live);
-  --live-bg: var(--live-face);
-  --blind-bg: var(--blind-face);
-  --ok: var(--go);
-  --ok-bg: var(--go-face);
-  --ai: var(--text);
-  --ai-bg: var(--raised);
-  --f-col-solid: var(--f-col);
-  --warn: var(--blind);
-  --bad: var(--live);
-  --radius: var(--r);
-  --radius-sm: var(--r);
-  --radius-lg: var(--r-float);
-  --mono: var(--font);
-  --fs-xs: var(--t-xs);
-  --fs-s: var(--t-s);
-  --fs-m: var(--t);
-  --fs-l: var(--t-l);
-  --fs-xl: calc(18px * var(--ts));
-  --fs-2xl: calc(24px * var(--ts));
-  --topbar-h: var(--bar);
-  --status-h: var(--status);
-  --row-h: var(--row);
-  --btn-h: var(--h);
-  --btn-h-s: var(--h-s);
-  --chip-h: var(--h-s);
-  --sel-bg: var(--select);
-  --sel-line: var(--lit);
-  --sel-fg: var(--text);
-  --pb-h: 196px;
-  --fixtures-w: clamp(272px, 20vw, 340px);
-  --prog-w: clamp(340px, 24vw, 420px);
-}
-@media (min-width: 2200px) and (min-height: 1250px) {
-  :root { --fixtures-w: clamp(340px, 16vw, 520px); --prog-w: clamp(440px, 21vw, 660px); --pb-h: 250px; }
-}
-@media (min-width: 3000px) and (min-height: 1700px) {
-  :root { --fixtures-w: clamp(460px, 15vw, 720px); --prog-w: clamp(600px, 20vw, 880px); --pb-h: 340px; }
 }
