@@ -10,7 +10,7 @@ import { post } from "./api.js";
 import { state, patch } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, h, toast } from "./ui.js";
-import { openAddDialog, openHelp, openSettings, saveShow, openCueDialog, openReadyCheck } from "./dialogs.js";
+import { openAddDialog, openHelp, openSettings, saveShow, openCueDialog, openShowCheck } from "./dialogs.js";
 import { askCopilot } from "./copilot.js";
 import { HAS_3D, stagePanel } from "./view3d.js";
 import { openMacros, macroCandidates } from "./macros.js";
@@ -44,7 +44,7 @@ const ACTIONS = [
   { t: "Not here - keep beams out", k: "keep out no go wall avoid never forbid not here mirror eyes", run: () => import("./roomteach.js").then((m) => m.openRoomTeach("keepout")) },
   { t: "Keep lights in a zone", k: "stay in zone confine dance floor only bar only", run: () => import("./roomteach.js").then((m) => m.openRoomTeach("stay")) },
   { t: "Plot", k: "plot plan front side rig drawing head numbers design", run: () => import("./plot.js").then((m) => m.openPlot()) },
-  { t: "Ready? check", k: "ready check preflight doors gig before show", run: () => openReadyCheck() },
+  { t: "Check the show", k: "check the show ready preflight doors gig before show diagnose doctor problems wrong", run: () => openShowCheck() },
   { t: "Settings", k: "settings preferences options", run: () => openSettings() },
   // every Settings page, opened at that page
   ...SETTINGS_PAGES.map(([key, name, words]) => ({ t: `Settings: ${name}`, k: `settings ${name.toLowerCase()} ${words}`, run: () => openSettingsAt(key) })),

@@ -102,8 +102,8 @@ function paintSetup() {
     ["Checks", "on the day, before the doors open", [
       { title: "At the venue", status: "the lights found here against the show", ok: null,
         buttons: [btn("Venue check-in…", lazy("./checkin.js", "openCheckin"))] },
-      { title: "Before doors", status: "test a light, then the ready check", ok: null,
-        buttons: [btn("Ready check…", lazy("./dialogs.js", "openReadyCheck")), btn("Test a light…", () => {
+      { title: "Before doors", status: "test a light, then check the show", ok: null,
+        buttons: [btn("Check the show…", lazy("./dialogs.js", "openShowCheck")), btn("Test a light…", () => {
           const sel = new Set(s.selected || []);
           const hd = patch().find((x) => sel.has(x.head_no)) || patch()[0];
           if (hd) import("./lightdialogs.js").then((m) => m.openLightTest(hd));

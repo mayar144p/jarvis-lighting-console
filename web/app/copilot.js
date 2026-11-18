@@ -567,21 +567,9 @@ function showPlan(r, ask = "") {
   ].filter(Boolean));
 }
 
-// -------------------------------------------------------------- doctor
-async function diagnose() {
-  const box = $("#doctor");
-  box.replaceChildren(h("p.muted", "Checking…"));
-  try {
-    const d = await get("/api/console/doctor");
-    const found = d.findings || [];
-    box.replaceChildren(...found.map((f) => h("div.finding." + (f.level || "warn"),
-      h("b", f.title), h("p", f.detail || ""),
-      f.fix ? h("button.btn.small", { style: { marginTop: "8px" }, onclick: () => run(f.fix.action, f.fix.params || {}, { toast: true }).then(diagnose) }, f.fix.label || "Fix it") : null)));
-    if (d.summary) box.prepend(h("p.muted.small", d.summary));
-  } catch (err) {
-    box.replaceChildren(h("p.muted", err.message));
-  }
-}
+// -------------------------------------------------------------- check
+// The Check the show tab: the same check as the Show menu's, in the drawer
+const diagnose = () => import("./dialogs.js").then((m) => m.renderShowCheck($("#doctor")));
 
 export function openCopilot(tab = "chat") {
   $("#copilot").classList.remove("hidden");
@@ -590,6 +578,7 @@ export function openCopilot(tab = "chat") {
   $$("#copilot .ctab").forEach((p) => { p.hidden = p.dataset.cpane !== tab; });
   renderSuggest();
   if (tab === "chat") setTimeout(() => $("#ai-text").focus(), 20);
+  if (tab === "doctor") diagnose();
 }
 
 export function closeCopilot() {

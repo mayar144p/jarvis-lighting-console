@@ -581,10 +581,10 @@
     <button class="ai-status" id="ai-status" title="Which AI: Online, Local or Auto"></button>
     <button class="icon-x" id="copilot-close" aria-label="Close">×</button>
   </div>
-  <nav class="tabs small" id="copilot-tabs">
-    <button data-ctab="chat" aria-selected="true">Program</button>
-    <button data-ctab="design">Design a show</button>
-    <button data-ctab="doctor">Diagnose</button>
+  <nav class="seg" id="copilot-tabs">
+    <button data-ctab="chat" aria-selected="true" title="Ask for a look, a change, an answer - it shows you the plan first">Ask</button>
+    <button data-ctab="design" title="The whole show to the music, or concepts for one playback">Build a show</button>
+    <button data-ctab="doctor" title="Before doors: what to put right, and what is wrong inside the show">Check the show</button>
   </nav>
   <div class="ctab" data-cpane="chat">
     <div class="ai-log" id="ai-log"></div>
@@ -636,12 +636,8 @@
     </section>
   </div>
   <div class="ctab" data-cpane="doctor" hidden>
-    <section class="cp-card">
-      <h4>Check the rig and the show</h4>
-      <p class="muted small">Looks for what a tech would: addressing overlaps, cues pointing at missing fixtures, output that cannot reach the rig.</p>
-      <div class="cp-row"><span class="grow"></span><button class="btn primary" id="doctor-btn">Run checks</button></div>
-    </section>
     <div class="doctor" id="doctor"></div>
+    <div class="cp-row"><span class="grow"></span><button class="btn" id="doctor-btn">Check again</button></div>
   </div>
 </aside>
 

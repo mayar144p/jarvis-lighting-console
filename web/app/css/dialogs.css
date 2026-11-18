@@ -111,7 +111,7 @@
 .ic .dim { opacity: .45; }
 .ic-rec .fill { fill: var(--live); }
 .help { display: flex; flex-direction: column; gap: 12px; width: min(860px, 86vw); min-height: min(460px, 60vh); }
-.help-tabs button.on { background: var(--select); border-color: var(--lit); color: var(--text); box-shadow: inset 0 0 0 1px var(--lit); }
+.help > .help-tabs { align-self: flex-start; }
 .help-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
 .help-card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; }
 .help-card h4 { margin: 0 0 8px; font-size: var(--t-s); text-transform: uppercase; letter-spacing: .06em; color: var(--text-2); }
@@ -184,17 +184,24 @@
 
 .rec-fades { display: flex; gap: 4px; margin-top: 4px; }
 .rec-fades .chip { padding: 1px 8px; font-size: var(--t-xs); }
-.ready { display: grid; gap: 8px; min-width: min(520px, 90vw); }
-.ready-head { font-weight: 700; margin: 0 0 4px; }
-.ready-head.ok { color: var(--go, var(--go)); }
-.ready-head.warn { color: var(--blind, var(--blind)); }
-.ready-head.bad { color: var(--live, var(--live)); }
-.ready-row { display: grid; grid-template-columns: 26px 1fr; gap: 8px; align-items: start; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line-strong); }
-.ready-ic { width: calc(22px * var(--ctl)); height: calc(22px * var(--ctl)); border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: var(--t-s); background: var(--line-strong); }
-.ready-row.ok .ready-ic { background: var(--go); color: var(--text); }
+/* Check the show: a line saying how it stands, then Before doors and In
+   the show - a row per thing, its mark (✓ ! ✕ i), what it is, the fix */
+.ready { display: grid; gap: 6px; min-width: min(520px, 90vw); }
+.doctor.ready { min-width: 0; }
+.ready-head { margin: 0 0 2px; font-weight: 600; }
+.ready-head.ok { color: var(--go); }
+.ready-head.warn { color: var(--blind); }
+.ready-head.bad { color: var(--live-ink); }
+.ready .check-h { margin: 10px 0 0; color: var(--text-3); font-size: var(--t-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.ready-row { display: grid; grid-template-columns: calc(22px * var(--ctl)) minmax(0, 1fr); gap: 10px; align-items: start; padding: 8px 10px; border-radius: var(--r); background: var(--raised); }
+.ready-text { display: grid; gap: 4px; justify-items: start; min-width: 0; }
+.ready-detail { margin: 0; color: var(--text-2); font-size: var(--t-s); }
+.ready-row .btn { background: var(--hover); }
+.ready-row .btn:hover { background: var(--pressed); }
+.ready-ic { width: calc(22px * var(--ctl)); height: calc(22px * var(--ctl)); border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: var(--t-s); background: var(--pressed); color: var(--text); }
+.ready-row.ok .ready-ic { background: var(--go-face); color: var(--go); }
 .ready-row.warn .ready-ic { background: var(--blind); color: var(--lit-ink); }
 .ready-row.bad .ready-ic { background: var(--live); color: var(--text); }
-.ready-row.info .ready-ic { background: var(--s-blue); color: var(--text); }
 .rdm { display: grid; gap: 8px; }
 .rdm-row { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; }
 .rdm-row.ok .ready-ic { background: var(--go); color: var(--text); }

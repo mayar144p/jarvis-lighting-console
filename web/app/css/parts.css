@@ -58,7 +58,7 @@ button.chip:hover { background: var(--hover); color: var(--text); }
 .link:hover { color: var(--text); }
 
 /* ----------------------------------------------------------------- field */
-input[type=text], input[type=url], input[type=search], input[type=number], input[type=password], textarea, select, .select {
+input:not([type]), input[type=text], input[type=url], input[type=search], input[type=number], input[type=password], input[type=email], input[type=time], textarea, select, .select {
   height: var(--h); padding: 0 9px; min-width: 0;
   border: 1px solid var(--line-strong); border-radius: var(--r);
   background: var(--well); color: var(--text);
@@ -101,6 +101,13 @@ select.small, .select.small { height: var(--h-s); padding: 0 6px; font-size: var
 
 /* ----------------------------------------------------------------- check */
 .check { display: inline-flex; align-items: center; gap: 8px; min-height: var(--h); color: var(--text); cursor: pointer; }
+/* a file picker: its button is the desk's button, the file's name beside it */
+input[type=file] { max-width: 100%; color: var(--text-2); font: inherit; font-size: var(--t-s); }
+input[type=file]::file-selector-button {
+  height: var(--h); margin-right: 10px; padding: 0 12px; border: 0; border-radius: var(--r);
+  background: var(--raised); color: var(--text); font: inherit; font-weight: 500; cursor: pointer;
+}
+input[type=file]::file-selector-button:hover { background: var(--hover); }
 input[type=checkbox], input[type=radio] { width: calc(16px * var(--ctl)); height: calc(16px * var(--ctl)); margin: 0; flex: none; accent-color: var(--lit); cursor: pointer; }
 
 /* slider: a short horizontal fader */

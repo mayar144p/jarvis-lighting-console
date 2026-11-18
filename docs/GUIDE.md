@@ -788,7 +788,7 @@ work there too.
 
 **Help → Take the tour** shows round the mode on screen (Set up, Program
 or Live); the first time in each mode the desk offers it once.  A greyed
-*Record cue* says why underneath.  **Ready?** puts a button on each thing
+*Record cue* says why underneath.  **Check the show…** (the Show menu) puts a button on each thing
 to fix (Add lights, Show the clashes, Record a cue, Save, Output
 settings, Turn on Stay on the floor...) and *Check again*.
 
@@ -846,7 +846,7 @@ tilt); `cue 3 at 50` runs cue 3 at half.
 
 *Where:* Copilot (top bar)
 
-With `LLM_API_KEY` in `.env`, the copilot's Program tab is an assistant
+With `LLM_API_KEY` in `.env`, the copilot's Ask tab is an assistant
 that works the desk itself. It looks at the rig, does things, then
 **checks the real lights** (level, colour, which zone each beam lands in)
 and fixes what isn't right, in as many rounds as it needs. Ask for a feeling
@@ -880,7 +880,7 @@ below.
 
 **AI** in the top bar opens it. Three tabs:
 
-* **Program.** *“Warm wash on the pars at 70%, then a slow rainbow on the
+* **Ask.** *“Warm wash on the pars at 70%, then a slow rainbow on the
   movers.”* The request, your rig (types, groups, palettes, cues, selection)
   and recent turns go to the model, which returns a structured plan through a
   forced tool call. You see the steps first, then apply them. They run as
@@ -905,7 +905,7 @@ below.
   included, and the real lights keep what they have. **Keep** hands it to
   the rig, **Throw away** drops it. Cues, blackout, the master and the
   timeline still go live.
-* **Design a show → Build the whole show.** The copilot reads the rig in the
+* **Build a show → Build the whole show.** The copilot reads the rig in the
   3D view and the song on the timeline, then designs and builds the whole
   show:
   * **What it reads:** what each light is, where it hangs (front truss movers,
@@ -926,14 +926,16 @@ below.
   your own timeline tracks are kept. It works offline too, with a style-aware
   designer; pick a style chip (techno, house, EDM, hip hop, lounge, wedding,
   latin) or describe it.
-* **Design a show → concepts.** A brief (*winter wedding, slow and elegant,
+* **Build a show → concepts.** A brief (*winter wedding, slow and elegant,
   warm whites, avoid red*) returns two or three concepts, each with a
   palette and cue list, for one playback.
-* **Diagnose.** The show doctor reads the show and reports problems with a fix where one exists:
-  nothing patched, universes seen on the network but not patched, guessed
-  profiles, channels with no control, cues pointing at removed heads, lights
-  piled at one spot, output blind or stalled, a broadcast target that cannot
-  reach the node.
+* **Check the show.** The same check as the Show menu's **Check the show…**,
+  each thing with the button that puts it right. *Before doors*: what to put
+  right first (the output, a show never saved, no lights, clashing
+  addresses, no cue to play). *In the show*: what is wrong inside it -
+  universes seen on the network but not patched, guessed profiles, channels
+  with no control, cues pointing at removed heads, lights piled at one spot,
+  output blind or stalled, a broadcast target that cannot reach the node.
 
 **The allowlist.** The model can only call a fixed list of non-destructive
 actions with validated parameters. It cannot arm output, load or save show
@@ -942,13 +944,13 @@ buttons.
 
 ### Talking with the copilot (voice)
 
-*Where:* Copilot → 🗣 Talk
+*Where:* Copilot → Talk
 
-With the online AI (Settings → AI → your key), **🗣 Talk** in the copilot
+With the online AI (Settings → AI → your key), **Talk** in the copilot
 starts a spoken conversation: you talk, it answers out loud, and you can talk
 over it. What you ask it to do goes to the copilot as if typed - the room's
 rules, the preview and one Ctrl+Z all hold. Press it again to stop. Without
-the online AI, hold 🎙 to speak one request.
+the online AI, hold the microphone key to speak one request.
 
 ### What the AI has learned
 
@@ -962,12 +964,12 @@ again (your shows stay).
 
 ### DJ requests from a phone
 
-*Where:* Copilot → 📱 DJ requests…
+*Where:* Copilot → DJ requests…
 
 The DJ or the host asks for things from their phone (more energy, a speech,
 blackout for the intro) and you decide.
 
-1. Copilot → **📱 DJ requests…** → **Copy the link**, and send it to them.
+1. Copilot → **DJ requests…** → **Copy the link**, and send it to them.
    On another device use this computer's network address in place of
    localhost.
 2. Each request shows as a card on the desk: **Do it** (the copilot does it
@@ -1459,7 +1461,7 @@ add a model the desk hasn't seen pass the test). Go live first, then:
    macro", a small LED's "Programs") and whose file calls 0 only "No
    function" is asked once more: with that channel at 0, is the real light
    **Dark** or **Lit**? The answer is kept for the model: Full lights it,
-   Out and Blackout darken it, and the 3D draws it that way. **Ready?** lists
+   Out and Blackout darken it, and the 3D draws it that way. **Check the show** lists
    such lights until they've been asked.
 3. It then moves pan and tilt, shows red, green and blue, and strobes fast then
    slow, asking each time whether the real light did the same (on a multi-head

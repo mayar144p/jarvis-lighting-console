@@ -478,7 +478,7 @@ export async function openShowMenu(anchor, menuFn) {
     shows.length ? { label: `All shows… (${shows.length})`, hint: "find, open, rename, copy, delete", run: openShowFiles }
       : { label: "No saved shows yet", disabled: true, run() {} },
     "-",
-    { label: "Ready? check…", hint: "before doors", run: openReadyCheck },
+    { label: "Check the show…", hint: "before doors", run: openShowCheck },
     current ? { label: "Earlier versions…", run: () => openVersions(current) } : null,
     current ? { label: "Export (download)", run: () => exportShow(current) } : null,
     "-",
@@ -564,10 +564,21 @@ export async function openShowFiles() {
 }
 
 // Before doors: what would bite during the show, each with what to press.
-export async function openReadyCheck() {
-  const r = await run("ready_check", {});
-  if (!r.ok) return;
-  const ICON = { ok: "✓", info: "i", warn: "!", bad: "✕" };
+// Check the show: one place before doors.  Before doors: what to put right
+// first (the output, a show never saved, no lights, clashing addresses, no
+// cue to play...).  In the show: what is wrong inside it (cues pointing at
+// lights no longer there, profiles that were guessed, lights piled in one
+// spot, output that can't reach the rig).  Each with the button that puts it
+// right.  The Show menu, Set up, the command line and the Copilot's Check
+// the show tab all show it; `done` closes whatever it sits in.
+const CHECK_ICON = { ok: "✓", info: "i", warn: "!", bad: "✕" };
+const DOCTOR_LEVEL = { ok: "ok", info: "info", warn: "warn", error: "bad" };
+export async function renderShowCheck(box, done = () => {}) {
+  box.classList.add("ready");
+  box.replaceChildren(h("p.muted", "Checking…"));
+  const [r, d] = await Promise.all([run("ready_check", {}), get("/api/console/doctor").catch(() => null)]);
+  if (!r.ok) { box.replaceChildren(h("p.muted", r.error || "The desk didn't answer.")); return; }
+  const again = () => renderShowCheck(box, done);
   // each fix as a button that goes straight there
   const head = (n) => (state.snap && state.snap.patch || []).find((x) => x.head_no === n);
   const DO = {
@@ -582,23 +593,42 @@ export async function openReadyCheck() {
     output: ["Output settings…", () => import("./settings.js").then((m) => m.openSettingsAt("output"))],
     save: ["Save the show…", () => saveShow()],
   };
-  let close = () => {};
   const fixBtn = (i) => {
     // a one-tap fix the desk worked out (take the button off, disarm...)
     if (i.act) return h("button.btn.small", { title: "Put it right", onclick: async () => {
       const res = await run(i.act.action, i.act.params || {}, { toast: true });
-      if (res.ok) { close(); openReadyCheck(); }
+      if (res.ok) again();
     } }, "Fix");
-    const d = i.do && DO[i.do];
-    if (!d) return i.fix ? h("small.muted", "→ " + i.fix) : null;
-    return h("button.btn.small", { title: i.fix, onclick: () => { const keep = i.do === "floor_safe"; if (!keep) close(); d[1](i); } }, d[0]);
+    const fix = i.do && DO[i.do];
+    if (!fix) return i.fix ? h("small.muted", "→ " + i.fix) : null;
+    return h("button.btn.small", { title: i.fix, onclick: () => { if (i.do !== "floor_safe") done(); fix[1](i); } }, fix[0]);
   };
-  const body = h("div.ready",
-    h("p.ready-head." + r.worst, r.ready ? "Ready for doors." : r.worst === "bad" ? "Fix these before the show." : "Worth a look before the show."),
-    ...r.items.map((i) => h("div.ready-row." + i.level, h("span.ready-ic", ICON[i.level] || "·"),
-      h("div", h("div", i.text), fixBtn(i)))));
-  close = modal({ title: "Ready?", body, foot: [h("span.grow"), h("button.btn", { onclick: () => { close(); openReadyCheck(); } }, "Check again")] });
+  const row = (level, text, detail, btn) => h("div.ready-row." + level, h("span.ready-ic", CHECK_ICON[level] || "·"),
+    h("div.ready-text", h("div", text), detail ? h("p.ready-detail", detail) : null, btn));
+  // (what Before doors already says - no lights, no cues, blind... - isn't said twice)
+  const said = new Set((r.items || []).map((i) => i.do).filter(Boolean));
+  const found = ((d && d.findings) || []).filter((f) => !(f.also && said.has(f.also)));
+  const worst = [r.worst, ...found.map((f) => DOCTOR_LEVEL[f.level])].includes("bad") ? "bad"
+    : [r.worst, ...found.map((f) => DOCTOR_LEVEL[f.level])].includes("warn") ? "warn" : r.worst;
+  const ready = worst !== "bad" && worst !== "warn";
+  box.replaceChildren(
+    h("p.ready-head." + worst, ready ? "Ready for doors." : worst === "bad" ? "Fix these before the show." : "Worth a look before the show."),
+    h("h3.check-h", "Before doors"),
+    ...r.items.map((i) => row(i.level, i.text, "", fixBtn(i))),
+    h("h3.check-h", "In the show"),
+    ...(!d ? [h("p.muted.small", "The deeper check didn't answer - Check again.")]
+      : found.length ? found.map((f) => row(DOCTOR_LEVEL[f.level] || "info", h("b", f.title), f.detail,
+        f.fix ? h("button.btn.small", { onclick: () => run(f.fix.action, f.fix.params || {}, { toast: true }).then(again) }, f.fix.label || "Fix it") : null))
+        : [h("p.muted.small", "Nothing else: the addresses, the cues and the output line up.")]));
 }
+
+export async function openShowCheck() {
+  const box = h("div.ready");
+  const close = modal({ title: "Check the show", body: box, foot: [h("span.grow"), h("button.btn", { onclick: () => renderShowCheck(box, () => close()) }, "Check again")] });
+  await renderShowCheck(box, () => close());
+}
+// (its old name: Ready?)
+export const openReadyCheck = openShowCheck;
 
 async function openVersions(name) {
   const r = await run("show_versions", { name });

@@ -12,10 +12,14 @@ from __future__ import annotations
 from . import config, fixture_kind
 
 
-def _finding(level: str, title: str, detail: str = "", fix: dict | None = None) -> dict:
+def _finding(level: str, title: str, detail: str = "", fix: dict | None = None, also: str = "") -> dict:
+    """`also`: the Ready check's item for the same thing (its `do`), so
+    Check the show, which shows both, says it once."""
     out: dict = {"level": level, "title": title, "detail": detail}
     if fix:
         out["fix"] = fix
+    if also:
+        out["also"] = also
     return out
 
 
@@ -33,7 +37,7 @@ def examine(eng) -> dict:
 
     if not patch:
         out.append(_finding("error", "Nothing is patched",
-                            "Add fixtures from the library first - the desk has nothing to drive."))
+                            "Add fixtures from the library first - the desk has nothing to drive.", also="add"))
         return _wrap(out)
 
     # -- addressing -------------------------------------------------------
@@ -74,10 +78,10 @@ def examine(eng) -> dict:
         out.append(_finding(
             "error", f"Cues point at {len(stale)} fixture(s) that are not patched",
             "Those parts of the cues do nothing. Re-patch the heads or re-record the cues. "
-            "Missing: " + ", ".join(f"#{n}" for n in stale[:12])))
+            "Missing: " + ", ".join(f"#{n}" for n in stale[:12]), also="cue_list"))
     if not cues:
         out.append(_finding("info", "No cues recorded yet",
-                            "Set a look, then Record cue - or let the copilot design a show from a brief."))
+                            "Set a look, then Record cue - or let the copilot design a show from a brief.", also="record"))
     if not groups and len(patch) >= 6:
         out.append(_finding("info", "No groups",
                             "Groups make big rigs fast to program: select a row of lights and press G."))
@@ -108,11 +112,11 @@ def examine(eng) -> dict:
     if dry_run:
         out.append(_finding("info", "Blind mode: nothing reaches the rig",
                             "Frames are built and counted, but nothing is sent. Use Go live when "
-                            "the node is connected."))
+                            "the node is connected.", also="output"))
     elif not live:
         out.append(_finding("warn", "Output is stopped",
                             "The desk is allowed to send, but the output is not running. "
-                            "Press Go live."))
+                            "Press Go live.", also="output"))
     if host == "255.255.255.255":
         out.append(_finding("warn", "Output is a global broadcast",
                             "255.255.255.255 is often dropped by switches and Wi-Fi. Leave DMX_HOST "

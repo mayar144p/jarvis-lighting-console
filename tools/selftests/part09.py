@@ -10546,8 +10546,9 @@ def test_visual_polish() -> None:
     check("the old text symbols (carets, notes, full screen, pages, camera, arrows) are drawn as the desk's icons, wherever they appear",
           "export function upgradeGlyphs" in ic and all(f'{k}:' in ic for k in ("caret", "music", "full", "pages", "camera"))
           and "upgradeGlyphs();" in (web / "main.js").read_text(encoding="utf-8"), "")
-    check("one look for selected / on (chips, segments, tabs, toggles, tiles)",
-          "--select:" in css and css.count("background: var(--select); border-color: var(--lit); color: var(--text);") >= 15
+    check("one look for selected / on: a switch's choice filled, a chip, toggle or tile lit at the edge",
+          "--select:" in css and css.count("background: var(--select); border-color: var(--lit); color: var(--text);") >= 12
+          and ".seg button.on, .seg button[aria-pressed=true], .seg button[aria-selected=true] { background: var(--pressed); color: var(--text); font-weight: 600; }" in css
           and ".btn.primary, .btn.on { background: var(--lit); color: var(--lit-ink);" in css, "")
     mh = (web / "modehub.js").read_text(encoding="utf-8")
     check("Live: what plays now in one slim strip above the buttons, only while something plays",

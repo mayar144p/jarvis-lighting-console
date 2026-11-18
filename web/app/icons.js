@@ -45,6 +45,19 @@ const P = {
   music: '<path d="M6 12V3.5l7-1.5v8.5"/><circle cx="4.3" cy="12" r="1.8" class="fill"/><circle cx="11.3" cy="10.5" r="1.8" class="fill"/>',
   camera: '<path d="M2 5.5h3l1.2-2h3.6l1.2 2h3v7.5H2z"/><circle cx="8" cy="9" r="2.3"/>',
   play: '<path d="M4.5 2.5l9 5.5-9 5.5z" class="fill"/>',
+  mic: '<rect x="6" y="1.8" width="4" height="7.6" rx="2"/><path d="M3.6 7.6a4.4 4.4 0 0 0 8.8 0M8 12v2.2M5.6 14.2h4.8"/>',
+  talk: '<path d="M2.5 3h11v7.5h-6.2L4.5 13v-2.5h-2z"/><path d="M5.2 6.8h5.6"/>',
+  phone: '<rect x="4.5" y="1.5" width="7" height="13" rx="1.5"/><path d="M7 12.2h2"/>',
+  book: '<path d="M2 3.2c2-.8 4-.8 6 .6 2-1.4 4-1.4 6-.6v9.6c-2-.8-4-.8-6 .6-2-1.4-4-1.4-6-.6zM8 3.8v9.6"/>',
+  thumbup: '<path d="M5.2 7.2l2.5-4.7c1 0 1.6.8 1.4 1.8l-.4 2.2h3.9c.8 0 1.4.7 1.2 1.5l-.9 4.4c-.1.6-.6 1.1-1.3 1.1H5.2zM2.5 7.2h2.7v6.3H2.5z"/>',
+  thumbdown: '<g transform="matrix(1 0 0 -1 0 16)"><path d="M5.2 7.2l2.5-4.7c1 0 1.6.8 1.4 1.8l-.4 2.2h3.9c.8 0 1.4.7 1.2 1.5l-.9 4.4c-.1.6-.6 1.1-1.3 1.1H5.2zM2.5 7.2h2.7v6.3H2.5z"/></g>',
+  bulb: '<path d="M5.7 10.6C4.3 9.7 3.4 8.2 3.4 6.5a4.6 4.6 0 0 1 9.2 0c0 1.7-.9 3.2-2.3 4.1v1.3H5.7zM6.3 14.2h3.4"/>',
+  bolt: '<path d="M9.2 1.5L3.6 9.1h4.1l-.9 5.4 5.6-7.6H8.3z"/>',
+  search: '<circle cx="7" cy="7" r="4.3"/><path d="M10.2 10.2l3.6 3.6"/>',
+  headphones: '<path d="M2.6 11.5V8.5a5.4 5.4 0 0 1 10.8 0v3"/><rect x="2" y="9.6" width="3" height="4.6" rx="1"/><rect x="11" y="9.6" width="3" height="4.6" rx="1"/>',
+  lock: '<rect x="3" y="7" width="10" height="7.5" rx="1.5"/><path d="M5.2 7V5a2.8 2.8 0 0 1 5.6 0v2"/>',
+  hand: '<path d="M5.2 9.2V4a1 1 0 0 1 2 0v3.4M7.2 7.2V2.8a1 1 0 0 1 2 0v4.4M9.2 7.2V3.6a1 1 0 0 1 2 0v4.6M11.2 7.6V5.8a1 1 0 0 1 2 0v3.6c0 2.7-2 4.9-4.6 4.9-1.7 0-2.9-.8-3.9-2.3L2.8 9.6a1 1 0 0 1 1.6-1.2l.8 1"/>',
+  warn: '<path d="M8 2.2l6.2 10.8H1.8z"/><path d="M8 6.6v3"/><circle cx="8" cy="11.2" r=".75" class="fill"/>',
 };
 
 export function icon(name, cls = "") {
@@ -58,12 +71,18 @@ export function icon(name, cls = "") {
 
 export const ICON_NAMES = Object.keys(P);
 
-// The old text symbols (▾ ▸ ◀ ▶ ⛶ ☰ ♪ 📷) on buttons, chips, labels and
-// menus become these line icons wherever they appear - also in text set
-// later.  (Never inside a field, a select or the 3D's own drawing.)
-const GLYPH = { "▾": "caret", "▸": "caretr", "◀": "prev", "▶": "play", "⛶": "full", "☰": "pages", "♪": "music", "📷": "camera" };
-const GLYPH_RE = /▾|▸|◀|▶|⛶|☰|♪|📷/;
-const GLYPH_SPLIT = /(▾|▸|◀|▶|⛶|☰|♪|📷)/;
+// The old text symbols (▾ ▸ ◀ ▶ ⛶ ☰ ♪) and the emoji once used as icons
+// (📷 🎙 🗣 📱 📖 👍 👎 💡 ⚡ 🔎 🎧 🔒 ✋ ⚠) on buttons, chips, labels, menus
+// and messages become these line icons wherever they appear - also in text
+// set later, and in what the copilot writes.  (Never inside a field, a
+// select or the 3D's own drawing.)
+const GLYPH = { "▾": "caret", "▸": "caretr", "◀": "prev", "▶": "play", "⛶": "full", "☰": "pages", "♪": "music", "📷": "camera",
+  "🎙": "mic", "🗣": "talk", "📱": "phone", "📖": "book", "👍": "thumbup", "👎": "thumbdown", "💡": "bulb", "⚡": "bolt",
+  "🔎": "search", "🎧": "headphones", "🔒": "lock", "✋": "hand", "⚠": "warn" };
+const GLYPH_ALT = Object.keys(GLYPH).join("|");
+const GLYPH_RE = new RegExp(GLYPH_ALT, "u");
+// (an emoji's "show me in colour" mark after it goes with it)
+const GLYPH_SPLIT = new RegExp(`(${GLYPH_ALT})\uFE0F?`, "u");
 function swapText(node) {
   const p = node.parentElement;
   if (!p || p.closest("select, option, textarea, input, svg, canvas, script, style, [contenteditable], .no-glyph")) return;

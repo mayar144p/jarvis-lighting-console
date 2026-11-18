@@ -85,9 +85,9 @@
 .drawer.copilot { width: var(--copilot-w, clamp(440px, 32vw, 720px)); }
 .copilot-grip { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; touch-action: none; z-index: 2; }
 .copilot-grip:hover, .copilot-grip.on { background: color-mix(in srgb, var(--lit) 35%, transparent); }
-#copilot-tabs { display: flex; gap: 4px; margin: 10px 18px 0; padding: 3px; background: var(--base); border: 1px solid var(--line); border-radius: calc(var(--r) + 3px); }
-#copilot-tabs button { flex: 1; min-height: calc(34px * var(--ctl)); border-radius: var(--r); font-size: var(--t); font-weight: 600; color: var(--text-2); border: 1px solid transparent; }
-#copilot-tabs button[aria-selected="true"] { background: var(--select); border-color: var(--lit); color: var(--text); }
+/* its three tabs: the desk's segmented switch, across the drawer */
+#copilot-tabs { display: flex; margin: 10px 18px 0; }
+#copilot-tabs button { flex: 1; }
 .copilot .ctab { padding: 16px 18px; gap: 14px; }
 .copilot .ai-suggest:empty, .copilot #auto-styles:empty { display: none; }
 .copilot .ai-tools { margin: 0; gap: 8px; }
@@ -95,6 +95,9 @@
 .cp-card h4 { margin: 0; font-size: var(--t-l); }
 .cp-card p { margin: 0; line-height: 1.45; }
 .cp-card textarea { width: 100%; box-sizing: border-box; font-size: var(--t); }
+/* (a card is raised: its plain buttons a step lighter, or they vanish into it) */
+.cp-card .btn:not(.primary) { background: var(--hover); }
+.cp-card .btn:not(.primary):hover { background: var(--pressed); }
 .cp-row { display: flex; gap: 8px; align-items: center; }
 .msg .ai-live { display: grid; gap: 2px; margin: 6px 0; font-size: var(--fs-sm, 12px); }
 .msg .ai-live:empty { display: none; }
