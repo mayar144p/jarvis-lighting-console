@@ -296,7 +296,7 @@ function crowdMenu(btn, keep) {
   menu(btn, [
     { label: tick(shown) + "Show the crowd", run: () => {
       stage.setOptions({ people: !shown });
-      btn.classList.toggle("on", !shown);
+      $("#people-btn").classList.toggle("on", !shown);         // (the crowd's own key, not the menu's anchor)
       keep("people", !shown ? "1" : "0");
     } },
     { label: tick(stage.options.dance) + "Dancing", run: () => {

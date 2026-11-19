@@ -92,11 +92,11 @@ function offerTour() {
 // ---------------------------------------------------------------- the tours
 // one per mode: what is on screen in Set up, Program and Live
 const SETUP_STEPS = [
-  ["#mode-seg", "Three modes", "Set up, Program, Live: the screen arranged for each job. You are in Set up."],
-  ["#fixtures-panel", "Groups and lights", "Your groups at the top, every light below (+ finds any light in the library). Click to select; hold a group to flash it."],
-  ["#mode-hub", "Set up, in order", "The lights, the room, the connections, the checks - each with how it stands now and a button to do it."],
+  ["#mode-seg", "Three modes", "Set up, Program, Live: the screen arranged for each job. You are in Set up - the patch."],
+  [".su-patch", "The patch", "Every light: its number, maker, kind, mode, address and groups, each universe drawn under it. + Add lights finds any light in the library."],
+  [".su-check", "Before the show", "What is still to do - the lights, the room, the connections, on the day - each with how it stands and its key. Its head folds it away."],
+  [".su-insp", "The light picked", "Click a light in the patch: its name, mode and address, and which way it is hung."],
   ["#output", "Output", "Blind means nothing reaches the real lights. Go live… when the rig is connected."],
-  ["#rail", "Master", "The grand master, Release all and BLACKOUT: in the same place in every mode."],
 ];
 const LIVE_STEPS = [
   ["#qb", "Your buttons", "The button page is the screen in Live: flashes, colours, moves, effects. The page tabs are above it."],
@@ -107,16 +107,17 @@ const LIVE_STEPS = [
 const STEPS = [
   ["#show-btn", "Shows", "Save, open and start shows here - New show… has the templates, and MVR plots come in here too."],
   ["#output", "Output", "Blind means nothing reaches the real lights. Go live… when the rig is connected."],
-  ["#fixtures-panel", "Your lights", "Your lights and groups. Click to select; + Add finds any light in the library."],
+  ["#fixtures-panel", "Groups and lights", "Your groups at the top, every light below. Click to select; hold a group to flash it."],
   ["#programmer", "Programmer", "Level, colour, position, beam and effects for the selected lights."],
   ["#playbacks", "The dock", "Buttons, Cues (the playbacks with GO), Timeline and Group faders - one at a time. The corner button gives it the whole work area."],
-  ["#rail", "Master", "The grand master, Release all and BLACKOUT: in the same place in every mode."],
+  ["#rail", "Master", "The grand master, Release all and BLACKOUT: in the same place in Program and Live."],
   ["#ai-btn", "Copilot", "Say what you want - “slow blue wash on the movers” - and the AI does it, in 3D first."],
 ];
 
 /** A short tour of the mode on screen (Set up, Program or Live): a
  *  highlight round each part, Next / Back. */
-export function startTour(mode = document.body.dataset.mode) {
+export function startTour(mode = document.body.dataset.mode, wait = 0) {
+  if (mode === "setup" && !$(".su-patch") && wait < 10) { setTimeout(() => startTour(mode, wait + 1), 150); return; }
   try { localStorage.setItem("haze.toured", "1"); localStorage.setItem("haze.toured." + mode, "1"); } catch { /* private */ }
   const list = mode === "setup" ? SETUP_STEPS : mode === "live" ? LIVE_STEPS : STEPS;
   const steps = list.filter(([sel]) => { const el = $(sel); return el && el.getClientRects().length; });

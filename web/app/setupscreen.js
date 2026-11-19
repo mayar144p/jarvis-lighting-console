@@ -38,8 +38,9 @@ export function paintSetupScreen(box, steps) {
         h("div.su-table-wrap", h("table.su-table",
           h("thead", h("tr", ...["No.", "Light", "Maker", "Kind", "Mode", "Address", "Channels", "Groups"].map((t, i) =>
             h("th" + (i === 0 ? ".c-no" : i === 5 ? ".c-addr" : i === 6 ? ".c-ch" : ""), t)))),
-          h("tbody#su-rows")),
-        h("div.su-empty", h("b", "No lights yet"), h("span.muted", "Add the lights that are hung, or import a plot or a patch."))),
+          h("tbody#su-rows"))),
+        // (beside the table, not in it: the table hides while there are no lights)
+        h("div.su-empty", h("b", "No lights yet"), h("span.muted", "Add the lights that are hung, or import a plot or a patch.")),
         h("div.su-unis#su-unis")),
       h("aside.su-side",
         h("section.su-check#su-check", { "aria-label": "Before the show" }),
@@ -155,7 +156,9 @@ function paintUniverses(box) {
   unisKey = key;
   const unis = [...new Set(list.map((x) => x.universe || 1))].sort((a, b) => a - b);
   const clashHeads = new Set(clashes.flatMap((c) => [c.a, c.b, c.head, ...(c.heads || [])].filter((x) => x !== undefined)));
-  box.replaceChildren(...unis.map((u) => {
+  // several universes: slimmer strips, the key once at the top, the scale under the last
+  box.classList.toggle("many", unis.length > 1);
+  box.replaceChildren(...unis.map((u, ui) => {
     const on = list.filter((x) => (x.universe || 1) === u);
     const used = on.reduce((n, x) => n + Math.max(1, x.channels || 1), 0);
     const nClash = clashes.filter((c) => (c.universe || u) === u).length;
@@ -167,9 +170,9 @@ function paintUniverses(box) {
       h("div.su-uni-head", h("b", `Universe ${u}`),
         h("span", `${used} of 512 channels used, ${nClash ? `${nClash} clash${nClash === 1 ? "" : "es"}` : "no clashes"}`),
         h("span.grow"),
-        h("span.su-key", h("i.sel"), "selected"), h("span.su-key", h("i.fx"), "lasers and effects")),
+        ui === 0 ? h("span.su-key", h("i.sel"), "selected") : null, ui === 0 ? h("span.su-key", h("i.fx"), "lasers and effects") : null),
       h("div.su-uni-bar", ...blocks),
-      h("div.su-uni-axis", ...["1", "128", "256", "384", "512"].map((t) => h("span", t))));
+      ui === unis.length - 1 ? h("div.su-uni-axis", ...["1", "128", "256", "384", "512"].map((t) => h("span", t))) : null);
   }));
 }
 
@@ -295,9 +298,13 @@ async function modesFor(hd) {
 
 // the selection changes many times a second while dragging in the 3D:
 // only the highlight and the inspector follow it, not the whole table
+let liteSel = "";
 on("lite", () => {
   const grid = document.querySelector(".su-grid");
   if (!grid) return;
+  const now = selected().join(",");
+  if (now === liteSel) return;                  // (the feed is many times a second: only a new selection matters)
+  liteSel = now;
   markSelected();
   paintInspector(grid.querySelector(".su-insp"));
   paintUniverses(grid.querySelector(".su-unis"));

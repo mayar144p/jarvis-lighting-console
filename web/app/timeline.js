@@ -664,7 +664,9 @@ async function timecodeMenu(btn) {
 // the timeline's tempo: typed, or tapped along with the music
 async function setTempo() {
   const v = await promptBox("Timeline tempo", "Beats a minute (BPM)", String(+(+doc().bpm || 120).toFixed(1)), { ok: "Set" });
-  if (v !== null && +v >= 20 && +v <= 300) run("timeline_set", { bpm: +(+v).toFixed(1) });
+  if (v === null || String(v).trim() === "") return;
+  if (!(+v >= 20 && +v <= 300)) { toast("A tempo between 20 and 300 BPM", "bad"); return; }
+  run("timeline_set", { bpm: +(+v).toFixed(1) });
 }
 function tapTempo() {
   const now = performance.now();

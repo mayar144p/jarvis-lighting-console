@@ -51,6 +51,9 @@ body[data-mode="setup"] .mode-hub-body { overflow-y: auto; padding: 0; }
 .su-uni-bar i.clash { background: var(--live); }
 .su-uni-bar i.sel { background: var(--lit); }
 .su-uni-axis { display: flex; justify-content: space-between; color: var(--text-3); font-size: var(--t-xs); font-variant-numeric: tabular-nums; }
+.su-unis.many { gap: 8px; }
+.su-unis.many .su-uni { gap: 4px; }
+.su-unis.many .su-uni-bar { height: calc(16px * var(--ctl)); }
 
 /* ------------------------------------------------------- before the show */
 .su-side { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--panel); }

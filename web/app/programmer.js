@@ -269,6 +269,10 @@ function renderColour() {
   $("#hex-swatch").style.background = hex || "";
   $$("#swatches button").forEach((b) => b.classList.toggle("on", !!hex && b.dataset.hex === hex));
   renderWheel();
+  // the White heading: shown while there is something under it (the
+  // temperature's row is shown or hidden by renderWheel, just above)
+  const wh = $("#white-h");
+  if (wh) wh.hidden = !$("#colour-extra").children.length && $("#kelvin-row").hidden;
   const heads = selectionHeads();
   const full = (x) => { const m = x.map || []; return ["red", "green", "blue"].every((r) => m.includes(r)) || ["cyan", "magenta", "yellow"].every((r) => m.includes(r)); };
   const mixers = heads.filter(full).length;

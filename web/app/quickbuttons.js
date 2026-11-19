@@ -1626,6 +1626,8 @@ export function initQuickButtons() {
     if (editing && panel && panel.dirty() && !(await confirmBox("Not saved", `Leave ${panel.title} without saving its changes?`, { ok: "Leave it" }))) return;
     if (editing && panel) panel.close();
     editing = !editing;
+    // Done on a new page left empty: it isn't a page yet - back to the first
+    if (!editing && page > 4 && !pagesThere().has(page)) { folderBack.length = 0; page = 1; emit("qbpage", page); }
     render(true);
   });
   $("#qb-layout").addEventListener("click", editLayout);

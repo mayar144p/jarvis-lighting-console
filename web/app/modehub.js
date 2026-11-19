@@ -89,7 +89,7 @@ function paintSetup() {
         ok: mv.length ? lined === mv.length : null, buttons: [btn("Line up…", lazy("./lineup.js", "openLineUp"))] },
       { title: "Zones", status: (areas.length ? areas.slice(0, 3).map((z) => z.name || z.kind).join(", ") + (areas.length > 3 ? "…" : "") : "none yet - point a light to mark them")
           + (keep ? ` · ${keep} kept out` : ""),
-        ok: mv.length ? areas.length > 0 : null,
+        ok: areas.length ? true : mv.length ? false : null,
         buttons: [btn("Teach by pointing…", lazy("./roomteach.js", "openRoomTeach")), btn("Not here (keep out)…", lazy("./roomteach.js", "openRoomTeach", "keepout"))] }]],
     ["Connections", [
       { title: "Output", status: s.live ? `live to ${where}` : `blind, set to send on ${proto}`, ok: s.live ? true : null,
