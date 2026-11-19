@@ -18,7 +18,7 @@ function sync() {
   // beats since some zero, at the moment the lite arrived: the pill counts on
   // from there by itself, so the light flashes on the beat between updates
   recv = { t: performance.now(), beats: (t.beat - 1) + (t.phase || 0), bpm: t.bpm };
-  $("#tempo-bpm").textContent = t.bpm.toFixed(t.bpm % 1 ? 1 : 0);
+  $("#tempo-bpm").textContent = t.bpm.toFixed(1);                 // 120.0, as a DJ reads it
   const src = SRC[t.source] || "";
   $("#tempo-src").textContent = src && (t.live || t.source === "tap") ? src : "";
   $("#tempo").classList.toggle("live", !!t.live);

@@ -175,9 +175,17 @@ function renderStatus() {
       + `slowest gap ${t.worst_ms} ms, ${t.late} late frame(s)`
       + (t.state === "steady" ? "" : ". Close other screens or heavy programs on this computer."));
   }
+  // how it goes out (Art-Net, its universes, how many frames a second -
+  // where to in the tooltip), then the rig: lights and channels used
   const net = $("#st-net");
-  net.textContent = `${(o.transport || "artnet") === "artnet" ? "Art-Net" : String(o.transport).toUpperCase()} to ${o.host || "?"}`;
-  net.title = `${(o.transport || "artnet").toUpperCase()} → ${o.host || ""}`;
+  const proto = (o.transport || "artnet") === "artnet" ? "Art-Net" : String(o.transport).toUpperCase();
+  const heads = s.patch || [];
+  const unis = [...new Set(heads.map((x) => x.universe || 1))].sort((a, b) => a - b);
+  const hz = Math.round(o.hz || 0);
+  net.textContent = [proto, unis.length > 1 ? `${unis.length} universes` : `universe ${unis[0] || 1}`, hz ? `${hz} frames a second` : ""].filter(Boolean).join(", ");
+  net.title = `${proto} to ${o.host || "?"}`;
+  const used = heads.reduce((n, x) => n + (x.channels || (x.map || []).length || 1), 0);
+  $("#st-rig").textContent = heads.length ? `${heads.length} light${heads.length === 1 ? "" : "s"}, ${used} of ${Math.max(1, unis.length) * 512} channels` : "No lights yet";
   $("#st-last").textContent = state.lastAction || "";
   const stale = s.stale_heads || [];
   if (stale.length) {

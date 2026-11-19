@@ -718,7 +718,7 @@ session's tempo and its place in the bar, and joins no session of its own).
   jumps between two tempos mid-mix.
 * **The phrase** (tempo menu -> *Phrase starts here* on the drop or the
   first beat of a section): the desk counts 8 bars from it (*bar 3 of 8*).
-* **Buttons on the beat** (Buttons page -> *On the beat*: off, half beat,
+* **Buttons on the beat** (the Buttons dock -> *On the beat* in Live; in Program, its **⋯** -> *On the beat…*: off, half beat,
   beat, 2 beats, bar, 2 bars, 4 bars or the phrase). A press waits for the next one, and the tile blinks
   while it waits. Pressed just after the beat, it fires at once. A quick tap
   between beats still gives a hit on the beat. Each button can say
@@ -873,7 +873,7 @@ desk after each one.
 Tick *Offline compiler* (or have no key) for the keyword copilot described
 below.
 
-**Copilot** in the top bar opens it. Three tabs:
+**Copilot** in the top bar opens it, in a column of its own beside the master (the master and **BLACKOUT** stay in reach; drag its left edge to make it wider). Three tabs:
 
 * **Ask.** *“Warm wash on the pars at 70%, then a slow rainbow on the
   movers.”* The request, your rig (types, groups, palettes, cues, selection)

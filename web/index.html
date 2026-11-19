@@ -444,20 +444,21 @@
           <button class="btn small" id="qb-suggest" hidden title="Fill this page with buttons that suit your rig">Suggest buttons</button>
           <span class="grow"></span>
           <span class="tool-group">
-          <label class="qb-quant" title="Every button fires on the next beat or bar of the tempo (a button can say otherwise in Edit); pressed just after the beat, it fires straight away"><span>On the beat</span>
+          <label class="qb-quant live-only" title="Every button fires on the next beat or bar of the tempo (a button can say otherwise in Edit); pressed just after the beat, it fires straight away"><span>On the beat</span>
             <select class="select small" id="qb-quant"><option value="0">Off</option><option value="0.5">½ beat</option><option value="1">Beat</option><option value="2">2 beats</option><option value="4">Bar</option><option value="8">2 bars</option><option value="16">4 bars</option><option value="32">Phrase (8 bars)</option></select></label>
           <button class="btn small live-only" id="qb-autopilot" title="Autopilot: a cue list plays itself, a new look on the phrase">Autopilot…</button>
-          <button class="btn small" id="qb-release" title="Let go of every latched button">Release buttons</button>
-          <button class="btn small ghost qb-profile" id="qb-profile" aria-haspopup="menu" title="Button profiles: a whole set of pages for a kind of show (Default, Halloween...)">Default</button>
+          <button class="btn small live-only" id="qb-release" title="Let go of every latched button">Release buttons</button>
+          <button class="btn small ghost qb-profile live-only" id="qb-profile" aria-haspopup="menu" title="Button profiles: a whole set of pages for a kind of show (Default, Halloween...)">Default</button>
           </span>
           <span class="tool-group">
-          <span class="tb-sep" aria-hidden="true"></span>
+          <span class="tb-sep live-only" aria-hidden="true"></span>
           <button class="btn small ghost" id="qb-colrow" hidden title="A row of colour buttons for some lights: pressing one turns the others off">Colour row…</button>
           <button class="btn small ghost" id="qb-pages-btn" hidden title="Every page: name, order, add, empty">Pages…</button>
           <button class="btn small ghost" id="qb-layout" hidden title="This page's grid: buttons across, rows, row height">Grid…</button>
-          <button class="btn small" id="qb-edit" title="Set this page's buttons up: add, move, resize, change what they do">Edit page</button>
+          <button class="btn small" id="qb-edit" title="Set this page's buttons up: add, move, resize, change what they do"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.6 2.4l3 3L5.8 13.2H2.8v-3z"/><path d="M9 4l3 3"/></svg><span>Edit page</span></button>
           <button class="btn small ghost icon" id="qb-lock" aria-label="Lock the layout" title="Lock the layout on this device: the buttons play, nothing can be moved or edited">
             <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 016 0v2"/></svg></button>
+          <button class="btn small ghost icon prog-only" id="qb-more" aria-haspopup="menu" aria-label="More for the buttons" title="On the beat, release the buttons, button profiles, lock the layout">⋯</button>
           <button class="btn small ghost icon live-only" id="qb-full" aria-label="Full screen" title="The desk on the whole monitor (Esc to leave)">
             <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg></button>
           </span>
@@ -539,6 +540,7 @@
   <footer class="statusbar" id="statusbar">
     <span id="st-out"></span>
     <span id="st-net"></span>
+    <span id="st-rig"></span>
     <span id="st-timing" class="hidden"></span>
     <span id="st-feed"></span>
     <span id="st-conn" class="st-conn" aria-label="Connected"></span>
@@ -568,7 +570,7 @@
     <button class="ai-status" id="ai-status" title="Which AI: Online, Local or Auto"></button>
     <button class="icon-x" id="copilot-close" aria-label="Close">×</button>
   </div>
-  <nav class="seg" id="copilot-tabs">
+  <nav class="tabs cp-tabs" id="copilot-tabs" aria-label="Copilot">
     <button data-ctab="chat" aria-selected="true" title="Ask for a look, a change, an answer - it shows you the plan first">Ask</button>
     <button data-ctab="design" title="The whole show to the music, or concepts for one playback">Build a show</button>
     <button data-ctab="doctor" title="Before doors: what to put right, and what is wrong inside the show">Check the show</button>
@@ -577,10 +579,10 @@
     <div class="ai-log" id="ai-log"></div>
     <div class="ai-suggest" id="ai-suggest"></div>
     <form class="ai-input" id="ai-form">
-      <textarea id="ai-text" rows="3" placeholder="Describe the look you want…" spellcheck="false"></textarea>
-      <button class="btn ai-mic" id="ai-mic" type="button" title="Hold to talk: say it, let go (the copilot does it)" aria-label="Hold to talk">🎙</button>
+      <textarea id="ai-text" rows="3" placeholder="Say what you want the lights to do" spellcheck="false"></textarea>
+      <button class="btn ai-mic" id="ai-mic" type="button" title="Hold to talk: say it, let go (the copilot does it)" aria-label="Hold to talk">🎙 <span>Hold to talk</span></button>
       <button class="btn ai-talk" id="ai-talk" type="button" title="Talk with it: a conversation out loud - it answers, you can talk over it (online AI)" aria-label="Talk with the copilot">🗣 Talk</button>
-      <button class="btn primary" id="ai-send">Plan</button>
+      <button class="btn primary" id="ai-send">Plan it</button>
     </form>
     <div class="ai-tools" id="ai-tools">
       <label class="check small" title="Each message takes a small picture of the 3D view along, so the AI sees what you see"><input type="checkbox" id="ai-see" checked> AI sees the 3D view</label>

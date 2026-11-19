@@ -141,7 +141,7 @@ let attached = null;           // a photo to match (data URL), for the next mess
 function showAi(st) {
   const ai = (st && st.ai) || {};
   const mode = { online: "Online", local: "Local", auto: "Auto" }[ai.mode] || "";
-  $("#ai-status").textContent = st && st.llm_configured ? `${st.model}${mode ? " · " + mode : ""} ▾` : "offline compiler ▾";
+  $("#ai-status").textContent = st && st.llm_configured ? `${st.model}${mode ? " · " + mode : ""} ▾` : "On this computer ▾";
 }
 
 // no AI set up (or the key was refused): the desk's own offline planner
@@ -573,6 +573,8 @@ const diagnose = () => import("./dialogs.js").then((m) => m.renderShowCheck($("#
 
 export function openCopilot(tab = "chat") {
   $("#copilot").classList.remove("hidden");
+  document.body.classList.add("cop-open");                  // its column (shell.css)
+  window.dispatchEvent(new Event("resize"));
   $("#ai-btn").classList.add("on");
   $$("#copilot-tabs button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.ctab === tab)));
   $$("#copilot .ctab").forEach((p) => { p.hidden = p.dataset.cpane !== tab; });
@@ -583,6 +585,8 @@ export function openCopilot(tab = "chat") {
 
 export function closeCopilot() {
   $("#copilot").classList.add("hidden");
+  document.body.classList.remove("cop-open");
+  window.dispatchEvent(new Event("resize"));
   $("#ai-btn").classList.remove("on");
 }
 
@@ -592,13 +596,15 @@ export const copilotOpen = () => !$("#copilot").classList.contains("hidden");
 function wireCopilotWidth() {
   const box = $("#copilot");
   const keep = (w) => { try { if (w) localStorage.setItem("haze.copilotW", String(w)); else localStorage.removeItem("haze.copilotW"); } catch (e) { /* private window */ } };
-  const set = (w) => { if (w) box.style.setProperty("--copilot-w", `${w}px`); else box.style.removeProperty("--copilot-w"); };
+  // (on the page, so the work area's grid gives its column the same width)
+  const root = document.documentElement.style;
+  const set = (w) => { if (w) root.setProperty("--copilot-w", `${w}px`); else root.removeProperty("--copilot-w"); };
   try { set(+localStorage.getItem("haze.copilotW") || 0); } catch (e) { /* private window */ }
   const grip = h("div.copilot-grip", { title: "Drag to make the Copilot wider or narrower (double-click: back to normal)" });
   box.append(grip);
   let x0 = 0, w0 = 0, on = false;
   grip.addEventListener("pointerdown", (e) => { on = true; x0 = e.clientX; w0 = box.getBoundingClientRect().width; grip.setPointerCapture(e.pointerId); grip.classList.add("on"); });
-  grip.addEventListener("pointermove", (e) => { if (on) set(Math.round(Math.max(360, Math.min(window.innerWidth * 0.8, w0 + (x0 - e.clientX))))); });
+  grip.addEventListener("pointermove", (e) => { if (on) set(Math.round(Math.max(340, Math.min(window.innerWidth * 0.5, w0 + (x0 - e.clientX))))); });
   const end = () => { if (!on) return; on = false; grip.classList.remove("on"); keep(Math.round(box.getBoundingClientRect().width)); };
   grip.addEventListener("pointerup", end);
   grip.addEventListener("pointercancel", end);
@@ -669,7 +675,7 @@ export function initCopilot() {
   });
   $("#ai-memory").addEventListener("click", showMemory);
   $("#ai-operator").addEventListener("click", () => import("./aioperator.js").then((m) => m.openOperator()));
-  const syncTools = () => { $("#ai-tools").hidden = !assistantOn(); $("#ai-send").textContent = assistantOn() ? "Send" : "Plan"; };
+  const syncTools = () => { $("#ai-tools").hidden = !assistantOn(); $("#ai-send").textContent = assistantOn() ? "Send" : "Plan it"; };
   $("#ai-text").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#ai-form").requestSubmit(); }
   });

@@ -16,10 +16,14 @@
   display: grid; grid-template-rows: var(--bar) auto minmax(0, 1fr) var(--status);
   background: var(--base);
 }
+:root {
+  --rail-w: calc(104px * var(--ctl));
+  /* the copilot's column (its left edge sizes it, kept on this computer) */
+  --cop-w: var(--copilot-w, clamp(360px, 27vw, 560px));
+}
 .workspace {
   --side-w: clamp(calc(264px * var(--ctl)), 19vw, calc(340px * var(--ctl)));
   --work-w: clamp(calc(440px * var(--ctl)), 34vw, calc(660px * var(--ctl)));
-  --rail-w: calc(104px * var(--ctl));
   --cols: var(--side-w) minmax(0, 1fr) var(--rail-w);
   --areas: "side work rail";
   grid-row: 3; min-height: 0; position: relative;
@@ -43,6 +47,17 @@ body[data-mode="live"].rail-left .workspace { --cols: var(--rail-w) minmax(0, 1f
 :root.has3d body[data-mode="live"] .workspace { --cols: minmax(0, 1fr) var(--work-w) var(--rail-w); --areas: "stage work rail"; }
 :root.has3d body[data-mode="live"].rail-left .workspace { --cols: var(--rail-w) minmax(0, 1fr) var(--work-w); --areas: "rail stage work"; }
 body[data-mode="live"] .workspace > .side { display: none; }
+/* the copilot open: a column of its own beside the master rail - the
+   master and BLACKOUT stay in reach, the work area gives it the room (in
+   the desk's main window; the 3D on the whole screen keeps it over it) */
+:root:not([data-window]) body.cop-open:not(.stage-full) .workspace { --cols: var(--side-w) minmax(0, 1fr) var(--cop-w) var(--rail-w); --areas: "side work cop rail"; }
+:root:not([data-window]) body.cop-open.rail-left:not(.stage-full) .workspace { --cols: var(--rail-w) var(--side-w) minmax(0, 1fr) var(--cop-w); --areas: "rail side work cop"; }
+:root.has3d:not([data-window]) body.cop-open:not(.stage-full) .workspace { --cols: var(--side-w) minmax(0, 1fr) var(--work-w) var(--cop-w) var(--rail-w); --areas: "side stage work cop rail"; }
+:root.has3d:not([data-window]) body.cop-open.rail-left:not(.stage-full) .workspace { --cols: var(--rail-w) var(--side-w) minmax(0, 1fr) var(--work-w) var(--cop-w); --areas: "rail side stage work cop"; }
+:root:not([data-window]) body.cop-open[data-mode="live"]:not(.stage-full) .workspace { --cols: minmax(0, 1fr) var(--cop-w) var(--rail-w); --areas: "work cop rail"; }
+:root:not([data-window]) body.cop-open[data-mode="live"].rail-left:not(.stage-full) .workspace { --cols: var(--rail-w) minmax(0, 1fr) var(--cop-w); --areas: "rail work cop"; }
+:root.has3d:not([data-window]) body.cop-open[data-mode="live"]:not(.stage-full) .workspace { --cols: minmax(0, 1fr) var(--work-w) var(--cop-w) var(--rail-w); --areas: "stage work cop rail"; }
+:root.has3d:not([data-window]) body.cop-open[data-mode="live"].rail-left:not(.stage-full) .workspace { --cols: var(--rail-w) minmax(0, 1fr) var(--work-w) var(--cop-w); --areas: "rail stage work cop"; }
 /* the 3D on the whole screen (its full-screen key, Esc to leave) */
 body.stage-full .workspace { --cols: minmax(0, 1fr); --areas: "stage"; }
 body.stage-full .workspace > :not(.stage-wrap) { display: none; }
@@ -244,8 +259,12 @@ body.dock-max .pb-grip, body[data-mode="live"] .pb-grip { display: none; }
 .dock-bar .grow { flex: 1 1 0; min-width: 0; }
 body[data-mode="live"] #pb-mode [data-mode="groups"] { display: none; }
 /* keys only Live needs: Autopilot, full screen */
-.live-only { display: none; }
-body[data-mode="live"] .live-only { display: inline-flex; }
+/* the dock's tools for Live (where the buttons are played) and for Program */
+body:not([data-mode="live"]) .live-only { display: none; }
+body[data-mode="live"] .prog-only { display: none; }
+/* (the lock shows outside Live only while it is on: a locked page says so) */
+body:not([data-mode="live"]) #qb-lock:not(.on) { display: none; }
+#qb-edit .ic { margin-right: 2px; }
 .dock-body { flex: 1; display: flex; min-width: 0; min-height: 0; }
 .dock-body > :is(.qb, .tl, .pb-strip) { flex: 1; min-width: 0; }
 .dock-empty { margin: auto; padding: 24px; text-align: center; }
@@ -254,7 +273,8 @@ body[data-mode="live"] .live-only { display: inline-flex; }
 .qb-pages button { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: calc(64px * var(--ctl)); height: var(--h); padding: 0 12px; border: 0; border-radius: var(--r); background: var(--raised); color: var(--text-2); font-weight: 600; }
 .qb-pages button:hover { background: var(--hover); color: var(--text); }
 .qb-pages button.on { background: var(--pressed); color: var(--text); box-shadow: inset 0 -2px var(--lit); }
-.qb-pages button.qb-newpage { min-width: var(--h); padding: 0; background: none; color: var(--text-3); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.qb-pages button.qb-newpage { min-width: var(--h); padding: 0; background: none; color: var(--text-3); font-size: var(--t-l); font-weight: 400; }
+.qb-pages button.qb-newpage:hover { background: var(--raised); color: var(--text); }
 .qb-pages button.qb-back { min-width: 0; background: none; color: var(--text-2); }
 .qb-pages button.drop { box-shadow: inset 0 0 0 2px var(--lit); }
 body[data-mode="live"] .qb-pages button { min-width: calc(92px * var(--ctl)); height: var(--h-l); padding: 0 14px; }
@@ -263,10 +283,14 @@ body[data-mode="live"] .qb-pages button:is(.qb-newpage, .qb-back) { min-width: v
 .tool-group { display: inline-flex; flex: none; align-items: center; gap: 6px; }
 .qb-quant { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--t-s); }
 #qb-lock.on { background: var(--blind-face); color: var(--blind); }
-/* a narrow dock: the page tabs get a row of their own */
+/* a narrow dock: the page tabs get a row of their own (sooner in Live,
+   where the dock has more keys) */
 @container dock (max-width: 1080px) {
-  .qb-pages { order: 50; flex: 1 0 100%; }
+  body[data-mode="live"] .qb-pages { order: 50; flex: 1 0 100%; }
   .qb-quant > span, .tl-bpm > span, .tl-snap > span { display: none; }
+}
+@container dock (max-width: 840px) {
+  .qb-pages { order: 50; flex: 1 0 100%; }
 }
 /* the playback pages (P1, P2...): how many of each page's playbacks run */
 .pb-pages { display: inline-flex; gap: 2px; }

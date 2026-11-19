@@ -151,7 +151,11 @@ for (let i = 0; i < STEPS && bad < 3; i++) {
     // Release all, from either side (the phone's is a hold)
     for (const [hid, [hp, p]] of held) await up(hp, hid, p);
     held.clear();
-    if (page === desk) await desk.click("#qb-release");
+    // (Release buttons is on the dock in Live, under its ⋯ in Program)
+    if (page === desk) {
+      if (await desk.isVisible("#qb-release")) await desk.click("#qb-release");
+      else { await desk.click("#qb-more"); await desk.click('.menu button:has-text("Release buttons")'); }
+    }
     else { const rel = phone.locator("#rm-rel"); await rel.dispatchEvent("pointerdown", { pointerId: 900 + i, button: 0 }); await sleep(800); await rel.dispatchEvent("pointerup", { pointerId: 900 + i, button: 0 }); }
     label = `${page === desk ? "desk" : "phone"} Release all`;
   } else if (r === 1) {

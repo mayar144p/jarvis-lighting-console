@@ -52,10 +52,11 @@
 .qbtn:hover { background: var(--hover); }
 /* the words: the size picked for it, or smaller when the row is short or
    the tile narrow (a page that fits the screen has short rows) */
-.qbtn b { max-width: 100%; overflow: hidden; font-size: min(var(--t), 30cqh, 19cqi); font-weight: 600; overflow-wrap: break-word;
+/* (never smaller than can be read: a narrow key wraps its name instead) */
+.qbtn b { max-width: 100%; overflow: hidden; font-size: max(11px, min(var(--t), 30cqh, 19cqi)); font-weight: 600; overflow-wrap: break-word;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
-.qbtn small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: min(var(--t-xs), 24cqh, 16cqi); font-weight: 500; }
-.qbtn.qwide b, .qbtn.qbig b { font-size: min(var(--t-l), 30cqh, 19cqi); }
+.qbtn small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: max(9px, min(var(--t-xs), 24cqh, 16cqi)); font-weight: 500; }
+.qbtn.qwide b, .qbtn.qbig b { font-size: max(11px, min(var(--t-l), 30cqh, 19cqi)); }
 .qline { display: flex; align-items: center; justify-content: center; gap: 6px; max-width: 100%; min-width: 0; }
 .qbtn.qbig .qline { flex-direction: column; gap: 4px; }
 .qicon { flex: none; width: calc(16px * var(--ctl)); height: calc(16px * var(--ctl)); fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -125,9 +126,9 @@
 .qbtn.qs-circle { border-radius: 50%; aspect-ratio: 1 / 1; width: auto; height: 100%; max-width: 100%; justify-self: center; align-self: center; padding: 8px; }
 .qbtn.qs-circle:is(.qwide, .qbig) { aspect-ratio: auto; width: 100%; }
 .qbtn.qs-circle[data-mode="latch"]::before { top: 9%; left: 50%; right: auto; margin-left: -3px; }
-.qbtn.qt-s b { font-size: min(var(--t-xs), 30cqh, 17cqi); }
-.qbtn.qt-l b { font-size: min(var(--t-l), 32cqh, 19cqi); }
-.qbtn.qt-xl b { font-size: min(var(--t-xl), 36cqh, 20cqi); }
+.qbtn.qt-s b { font-size: max(10px, min(var(--t-xs), 30cqh, 17cqi)); }
+.qbtn.qt-l b { font-size: max(11px, min(var(--t-l), 32cqh, 19cqi)); }
+.qbtn.qt-xl b { font-size: max(11px, min(var(--t-xl), 36cqh, 20cqi)); }
 .qbtn.qplain small { display: none; }
 .qbtn.qblink.on { animation: qb-blink 1.2s ease-in-out infinite; }
 @keyframes qb-blink { 50% { opacity: .55; } }

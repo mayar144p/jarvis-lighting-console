@@ -272,21 +272,39 @@ function renderPages() {
   }
   for (let p = 1; p <= (q.pages || 32); p++) {
     // pages 1-4 always; later ones once used, or the next free one in Edit
-    if (p > 4 && !used.has(p) && p !== page && !(editing && p === Math.max(4, ...used) + 1)) continue;
+    if (p > 4 && !used.has(p) && p !== page && !(!locked && p === Math.max(4, ...used) + 1)) continue;
     // Edit's spare tab after the last page: a new page to start, not a page yet
     const spare = p > 4 && !used.has(p) && p !== page;
     pages.push(h("button" + (p === page ? ".on" : "") + (spare ? ".qb-newpage" : ""), {
       dataset: { page: p },
-      title: spare ? "A new page: open it and add a button (or drop one here) - it stays once it has a button or a name"
+      title: spare ? "A new page: it opens in Edit - add a button (or drop one here); it stays once it has a button or a name"
         : editing ? "Click to open · double-click to rename" : names[p] || `Page ${p}`,
       // (Edit: a button dragged onto a page's tab moves there - wireEditDrag)
-      onclick: () => { leavePanel(); folderBack.length = 0; page = p; render(true); emit("qbpage", page); },
+      onclick: () => { leavePanel(); folderBack.length = 0; page = p; if (spare) editing = true; render(true); emit("qbpage", page); },
       ondblclick: () => renamePage(p),
     }, spare ? "+" : names[p] || String(p)));
   }
   box.replaceChildren(...pages);
   const prof = $("#qb-profile");
   if (prof) prof.textContent = `${q.profile || "Default"} ▾`;
+}
+
+// Program's ⋯: the tools the dock shows in Live, where the buttons are
+// played - on the beat, let go of them all, the profile, the lock
+function moreMenu(anchor) {
+  const q = quick();
+  const now = +(q.quant || 0);
+  const opts = [...$("#qb-quant").options].map((o) => [+o.value, o.textContent]);
+  menu(anchor, [
+    { label: "On the beat…", hint: (opts.find(([v]) => v === now) || [0, "Off"])[1],
+      run: () => menu(anchor, opts.map(([v, l]) => ({ label: (v === now ? "✓ " : "  ") + l,
+        run: () => run("quick_quant", { beats: v }, { toast: true }) }))) },
+    { label: "Release buttons", hint: "let go of every latched one", run: () => run("quick_release_all") },
+    { label: `Button profile: ${q.profile || "Default"}…`, run: () => profileMenu(anchor) },
+    "-",
+    { label: locked ? "Unlock the layout" : "Lock the layout on this device", hint: locked ? "" : "the buttons play, nothing moves",
+      run: () => $("#qb-lock").click() },
+  ]);
 }
 
 // Button profiles: a whole set of pages per kind of show ("Default",
@@ -544,7 +562,7 @@ function render(force = false) {
   renderPages();
   $("#qb").classList.toggle("editing", editing);
   $("#qb-edit").classList.toggle("on", editing);
-  $("#qb-edit").textContent = editing ? "Done" : "Edit page";
+  $("#qb-edit").querySelector("span").textContent = editing ? "Done" : "Edit page";
   $("#qb-edit").hidden = locked;
   $("#qb-layout").hidden = !editing;
   $("#qb-pages-btn").hidden = !editing;
@@ -1611,6 +1629,7 @@ export function initQuickButtons() {
   $("#qb-layout").addEventListener("click", editLayout);
   $("#qb-pages-btn").addEventListener("click", editPages);
   $("#qb-profile").addEventListener("click", (e) => profileMenu(e.currentTarget));
+  $("#qb-more").addEventListener("click", (e) => moreMenu(e.currentTarget));
   $("#qb-colrow").addEventListener("click", () => makeColourRow());
   $("#qb-lock").addEventListener("click", () => {
     locked = !locked;
