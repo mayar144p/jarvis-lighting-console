@@ -82,7 +82,7 @@ body.rail-left .djreq { right: 16px; }
 .ai-steps { margin-top: 6px; font-size: var(--t-s); }
 .ai-steps summary { cursor: pointer; color: var(--text-3); }
 .ai-q { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
-.ai-note { display: flex; justify-content: space-between; gap: 8px; font-size: var(--t-s); padding: 2px 0; }
+
 .auto-sections > li.changed { background: var(--select); border-radius: 6px; padding: 2px 6px; margin-left: -6px; }
 .auto-changed { margin-left: 6px; font-size: var(--t-xs); font-weight: 700; color: var(--lit); text-transform: uppercase; letter-spacing: .04em; }
 .drawer.copilot { width: var(--copilot-w, clamp(440px, 32vw, 720px)); }

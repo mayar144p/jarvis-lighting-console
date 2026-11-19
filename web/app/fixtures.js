@@ -82,7 +82,7 @@ const addr = (hd) => `${hd.universe}.${String(hd.address).padStart(3, "0")}`;
 // a light whose 3D is a drawn placeholder (no model came with its profile)
 // - its type icon gets a dashed amber frame, so the narrow list keeps its width
 const DRAWN_TIP = "Placeholder 3D: the 3D view draws a stand-in for this kind of light, not the real fixture (no 3D model came with its profile). The \"placeholder 3D\" chip on the stage fetches the makers' own.";
-function typeIcon(body, n) {
+export function typeIcon(body, n) {
   const ic = iconFor(body);
   if (!isDrawn(n)) return ic;
   ic.classList.add("drawn");
@@ -93,7 +93,7 @@ function typeIcon(body, n) {
 }
 
 // a light's own name, less the number the desk put on the end (the number has a column of its own)
-const shortName = (hd) => {
+export const shortName = (hd) => {
   const nm = hd.name || hd.model || "";
   const cut = nm.replace(new RegExp(`\\s*#?${hd.head_no}$`), "");
   return cut || nm;
@@ -739,7 +739,7 @@ async function toolsMenu(btn) {
   ]);
 }
 
-async function exportCsv() {
+export async function exportCsv() {
   const r = await run("export_patch", {});
   if (!r.ok) return;
   const text = r.csv || "";

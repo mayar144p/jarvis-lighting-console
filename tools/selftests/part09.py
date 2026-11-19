@@ -10717,8 +10717,9 @@ def test_programmer_overhaul() -> None:
     pj2 = (web / "programmer.js").read_text(encoding="utf-8")
     check("a colour effect (and Breathe) goes through the colours you pick, in order",
           "function colourPicker(fx, params, mine)" in pj2 and '"haze.fxColours"' in pj2, "")
-    check("Set up and Live grow with their panel (bigger text, two columns on a wide one)",
-          "container: hub / inline-size" in css and "@container hub (min-width: 1000px)" in css, "")
+    check("Set up follows its panel: the patch and Before the show side by side, one under the other when it is narrow",
+          "container: hub / inline-size" in css and "@container hub (max-width: 900px)" in css
+          and ".su-grid { display: grid; grid-template-columns: minmax(0, 1fr) calc(360px * var(--ctl));" in css, "")
     check("Settings opens without waiting on the local AI", "ai = llm.public(wait=False)" in (ROOT / "app" / "main.py").read_text(encoding="utf-8"), "")
     af = (web / "aimfollow.js").read_text(encoding="utf-8")
     check("the map's DJ marker: an arrow with a head, its zone's label not drawn on top, a tooltip on each mark",
@@ -12759,6 +12760,34 @@ def test_palette_tile_colour() -> None:
     pal = (ROOT / "web" / "app" / "palettes.js").read_text(encoding="utf-8")
     check("the tile works its colour out from the values (white, amber and UV on top), the stored colour only for a wheel's step",
           "mixedHex(p.values || {}) || p.hex" in pal and "export function mixedHex(v)" in pal and 'n("uv")' in pal, "")
+
+
+def test_setup_screen() -> None:
+    """Set up as the mockup: the patch (number, light, maker, kind, mode, address, channels,
+    groups) with each universe drawn under it; Before the show beside it, grouped (the lights,
+    the room, connections, on the day), each step's main key and the rest under its ⋯; the
+    selected light's name, mode, address and Pan / Tilt switches.  No side panel in Set up."""
+    web = ROOT / "web" / "app"
+    ss = (web / "setupscreen.js").read_text(encoding="utf-8")
+    mh = (web / "modehub.js").read_text(encoding="utf-8")
+    css = desk_css()
+    check("the patch: every column, + Add lights, Import, Auto-address, Find nodes",
+          all(f'"{c}"' in ss for c in ("No.", "Light", "Maker", "Kind", "Mode", "Address", "Channels", "Groups"))
+          and all(k in ss for k in ('"+ Add lights"', '"Import ▾"', '"Auto-address"', '"Find nodes"', '"auto_patch"')), "")
+    check("...each universe: channels used, clashes, a block per light (selected lit, lasers and effects amber)",
+          "channels used, " in ss and '"lasers and effects"' in ss and ".su-uni-bar i.sel {" in css and ".su-uni-bar i.fx {" in css
+          and ".su-uni-bar i.clash {" in css, "")
+    check("...a click selects (Ctrl adds, Shift a run), a right-click is the light's menu",
+          '"select_heads"' in ss and "e.shiftKey && anchorHead !== null" in ss and "rowMenu(atPointer(e)" in ss, "")
+    check("Before the show: grouped, done of all, the next step lit, one key and a ⋯ each",
+          all(f'["{g}", [' in mh for g in ("The lights", "The room", "Connections", "On the day"))
+          and '"Before the show"' in ss and "of ${judged.length} done" in ss and 'h("div.su-step" + (isNext ? ".next" : "")' in ss
+          and "const [main, ...rest] = st.buttons.filter(Boolean);" in ss, "")
+    check("the light picked: name, mode, address and Pan / Tilt switches, each doing the real thing",
+          all(k in ss for k in ('"rename_head"', '"change_type"', '"set_address"', '"set_orient"', '"Pan"', '"Tilt"', '"Test this light…"', '"Limits…"')), "")
+    check("no side panel in Set up (the patch lists the lights), its width kept for Program",
+          'body[data-mode="setup"] .workspace > .side { display: none; }' in css and 'body[data-mode="setup"] .workspace { --side-w: 0px; }' in css
+          and 'saved.sideW && f.mode !== "setup"' in (web / "workspaces.js").read_text(encoding="utf-8"), "")
 
 
 def test_stylesheet_rules() -> None:

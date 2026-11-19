@@ -26,7 +26,7 @@ cue lists and buttons aren't all there at once.
 
 | Mode | On screen | For |
 |---|---|---|
-| **Set up** | the lights and the **Set up** screen (no faders: nothing plays yet) | the lights (add, import a plot or CSV, DMX map, address them all), the room (arrange, shape, rigging, the plot, describe it in words), the connections (output, nodes, RDM, DJ gear, MIDI / OSC / Stream Deck, Hue, a backup desk), the checks (**venue check-in**, test a light, **Check the show**). Each step says how it stands (6 lights patched · no clashes) |
+| **Set up** | the **patch** (every light: number, name, maker, kind, mode, address, channels, groups; each universe drawn under it), **Before the show** beside it, and the selected light's name, mode, address and which way it is hung (no faders: nothing plays yet) | the patch (**+ Add lights**, **Import** a plot or CSV, **Auto-address**, **Find nodes**; ⋯: DMX map, RDM); then each step with how it stands (20 lights patched · no clashes) and its key: the lights, the room (**Arrange in 3D**, **Line up…**, zones), the connections (**Output…**, DJ gear, Hue, a backup desk), on the day (**Venue check-in**, the **Ready check**) |
 | **Program** | the lights, the programmer and the dock | looks, cues, palettes, effects, buttons, the timeline and songs |
 | **Live** | the buttons page full size, the playbacks with GO above it, the group faders, the master | running the show: what plays now and what comes next |
 
@@ -53,7 +53,7 @@ connected, nothing shown.
 ### Venue check-in
 
 A show made for one rig meets another at each venue. **Set up → Venue
-check-in…** asks the lights here (RDM) and lines them up against the show:
+check-in → Check in…** asks the lights here (RDM) and lines them up against the show:
 - lights found as patched;
 - **lights to swap in**: a light of the show that didn't answer, and a light
   of the same kind found here (*#5 LED PAR isn't here; the SlimPAR at 1.033
@@ -135,7 +135,7 @@ shows in haze as a beam of its own colours, and counts in the light map.
 
 ### Arrange mode
 
-*Where:* Set up → Arrange the room
+*Where:* Set up → Room and rigging → Arrange in 3D (or the 3D view's **Arrange the room**)
 
 **Arrange** (stage toolbar) turns the stage into an editor:
 
@@ -565,7 +565,7 @@ that spot. The pan/tilt dials still move each light's own pan and tilt.
 
 ### Lining up a venue (the real lights match the desk)
 
-*Where:* Set up → Line up with the real lights…
+*Where:* Set up → Line up the moving lights → Line up…
 
 The desk aims a light from where it thinks the light hangs and which way it
 faces. In a real venue those are never exact, so line the rig up once per
@@ -582,7 +582,7 @@ venue; it's saved with the show.
 3. **Mark the floor.** Two or three spots far apart: the middle of the dance
    floor, its left and right, the DJ booth - the desk lists the room's own
    spots - or tape a cross somewhere and keep it as a room mark.
-4. **Line up.** Set up → **Line up with the real lights…** (or a light's own
+4. **Line up.** Set up → **Line up…** (or a light's own
    menu). One step at a time: the light comes on alone and the desk points it
    at a mark by itself (the two marks furthest apart). Nudge the REAL light
    onto it with the arrows (**Fine** for the last bit) and press **It's on
@@ -600,11 +600,11 @@ handy to walk the room and tick lights off.
 
 ### The room the lights know: teach it by pointing
 
-*Where:* Set up → Teach the room by pointing…
+*Where:* Set up → Zones → Teach by pointing…
 
 Once a light is lined up, the desk knows exactly where its beam lands on the
-floor - so the light itself can show the desk the room. **Set up → Teach the
-room by pointing…** (or the command bar, or Arrange → Add):
+floor - so the light itself can show the desk the room. **Set up → Zones →
+Teach by pointing…** (or the command bar, or Arrange → Add):
 
 - **Mark out a zone.** Pick the kind (Dance floor, Bar, VIP...), aim the light
   at each corner with the arrows and press **Add this corner**; three corners

@@ -195,7 +195,9 @@ Vanilla ES modules loaded by an import map. No bundler; three.js is vendored.
   `run(action, params)`, the only way the UI changes the desk.
 * Panels (`fixtures.js`, `programmer.js`, `playbacks.js`, `topbar.js`,
   `stagepanel.js`, `copilot.js`, `cmdbar.js`, `dialogs.js`) subscribe to
-  the store and render.
+  the store and render. Set up's screen is `setupscreen.js` (the patch
+  table, each universe, Before the show and the selected light), fed its
+  steps by `modehub.js`, which also draws Live's strip.
 * `js/stage/` is the visualiser:
   * `models.js` builds a procedural body for each physical type, styled by
     brand (colours, finish, badge texture).

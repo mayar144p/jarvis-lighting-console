@@ -375,6 +375,9 @@ const STEPS = [
   ["58-colour-match", async (p) => { await closeAll(p); await mod(p, "colourmatch.js", "openColourMatch"); await p.waitForTimeout(400); }],
   ["59-autopilot", async (p) => { await closeAll(p); await mod(p, "autopilot.js", "openAutopilot"); await p.waitForTimeout(400); }],
   ["60-rig-dialog", async (p) => { await closeAll(p); await mod(p, "rigdialog.js", "openRigDialog", "add"); await p.waitForTimeout(500); }],
+  // Set up: the patch table, its universes, Before the show and the light picked
+  ["60b-setup", async (p) => { await closeAll(p); await p.click('#mode-seg [data-mode="setup"]'); await p.waitForTimeout(700);
+    await p.click("#su-rows tr:first-child").catch(() => {}); await p.waitForTimeout(500); }],
   ["61-gig-live", async (p) => { await closeAll(p); await p.click('#mode-seg [data-mode="live"]'); await p.waitForTimeout(600); await closeAll(p); }],
   ["62-stage-full", async (p) => { await closeAll(p); await p.click("#fullscreen-btn"); await p.waitForTimeout(600); }],
   ["63-end", async (p) => {

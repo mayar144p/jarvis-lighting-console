@@ -17,7 +17,7 @@ body {
 /* a console, not a document: dragging a fader or a slider never selects the
    words around it; text people may want to copy stays selectable */
 body { user-select: none; -webkit-user-select: none; }
-input, textarea, select, [contenteditable="true"], pre, code, .selectable,
+input, textarea, select, [contenteditable="true"], pre, code,
 .modal-body p, .toast, .msg { user-select: text; -webkit-user-select: text; }
 img, svg { -webkit-user-drag: none; }
 button, input, select, textarea { font: inherit; color: inherit; }

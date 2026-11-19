@@ -5,7 +5,7 @@
 .stage-tag { position: absolute; transform: translate(-50%, -100%); white-space: nowrap; font: 600 var(--t-xs)/1.2 var(--font); color: var(--text); margin-top: -6px; background: color-mix(in srgb, var(--black) 85%, transparent); border: 1px solid color-mix(in srgb, var(--text-3) 30%, transparent); padding: 3px 7px; border-radius: 6px; }
 .stage-fallback { display: grid; place-items: center; height: 100%; color: var(--text-3); padding: 20px; text-align: center; }
 .stage-hud { position: absolute; display: flex; gap: 6px; align-items: center; z-index: 2; }
-.stage-hud.top-right { top: 10px; right: 10px; }
+
 .stage-hud.bottom-left { bottom: 10px; left: 12px; right: 330px; pointer-events: none; }
 .stage-hud.bottom-right { bottom: 8px; right: 10px; }
 /* a button over the 3D: the desk's flat button on a see-through panel, no outline */
@@ -84,7 +84,7 @@ body.hint-seen #stage-hint:not(.must) { display: none; }
 .drawn-chip:hover, .drawn-chip:focus-visible { background: color-mix(in srgb, var(--blind) 14%, transparent); outline: none; }
 .stage-hud.drawn-hud { top: calc(var(--vis-h, 38px) + 8px); left: 10px; }
 body.arranging .stage-hud.drawn-hud { left: calc(108px * var(--ctl) + 22px); }
-.live-card { border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; background: var(--panel); display: grid; gap: 6px; }
+
 .modal:has(.pl) { width: min(1400px, 96vw); max-width: none; }
 .pl-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .pl-bar .btn.on { background: var(--select); border-color: var(--lit); color: var(--text); }

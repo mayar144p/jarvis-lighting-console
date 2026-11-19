@@ -266,7 +266,7 @@
 .mv-arrow { font-size: var(--t-xl); padding: 0; }
 .mv-fine { font-size: var(--t-xs); padding: 0; }
 .mv-fine.on { border-color: var(--lit); color: var(--lit); }
-.mv-nudge-side { display: flex; flex-direction: column; gap: 8px; }
+
 .mv-tiles { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 10px; }
 .mv-tile { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--base); color: var(--text-2); cursor: pointer; font-size: var(--t-s); }
 .mv-tile b { font-size: var(--t-xl); line-height: 1; color: var(--text); }
@@ -293,10 +293,7 @@
 .mv-play b { font-size: var(--t); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mv-play small { font-size: var(--t-xs); color: var(--text-3); }
 .mv-opts { width: calc(36px * var(--ctl)); background: none; border: 0; border-left: 1px solid var(--line); color: var(--text-3); cursor: pointer; font-size: var(--t-l); }
-.mv-more:hover { color: var(--text); }
-.looks-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
-.looks-head h3 { margin: 0; }
-.looks-head h3 small { display: block; font-weight: 400; text-transform: none; letter-spacing: 0; margin-top: 2px; }
+
 .fx-hold.fire.big { min-height: calc(64px * var(--ctl)); flex: 1; font-size: var(--t-l); }
 .fx-shots { margin: 8px 0; }
 .fx-shots .k { width: calc(80px * var(--ctl)); }
@@ -311,7 +308,7 @@
 .mv-pt .pad { width: 100%; aspect-ratio: 1.6; max-height: none; }
 .mv-nudgebox .mv-nudge { flex-direction: column; align-items: stretch; gap: 8px; }
 .mv-nudgebox .mv-pad { grid-template-columns: repeat(3, calc(38px * var(--ctl))); grid-template-rows: repeat(3, calc(34px * var(--ctl))); }
-.mv-nudgebox .mv-nudge-side { gap: 6px; }
+
 .mv-pt .aim-row input { width: calc(64px * var(--ctl)); }
 .mv-roam { margin-top: 8px; row-gap: 6px; }
 .pad-out { position: absolute; background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--black) 45%, transparent) 0 6px, color-mix(in srgb, var(--black) 30%, transparent) 6px 12px); pointer-events: none; z-index: 0; }
@@ -370,7 +367,6 @@
   .mv-col-ab { grid-column: 1 / -1; }
 }
 .fx-machine { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; margin: 4px 0 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); }
-.fx-warm { color: var(--blind); }
 
 .slot-dot { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 25%, transparent); display: inline-block; }
 
@@ -426,12 +422,11 @@ body.gig .mv-play, body.gig .look-play { min-height: calc(56px * var(--ctl)); }
 .shape-chip { display: inline-flex; }
 .shape-chip .chip.ghost { padding: 0 6px; opacity: .7; }
 .wheel-teach { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
-.sec-label { padding: 2px 12px 6px; font-size: var(--t-xs); font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-3); }
-.sec-label small { text-transform: none; letter-spacing: 0; font-weight: 500; margin-left: 4px; }
+
 .sub-count { margin-left: 5px; font-size: var(--t-xs); padding: 0 5px; border-radius: 999px; background: var(--lit); color: var(--text); }
 #programmer .tab-pane[data-sub="point"] [data-in]:not([data-in="point"]), #programmer .tab-pane[data-sub="move"] [data-in]:not([data-in="move"]), #programmer .tab-pane[data-sub="limits"] [data-in]:not([data-in="limits"]), #programmer .tab-pane[data-sub="quick"] [data-in]:not([data-in="quick"]), #programmer .tab-pane[data-sub="all"] [data-in]:not([data-in="all"]), #programmer .tab-pane[data-sub="effects"] [data-in]:not([data-in="effects"]), #programmer .tab-pane[data-sub="running"] [data-in]:not([data-in="running"]), #programmer .tab-pane[data-sub="paint"] [data-in]:not([data-in="paint"]) { display: none; }
 details.open-find > summary { cursor: pointer; padding: 4px 0; }
-details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: var(--t-s); padding: 4px 0; }
+
 .tab-pane[data-pane="desk"] { height: 100%; min-height: 0; }
 .teach-list { display: flex; flex-direction: column; gap: 2px; }
 .tab-pane[data-pane="position"][data-sub="point"]:not([hidden]) { flex: 1; min-height: 0; display: grid; gap: 10px 18px; grid-template-columns: auto minmax(calc(240px * var(--ctl)), 1fr) auto; grid-template-rows: minmax(0, 1fr); align-items: stretch; }
@@ -460,7 +455,6 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: va
 .pad::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--line-strong); }
 .pad::before { content: ""; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: var(--line-strong); }
 .mv-sec > .knob .knob-k { width: calc(84px * var(--ctl)); }
-
 
 /* -------------------------------------------------------- the level */
 /* its number large, the desk's fader (a gold line up to the light cap),

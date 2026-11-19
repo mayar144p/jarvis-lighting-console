@@ -47,6 +47,10 @@ body[data-mode="live"].rail-left .workspace { --cols: var(--rail-w) minmax(0, 1f
 :root.has3d body[data-mode="live"] .workspace { --cols: minmax(0, 1fr) var(--work-w) var(--rail-w); --areas: "stage work rail"; }
 :root.has3d body[data-mode="live"].rail-left .workspace { --cols: var(--rail-w) minmax(0, 1fr) var(--work-w); --areas: "rail stage work"; }
 body[data-mode="live"] .workspace > .side { display: none; }
+/* Set up: the patch table is the list of lights - the side panel steps aside */
+body[data-mode="setup"] .workspace { --side-w: 0px; }
+body[data-mode="setup"] .workspace > .side { display: none; }
+body[data-mode="setup"] #mode-hub > .panel-head { display: none; }
 /* the copilot open: a column of its own beside the master rail - the
    master and BLACKOUT stay in reach, the work area gives it the room (in
    the desk's main window; the 3D on the whole screen keeps it over it) */
@@ -188,7 +192,7 @@ body.stage-full .workspace > :not(.stage-wrap) { display: none; }
 /* the 3D window has the same at the end of its toolbar */
 .frameless[data-window="stage"] .vis-bar { -webkit-app-region: drag; padding-right: calc(184px * var(--ctl)); }
 .frameless .vis-bar > * { -webkit-app-region: no-drag; }
-.frameless .vis-bar > .vis-gap { -webkit-app-region: drag; }
+
 .mac.frameless[data-window="stage"] .vis-bar { padding-left: 80px; }
 .vis-bar .win-ctl { position: absolute; top: 0; right: 0; height: calc(38px * var(--ctl)); margin: 0; }
 .vis-bar .win-ctl .win-btn { height: 100%; }

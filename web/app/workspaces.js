@@ -74,7 +74,8 @@ function apply() {
     b.dataset.mode = f.mode;
     b.classList.toggle("ws-nostage", !HAS_3D);
     b.classList.toggle("dock-max", f.max);
-    if (saved.sideW) el.style.setProperty("--side-w", saved.sideW + "px"); else el.style.removeProperty("--side-w");
+    // (Set up has no side panel: its patch table lists the lights)
+    if (saved.sideW && f.mode !== "setup") el.style.setProperty("--side-w", saved.sideW + "px"); else el.style.removeProperty("--side-w");
     if (saved.workW) el.style.setProperty("--work-w", saved.workW + "px"); else el.style.removeProperty("--work-w");
     const dockTab = f.dock && $(`#pb-mode button[data-mode="${f.bottom}"]`);
     if (dockTab) dockTab.click();
