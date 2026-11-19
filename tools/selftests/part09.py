@@ -12777,6 +12777,9 @@ def test_setup_screen() -> None:
     check("the patch: every column, + Add lights, Import, Auto-address, Find nodes",
           all(f'"{c}"' in ss for c in ("No.", "Light", "Maker", "Kind", "Mode", "Address", "Channels", "Groups"))
           and all(k in ss for k in ('"+ Add lights"', '"Import ▾"', '"Auto-address"', '"Find nodes"', '"auto_patch"')), "")
+    check("...each universe in use (one strip for one), its DMX map… opening the map at that universe",
+          "unis.map((u, ui) =>" in ss and "m.openDmxMap(u)" in ss
+          and "export function openDmxMap(atUniverse = null)" in (web / "fixtures.js").read_text(encoding="utf-8"), "")
     check("...each universe: channels used, clashes, a block per light (selected lit, lasers and effects amber)",
           "channels used, " in ss and '"lasers and effects"' in ss and ".su-uni-bar i.sel {" in css and ".su-uni-bar i.fx {" in css
           and ".su-uni-bar i.clash {" in css, "")

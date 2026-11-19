@@ -592,7 +592,7 @@ function renderClashes() {
   ] : []));
 }
 
-export function openDmxMap() {
+export function openDmxMap(atUniverse = null) {
   const draw = () => {
     const heads = patch();
     const bad = new Set(clashes().flatMap((c) => [c.a, c.b]));
@@ -618,7 +618,7 @@ export function openDmxMap() {
           style: n !== null && !clash[c] ? { background: hue(n) } : null,
         }));
       }
-      return h("div.dmx-uni", h("h4", `Universe ${u}`, h("small", ` ${used} of 512 channels used`)), h("div.dmx-grid", ...cells));
+      return h("div.dmx-uni", { dataset: { uni: u } }, h("h4", `Universe ${u}`, h("small", ` ${used} of 512 channels used`)), h("div.dmx-grid", ...cells));
     });
     const rows = heads.slice().sort((a, b) => a.universe - b.universe || a.address - b.address).map((x) => {
       const n = x.channels || (x.map || []).length || 1;
@@ -635,6 +635,11 @@ export function openDmxMap() {
     foot: [h("span.muted.small", "Each square is one DMX channel. Red: two lights on the same channels. After moving a light, set the same address on the light itself."),
       h("span.grow"), h("button.btn", { onclick: () => close() }, "Close")] });
   const off = on("snapshot", () => { if (!document.body.contains(body)) { off && off(); return; } body.replaceChildren(draw()); });
+  // (from a universe's strip in Set up: that universe in view)
+  if (Number.isInteger(atUniverse)) {             // (an onclick hands it the event: ignored)
+    const blk = body.querySelector(`.dmx-uni[data-uni="${atUniverse}"]`);
+    if (blk) blk.scrollIntoView({ block: "start" });
+  }
 }
 
 // RDM: the lights say what they are, where they're addressed and in which

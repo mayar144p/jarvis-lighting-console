@@ -170,7 +170,9 @@ function paintUniverses(box) {
       h("div.su-uni-head", h("b", `Universe ${u}`),
         h("span", `${used} of 512 channels used, ${nClash ? `${nClash} clash${nClash === 1 ? "" : "es"}` : "no clashes"}`),
         h("span.grow"),
-        ui === 0 ? h("span.su-key", h("i.sel"), "selected") : null, ui === 0 ? h("span.su-key", h("i.fx"), "lasers and effects") : null),
+        ui === 0 ? h("span.su-key", h("i.sel"), "selected") : null, ui === 0 ? h("span.su-key", h("i.fx"), "lasers and effects") : null,
+        h("button.btn.ghost.small", { type: "button", title: `Universe ${u}: every channel, light by light, and any clash`,
+          onclick: () => import("./fixtures.js").then((m) => m.openDmxMap(u)) }, "DMX map…")),
       h("div.su-uni-bar", ...blocks),
       ui === unis.length - 1 ? h("div.su-uni-axis", ...["1", "128", "256", "384", "512"].map((t) => h("span", t))) : null);
   }));
