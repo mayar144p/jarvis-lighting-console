@@ -287,10 +287,11 @@ body[data-mode="live"] .qb-pages button:is(.qb-newpage, .qb-back) { min-width: v
    where the dock has more keys) */
 @container dock (max-width: 1080px) {
   body[data-mode="live"] .qb-pages { order: 50; flex: 1 0 100%; }
-  .qb-quant > span, .tl-bpm > span, .tl-snap > span { display: none; }
+  .qb-quant > span { display: none; }
 }
 @container dock (max-width: 840px) {
   .qb-pages { order: 50; flex: 1 0 100%; }
+  .tl-snap > span { display: none; }
 }
 /* the playback pages (P1, P2...): how many of each page's playbacks run */
 .pb-pages { display: inline-flex; gap: 2px; }

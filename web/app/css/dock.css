@@ -3,47 +3,62 @@
 .pb-strip { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(calc(118px * var(--ctl)), 1fr); gap: 1px; overflow-x: auto; background: var(--line); }
 .tl { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 6px 8px 2px; gap: 4px; }
 .tl-time { font: 600 var(--t) var(--font); color: var(--text); min-width: calc(118px * var(--ctl)); }
-.tl-bpm, .tl-snap { display: inline-flex; gap: 5px; align-items: center; color: var(--text-3); font-size: var(--t-s); }
-.tl-bpm input { width: calc(64px * var(--ctl)); height: calc(26px * var(--ctl)); }
-.tl-body { flex: 1; display: grid; grid-template-columns: 170px 1fr; min-height: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--base); }
+.tl-snap { display: inline-flex; gap: 5px; align-items: center; color: var(--text-3); font-size: var(--t-s); }
+.tl-body { flex: 1; display: grid; grid-template-columns: calc(200px * var(--ctl)) 1fr; min-height: 0; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--base); }
 .tl-heads { overflow: hidden; border-right: 1px solid var(--line); background: var(--base); }
-.tl-head { height: calc(46px * var(--ctl)); display: flex; align-items: center; gap: 6px; padding: 0 6px 0 10px; border-bottom: 1px solid var(--line); font-size: var(--t-s); }
-.tl-head.ruler-head { height: calc(22px * var(--ctl)); }
+/* a track's head: its colour down the edge, its name, what it plays, Mute, ⋯ */
+.tl-head { --k: transparent; height: calc(46px * var(--ctl)); display: flex; align-items: center; gap: 2px; padding: 0 4px 0 12px; border-bottom: 1px solid var(--line); box-shadow: inset 3px 0 var(--k); font-size: var(--t-s); }
+.tl-head.ruler-head { height: calc(30px * var(--ctl)); color: var(--text-3); font-size: var(--t-xs); }
+/* "Bars at 120 BPM": the tempo, a click changes it */
+.tl-tempo { min-height: calc(26px * var(--ctl)); padding: 0 4px; margin-left: -4px; border: 0; border-radius: 3px; background: none; color: var(--text-3); font: inherit; }
+.tl-tempo:hover { background: var(--raised); color: var(--text); }
+/* Timecode shows on the bar while it is followed (Music… -> Follow timecode) */
+#tl-tc:not(.on) { display: none; }
 .tl-head.muted { opacity: .5; }
 .tl-head-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .tl-head-text b, .audio-head b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tl-head small { color: var(--text-3); font-size: var(--t-xs); }
 .audio-head b { flex: 1; min-width: 0; color: var(--lit); }
-.tl-mute { width: calc(22px * var(--ctl)); height: calc(22px * var(--ctl)); border-radius: 4px; border: 1px solid var(--line-strong); background: transparent; color: var(--text-3); font-size: var(--t-xs); font-weight: 700; }
-.tl-mute.on { background: var(--blind); color: var(--lit-ink); border-color: var(--blind); }
+.tl-mute, .tl-more { flex: none; height: calc(26px * var(--ctl)); padding: 0 7px; border: 0; border-radius: var(--r); background: none; color: var(--text-3); font-size: var(--t-s); font-weight: 500; }
+.tl-mute:hover, .tl-more:hover { background: var(--raised); color: var(--text); }
+.tl-mute.on { background: var(--blind-face); color: var(--blind); }
+.tl-more { min-width: calc(26px * var(--ctl)); padding: 0; font-size: var(--t); }
 .tl-scroll { overflow: auto; position: relative; }
 .tl-canvas { position: relative; min-height: 100%; }
-.tl-ruler { display: block; position: sticky; top: 0; z-index: 2; height: calc(22px * var(--ctl)); background: var(--base); border-bottom: 1px solid var(--line); cursor: col-resize; }
-.tl-lane { position: relative; height: calc(46px * var(--ctl)); border-bottom: 1px solid var(--line); background-image: linear-gradient(90deg, color-mix(in srgb, var(--text-3) 10%, transparent) 1px, transparent 1px); background-size: var(--bar-px, 48px) 100%; }
+.tl-ruler { display: block; position: sticky; top: 0; z-index: 2; height: calc(30px * var(--ctl)); background: var(--base); border-bottom: 1px solid var(--line); cursor: col-resize; }
+.tl-lane { --k: var(--lit); position: relative; height: calc(46px * var(--ctl)); border-bottom: 1px solid var(--line); background-image: linear-gradient(90deg, color-mix(in srgb, var(--text-3) 14%, transparent) 1px, transparent 1px); background-size: var(--bar-px, 48px) 100%; }
 .tl-lane.muted { opacity: .45; }
 .tl-lane.audio-lane { background: var(--base); }
 .tl-lane canvas.wave { display: block; }
-/* a clip: a quiet block tinted by what it plays - a cue in the lit colour,
-   an effect in the effects' colour, a button hit in amber - with that colour
-   down its leading edge; selected: the lit ring */
+/* a clip: a block in its track's colour, brighter down its leading edge;
+   a cue a dark tag with a light edge, a button hit a thin line; selected:
+   the lit ring */
 .tl-clip {
-  --k: var(--lit);
   position: absolute; top: 6px; display: flex; align-items: center; height: calc(34px * var(--ctl)); padding: 0 10px 0 9px; overflow: hidden;
-  border-radius: var(--r); background: color-mix(in srgb, var(--k) 14%, var(--raised)); box-shadow: inset 3px 0 0 var(--k);
+  border-radius: var(--r); background: color-mix(in srgb, var(--k) 30%, var(--base)); box-shadow: inset 2px 0 0 color-mix(in srgb, var(--k) 80%, var(--text));
   color: var(--text); font-size: var(--t-s); font-weight: 500; white-space: nowrap; cursor: grab; user-select: none; touch-action: none;
 }
-.tl-clip:hover { background: color-mix(in srgb, var(--k) 22%, var(--raised)); }
+.tl-clip:hover { background: color-mix(in srgb, var(--k) 40%, var(--base)); }
 .tl-clip span { overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .tl-clip.point { width: auto; min-width: 12px; transform: translateX(-2px); }
-.tl-clip.button { --k: var(--blind); }
-.tl-clip.fx { --k: var(--f-fx); }
-.tl-clip.sel { box-shadow: inset 3px 0 0 var(--k), inset 0 0 0 2px var(--lit); }
+.tl-clip.cue { background: var(--raised); box-shadow: inset 2px 0 0 var(--text); font-weight: 600; }
+.tl-clip.cue:hover { background: var(--hover); }
+.tl-clip.button.point { width: 9px; min-width: 9px; padding: 0 3px; border-radius: 0; background: var(--text-2); background-clip: content-box; box-shadow: none; transform: translateX(-4px); }
+.tl-clip.button.point:hover { background-color: var(--text); }
+.tl-clip.button.point span { display: none; }
+.tl-clip.sel { box-shadow: inset 2px 0 0 var(--k), inset 0 0 0 2px var(--lit); }
 .tl-clip .grip { position: absolute; right: 0; top: 0; bottom: 0; width: 7px; cursor: ew-resize; background: color-mix(in srgb, var(--k) 25%, transparent); }
 .tl-lane svg { position: absolute; inset: 0; pointer-events: none; }
-.lvl-line { fill: none; stroke: var(--go); stroke-width: 2; }
-.lvl-key { position: absolute; width: 11px; height: 11px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--go); border: 2px solid var(--lit-ink); cursor: grab; touch-action: none; }
-.tl-playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: var(--live); z-index: 3; pointer-events: none; box-shadow: 0 0 8px color-mix(in srgb, var(--live) 70%, transparent); }
+/* a level: the dimmer's gold line, filled under it */
+.lvl-line { fill: none; stroke: var(--f-dim); stroke-width: 1.5; }
+.lvl-fill { fill: color-mix(in srgb, var(--f-dim) 16%, transparent); stroke: none; }
+.lvl-key { position: absolute; width: 11px; height: 11px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--f-dim); border: 2px solid var(--base); cursor: grab; touch-action: none; }
+/* the playhead: a light line, its time in a tag on the ruler */
+.tl-playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 1px; background: var(--text); z-index: 3; pointer-events: none; }
+.tl-ph-tag { position: absolute; top: 5px; left: 0; transform: translateX(-50%); padding: 1px 5px; border-radius: 3px; background: var(--lit); color: var(--lit-ink); font: 600 var(--t-xs) var(--font); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tl-hint { margin: 0; color: var(--text-3); font-size: var(--t-xs); }
+.tl-hint[hidden] { display: none; }
+.tl-bar .btn .ic { width: calc(14px * var(--ctl)); height: calc(14px * var(--ctl)); }
 .pb-top { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .pb-top .btn.icon { width: calc(20px * var(--ctl)); height: calc(20px * var(--ctl)); flex: none; position: absolute; right: 4px; top: 4px; opacity: 0; background: var(--hover); }
 .pb:hover .pb-top .btn.icon, .pb-top .btn.icon:focus-visible { opacity: 1; }

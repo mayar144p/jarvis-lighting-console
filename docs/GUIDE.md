@@ -438,14 +438,17 @@ dimmer effects on the selected lights.
   hold a quick button for a clip's length, such as strobe hits on the beat.
   *Effect* tracks run an effect on a group or type. *Level* tracks automate a
   playback fader or the grand master with keyframes.
-* **Audio.** Add an MP3, WAV, OGG, FLAC or M4A; its waveform is drawn under the
-  tracks. Set BPM by typing, tapping, or **detect** it from the audio. There
-  is a beat and bar grid, snap (beat, bar, seconds, off; Alt for free),
-  markers, zoom (Ctrl+wheel) and loop.
+* **Music…** Add an MP3, WAV, OGG, FLAC or M4A; its waveform is drawn under the
+  tracks. The tempo: click *Bars at 120 BPM* over the track names to type
+  it, or **Music… → Tap the tempo** (tap along) or **Find the tempo in the
+  music**. The ruler names the bars with their time (*17 · 0:32*); there is
+  snap (beat, bar, seconds, off; Alt for free), markers, zoom (− / + or
+  Ctrl+wheel) and loop. Each track has its colour down its edge (an effect
+  track its group's), **Mute** and **⋯** (rename, delete).
 * **Editing.** Double-click a lane to add a clip. Drag a clip to move it and
-  its edge to resize it; right-click to edit, duplicate or delete. **+ Track →
-  Cue list from PB1** lays an existing cue list out in time.
-* **Timecode.** The **TC** button follows timecode: *MIDI timecode (MTC)* from
+  its edge to resize it; right-click to edit, duplicate or delete. **+ Track**
+  adds a track; **+ Track → Cue list from PB1** lays an existing cue list out in time.
+* **Timecode.** **Music… → Follow timecode…** follows timecode (a **Timecode** key shows on the bar while it does): *MIDI timecode (MTC)* from
   the desk's MIDI input, or *audio timecode (LTC)* - a timecode track into the
   sound input picked in Sound (a line in from the playback computer). The
   timeline jumps to it and plays along, and pauses when it stops; you say
@@ -458,13 +461,13 @@ dimmer effects on the selected lights.
 
 A song can keep its own show, so the same track looks the same every night:
 
-1. **♪ Audio → Add audio**, then **Find the song's parts**: the desk listens
+1. **Music… → Add music…**, then **Find the song's parts**: the desk listens
    to how loud each 8-bar phrase is and puts *Intro, Build, Drop, Breakdown,
    Outro* markers on the timeline (move or rename them if it guessed wrong;
    your own markers named *verse, chorus, bridge…* work too).
 2. **Auto show** now builds one section per part, at those very bars: the
    drop hits where the drop is.
-3. **Songs → Keep the timeline as a song**. The song keeps the timeline
+3. **Music… → Songs… → Keep the timeline as a song**. The song keeps the timeline
    (music, markers, tracks) and the cue lists its cue tracks play.
 
 **Songs** lists them: **Play** puts a song's timeline and cues back and

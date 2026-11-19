@@ -7,6 +7,8 @@ import { state, on } from "./store.js";
 import { run } from "./actions.js";
 import { $, h, menu, modal, toast, promptBox, typingInField, cssVar } from "./ui.js";
 import { songParts, loudness, musicTraits } from "./songparts.js";
+import { icon } from "./icons.js";
+import { groupColour, GROUP_TINTS } from "./groupcolour.js";
 
 const LANE_H = 46;
 const KINDS = [["cue", "Cue track", "GO a playback's cues at set times"],
@@ -41,6 +43,42 @@ function fmt(t) {
   return `${m}:${s.toFixed(1).padStart(4, "0")}`;
 }
 
+// the ruler names every Nth bar - 1, 2, 4, 8, 16... - at least 72 px apart,
+// and the lanes' grid lines fall on those bars
+function barsEvery() {
+  const barPx = beat() * 4 * pxs;
+  let every = 1;
+  while (every * barPx < 72 && every < 1024) every *= 2;
+  return every;
+}
+
+// a track's colour: an effect track takes its group's (as on its fader),
+// or one of the group colours by its place; cues and hits are quiet, a
+// level is the dimmer's gold
+function trackColour(tr, i) {
+  if (tr.kind === "level") return "var(--f-dim)";
+  if (tr.kind !== "fx") return "var(--text-2)";
+  const groups = (state.snap && state.snap.groups) || [];
+  const used = new Set(tr.clips.map((c) => c.target && c.target.group).filter((x) => x !== undefined && x !== null && x !== ""));
+  const bare = String(tr.name || "").replace(/^Auto · /, "");
+  const gi = used.size === 1 ? groups.findIndex((g) => g.n === [...used][0] || g.name === [...used][0]) : groups.findIndex((g) => g.name === bare);
+  return gi >= 0 ? groupColour(groups[gi], gi) : GROUP_TINTS[i % GROUP_TINTS.length];
+}
+const KIND_LINE = { cue: (tr) => `Cues, playback ${tr.playback}`, button: () => "Button presses", fx: () => "Effects",
+  level: (tr) => (tr.target === "master" ? "Level, the master" : `Level, ${String(tr.target || "").toUpperCase()}`) };
+
+function trackMenu(anchor, tr) {
+  menu(anchor, [
+    { label: "Rename…", run: async () => {
+      const name = await promptBox("Rename track", "Name", String(tr.name || "").replace(/^Auto · /, ""), { ok: "Rename" });
+      if (name && name.trim()) run("timeline_track", { id: tr.id, name: name.trim() });
+    } },
+    { label: tr.mute ? "Play it again" : "Mute it", run: () => run("timeline_track", { id: tr.id, mute: !tr.mute }) },
+    "-",
+    { label: "Delete the track", danger: true, hint: "Ctrl+Z brings it back", run: () => run("timeline_track", { id: tr.id, remove: true }) },
+  ]);
+}
+
 function pos() {
   if (!transport.playing) return transport.pos;
   return Math.min(transport.length, transport.pos + (performance.now() - stamp) / 1000 * (transport.rate || 1));
@@ -50,7 +88,6 @@ function pos() {
 function render() {
   const d = doc();
   const sig = JSON.stringify([d, pxs]);
-  $("#tl-bpm").value = d.bpm;
   $("#tl-len").textContent = fmt(d.length);
   $("#tl-loop").classList.toggle("on", !!d.loop);
   if (sig === docSig) return;
@@ -58,37 +95,46 @@ function render() {
   const width = Math.max(600, Math.ceil(d.length * pxs) + 40);
   const canvas = $("#tl-canvas");
   canvas.style.width = width + "px";
-  // the lanes' faint lines fall on the bars
-  canvas.style.setProperty("--bar-px", `${Math.max(4, beat() * 4 * pxs)}px`);
+  // the lanes' faint lines fall on the bars the ruler names
+  canvas.style.setProperty("--bar-px", `${Math.max(4, beat() * 4 * pxs * barsEvery())}px`);
   // headers and lanes
-  const heads = [h("div.tl-head.ruler-head", h("span.muted.small", "Time"))];
+  const heads = [h("div.tl-head.ruler-head", h("button.tl-tempo", { type: "button", title: "The timeline's tempo: click to change it (or tap it: Music…)",
+    onclick: setTempo }, `Bars at ${+(+d.bpm || 120).toFixed(1)} BPM`))];
   const lanes = [];
   if (d.audio) {
     heads.push(h("div.tl-head.audio-head", h("b", "♪ " + d.audio.name),
       h("button.icon-x", { title: "Remove the audio", onclick: () => run("timeline_set", { clear_audio: true }) }, "×")));
     lanes.push(h("div.tl-lane.audio-lane", h("canvas.wave", { width, height: LANE_H })));
   }
-  for (const tr of d.tracks) {
-    const kindLabel = tr.kind === "cue" ? `Cue · PB${tr.playback}` : tr.kind === "button" ? "Buttons"
-      : tr.kind === "fx" ? "Effects" : tr.target === "master" ? "Level · GM" : `Level · ${String(tr.target || "").toUpperCase()}`;
-    heads.push(h("div.tl-head" + (tr.mute ? ".muted" : ""), { dataset: { track: tr.id } },
-      h("div.tl-head-text", h("b", { title: tr.name }, tr.name.replace(/^Auto · /, "")),
-        h("small", kindLabel + (tr.name.startsWith("Auto · ") ? " · auto" : ""))),
-      h("button.tl-mute" + (tr.mute ? ".on" : ""), { title: "Mute this track", onclick: () => run("timeline_track", { id: tr.id, mute: !tr.mute }) }, "M"),
-      h("button.icon-x", { title: "Delete this track", onclick: () => run("timeline_track", { id: tr.id, remove: true }) }, "×")));
-    lanes.push(lane(tr, width));
-  }
-  heads.push(h("div.tl-head.add-head", h("button.btn.small.ghost", { onclick: (e) => addTrackMenu(e.currentTarget) }, "+ Track")));
+  // each track: its colour down the edge, its name, what it plays, Mute, ⋯
+  d.tracks.forEach((tr, i) => {
+    const colour = trackColour(tr, i);
+    const bare = String(tr.name || "").replace(/^Auto · /, "");
+    heads.push(h("div.tl-head" + (tr.mute ? ".muted" : ""), { dataset: { track: tr.id }, style: `--k:${colour}` },
+      h("div.tl-head-text", h("b", { title: tr.name.startsWith("Auto · ") ? `${bare} (made by the show builder)` : bare }, bare),
+        h("small", (KIND_LINE[tr.kind] || (() => ""))(tr))),
+      h("button.tl-mute" + (tr.mute ? ".on" : ""), { type: "button", "aria-pressed": String(!!tr.mute),
+        title: tr.mute ? "Muted: click to play this track again" : "Mute this track", onclick: () => run("timeline_track", { id: tr.id, mute: !tr.mute }) }, "Mute"),
+      h("button.tl-more", { type: "button", "aria-label": `${bare}: more`, title: "Rename, mute, delete", onclick: (e) => trackMenu(e.currentTarget, tr) }, "⋯")));
+    lanes.push(lane(tr, width, colour));
+  });
   $("#tl-heads").replaceChildren(...heads);
   $("#tl-lanes").replaceChildren(...lanes);
+  // a word on how, while it is new: no tracks yet, or no clips on them
+  const hint = $("#tl-hint");
+  const clips = d.tracks.some((tr) => tr.clips.length);
+  hint.hidden = clips;
+  hint.textContent = !d.tracks.length ? "No tracks yet: + Track adds one - cues, button hits, effects or a level (or ask the Copilot to build the show)."
+    : "Double-click a lane to add · drag a clip to move it, its edge to resize · right-click to edit · Alt: no snap";
   drawRuler(width);
   drawWave();
   drawHead();
 }
 
-function lane(tr, width) {
+function lane(tr, width, colour) {
   const el = h("div.tl-lane" + (tr.mute ? ".muted" : ""), { dataset: { track: tr.id, kind: tr.kind } });
   el.style.width = width + "px";
+  if (colour) el.style.setProperty("--k", colour);
   if (tr.kind === "level") {
     const svgNS = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(svgNS, "svg");
@@ -97,6 +143,11 @@ function lane(tr, width) {
     const pts = tr.clips.map((c) => [c.t * pxs, (1 - c.v / 100) * (LANE_H - 8) + 4]);
     if (pts.length) {
       const all = [[0, pts[0][1]], ...pts, [width, pts[pts.length - 1][1]]];
+      // the level filled under its line, the dimmer's gold
+      const fill = document.createElementNS(svgNS, "polygon");
+      fill.setAttribute("points", [...all, [width, LANE_H], [0, LANE_H]].map((p) => p.join(",")).join(" "));
+      fill.setAttribute("class", "lvl-fill");
+      svg.appendChild(fill);
       const line = document.createElementNS(svgNS, "polyline");
       line.setAttribute("points", all.map((p) => p.join(",")).join(" "));
       line.setAttribute("class", "lvl-line");
@@ -232,50 +283,47 @@ function dragKey(dot, tr, c) {
   });
 }
 
-// The ruler: the time along the top (each label over its own short tick),
-// the bars and beats along the bottom (a bar's number beside its line), the
-// song's markers - in the desk's own colours, sharp on a sharp screen, as
-// tall as the "Time" head beside it.
+// The ruler: every Nth bar its number and its time ("17  0:32"), a line
+// down to the lanes there, short ticks for the bars between (when there is
+// room); the song's markers in amber.  As tall as the head beside it.
 function drawRuler(width) {
   const cv = $("#tl-ruler");
   const head = $(".tl-head.ruler-head");
-  const H = Math.max(18, Math.round(head ? head.getBoundingClientRect().height : 22) || 22);
-  const k = H / 22, dpr = window.devicePixelRatio || 1;
+  const H = Math.max(18, Math.round(head ? head.getBoundingClientRect().height : 30) || 30);
+  const k = H / 30, dpr = window.devicePixelRatio || 1;
   cv.width = Math.round(width * dpr);
   cv.height = Math.round(H * dpr);
   cv.style.width = width + "px";             // (its height is the head's, in CSS: they line up whenever it is drawn)
   const g = cv.getContext("2d");
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, width, H);
-  g.font = `500 ${Math.round(10 * k)}px ${cssVar("--font") || "system-ui, sans-serif"}`;
-  const ink = { time: cssVar("--text-2"), bar: cssVar("--text-3"), barLine: cssVar("--line-strong"), beatLine: cssVar("--line"), mark: cssVar("--blind") };
-  const b = beat();
+  const font = cssVar("--font") || "system-ui, sans-serif";
+  const ink = { bar: cssVar("--text-2"), time: cssVar("--text-3"), major: cssVar("--line-strong"), minor: cssVar("--line"), mark: cssVar("--blind") };
   const d = doc();
-  // beat and bar lines, thinned out when zoomed out
-  const beatPx = b * pxs;
-  if (beatPx >= 6) {
-    for (let i = 0, t = 0; t <= d.length; i++, t = i * b) {
-      const x = Math.round(t * pxs) + 0.5;
-      const bar = i % 4 === 0;
-      g.strokeStyle = bar ? ink.barLine : ink.beatLine;
-      g.beginPath(); g.moveTo(x, bar ? H - 10 * k : H - 4 * k); g.lineTo(x, H); g.stroke();
-      if (bar && beatPx * 4 > 34) { g.fillStyle = ink.bar; g.fillText(String(i / 4 + 1), x + 4, H - 2 * k); }
-    }
+  const barS = beat() * 4, barPx = barS * pxs, every = barsEvery();
+  const mid = Math.round(H / 2 + 4 * k);
+  for (let i = 0; i * barS <= d.length + 1e-6; i++) {
+    const x = Math.round(i * barPx) + 0.5;
+    const major = i % every === 0;
+    if (!major && barPx < 8) continue;
+    g.strokeStyle = major ? ink.major : ink.minor;
+    g.beginPath(); g.moveTo(x, major ? 0 : H - 5 * k); g.lineTo(x, H); g.stroke();
+    if (!major) continue;
+    const num = String(i + 1);
+    g.font = `500 ${Math.round(12 * k)}px ${font}`;
+    g.fillStyle = ink.bar;
+    g.fillText(num, x + 6, mid);
+    const w = g.measureText(num).width;
+    g.font = `400 ${Math.round(12 * k)}px ${font}`;
+    g.fillStyle = ink.time;
+    g.fillText(fmt(i * barS).replace(/\.0$/, ""), x + 6 + w + 7 * k, mid);
   }
-  const step = pxs >= 40 ? 1 : pxs >= 12 ? 5 : pxs >= 4 ? 15 : 60;
-  g.fillStyle = ink.time;
-  for (let t = 0; t <= d.length; t += step) {
-    const x = Math.round(t * pxs);
-    g.fillRect(x, 10 * k, 1, 3 * k);
-    g.textAlign = t ? "center" : "left";
-    g.fillText(fmt(t).replace(/\.0$/, ""), t ? x : x + 2, 9 * k);
-  }
-  g.textAlign = "left";
+  g.font = `500 ${Math.round(11 * k)}px ${font}`;
   for (const m of d.markers || []) {
     const x = m.t * pxs;
     g.fillStyle = ink.mark;
     g.fillRect(x, 0, 2, H);
-    g.fillText(m.name, x + 4, H - 2 * k);
+    g.fillText(m.name, x + 4, H - 3 * k);
   }
 }
 
@@ -304,7 +352,15 @@ function drawHead() {
   $("#tl-pos").textContent = fmt(p);
   const head = $("#tl-playhead");
   head.style.transform = `translateX(${p * pxs}px)`;
-  $("#tl-play").textContent = transport.playing ? "Pause" : "Play";
+  const m = Math.floor(p / 60);
+  const tag = $("#tl-ph-tag");
+  tag.textContent = `${m}:${String(Math.floor(p - m * 60)).padStart(2, "0")}`;
+  tag.style.transform = p * pxs < 24 ? "none" : "";              // (at the start: beside the line, not half off)
+  const play = $("#tl-play");
+  if (play.dataset.playing !== String(transport.playing)) {
+    play.dataset.playing = String(transport.playing);
+    play.replaceChildren(icon(transport.playing ? "pause" : "play"), h("span", transport.playing ? "Pause" : "Play"));
+  }
   if (transport.playing) {
     const sc = $("#tl-scroll");
     const x = p * pxs;
@@ -541,11 +597,50 @@ export function setTimelineVisible(on) {
 
 export function initTimeline() {
   $("#tl-play").addEventListener("click", () => run(transport.playing ? "timeline_pause" : "timeline_play"));
-  $("#tl-tc").addEventListener("click", async (e) => {
-    // the button, taken before the await: a click's currentTarget is
-    // cleared once it has been handled, and the menu then had nothing to
-    // open under (a TypeError, and no menu)
+  $("#tl-stop").addEventListener("click", () => run("timeline_stop"));
+  $("#tl-tc").addEventListener("click", (e) => timecodeMenu(e.currentTarget));
+  $("#tl-loop").addEventListener("click", () => run("timeline_set", { loop: !doc().loop }));
+  $("#tl-snap").addEventListener("change", (e) => { snap = e.target.value; });
+  $("#tl-zoom-in").addEventListener("click", () => { pxs = Math.min(240, pxs * 1.5); docSig = ""; render(); });
+  $("#tl-zoom-out").addEventListener("click", () => { pxs = Math.max(2, pxs / 1.5); docSig = ""; render(); });
+  $("#tl-length").addEventListener("click", async () => {
+    const v = await promptBox("Timeline length", "Length in seconds", String(doc().length));
+    if (v) run("timeline_set", { length: +v || doc().length });
+  });
+  // Music…: the song, its tempo and parts, timecode, the songs
+  $("#tl-audio").addEventListener("click", (e) => {
     const btn = e.currentTarget;
+    menu(btn, [
+      { label: doc().audio ? "Replace the music…" : "Add music…", hint: "MP3, WAV, OGG, FLAC, M4A", run: () => $("#tl-audio-file").click() },
+      { label: "Find the tempo in the music", disabled: !doc().audio, run: () => {
+        const bpm = detectBpm();
+        if (bpm) run("timeline_set", { bpm }, { toast: `Tempo ${bpm} BPM` });
+      } },
+      { label: "Find the song's parts", hint: "intro, build, drop… as markers", disabled: !doc().audio, run: findParts },
+      { label: "Add a marker at the playhead", run: async () => {
+        const name = await promptBox("Marker", "Name (verse, drop, chorus…)", "");
+        if (name) run("timeline_set", { markers: [...(doc().markers || []), { t: +pos().toFixed(2), name }] });
+      } },
+      "-",
+      { label: `Tempo: ${+(+doc().bpm || 120).toFixed(1)} BPM…`, run: setTempo },
+      { label: "Tap the tempo", hint: "tap here along with the music (three taps or more)", keep: true, run: tapTempo },
+      { label: "Follow timecode…", hint: "MIDI (MTC) or audio (LTC)", run: () => timecodeMenu(btn) },
+      { label: "Songs…", hint: "a light show per song; follow the DJ's decks", run: () => import("./songs.js").then((m) => m.openSongs()) },
+      "-",
+      { label: "Remove the music", disabled: !doc().audio, danger: true, run: () => run("timeline_set", { clear_audio: true }) },
+    ]);
+  });
+  $("#tl-add").addEventListener("click", (e) => addTrackMenu(e.currentTarget));
+  $("#tl-audio-file").addEventListener("change", (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (f) uploadAudio(f);
+  });
+  wireLanes();
+}
+
+// Timecode: follow MIDI (MTC) or audio (LTC) timecode, or stop following
+async function timecodeMenu(btn) {
     const tc = transport.timecode || {};
     const { ltcListening, startLtc, stopLtc } = await import("./ltcin.js");
     const follow = async (title, ltc) => {
@@ -563,46 +658,26 @@ export function initTimeline() {
         run: () => follow("Follow audio timecode", true) },
       { label: "Don't follow timecode", disabled: !tc.follow && !ltcListening(), run: () => { stopLtc(); run("timecode", { state: false }, { toast: true }); } },
     ]);
-  });
-  $("#tl-stop").addEventListener("click", () => run("timeline_stop"));
-  $("#tl-loop").addEventListener("click", () => run("timeline_set", { loop: !doc().loop }));
-  $("#tl-bpm").addEventListener("change", (e) => run("timeline_set", { bpm: +e.target.value || 120 }));
-  $("#tl-tap").addEventListener("click", () => {
-    const now = performance.now();
-    taps = taps.filter((t) => now - t < 3000);
-    taps.push(now);
-    if (taps.length >= 3) {
-      const gaps = taps.slice(1).map((t, i) => t - taps[i]);
-      const bpm = Math.round(60000 / (gaps.reduce((a, b) => a + b, 0) / gaps.length) * 10) / 10;
-      run("timeline_set", { bpm });
-    }
-  });
-  $("#tl-snap").addEventListener("change", (e) => { snap = e.target.value; });
-  $("#tl-zoom-in").addEventListener("click", () => { pxs = Math.min(240, pxs * 1.5); docSig = ""; render(); });
-  $("#tl-zoom-out").addEventListener("click", () => { pxs = Math.max(2, pxs / 1.5); docSig = ""; render(); });
-  $("#tl-length").addEventListener("click", async () => {
-    const v = await promptBox("Timeline length", "Length in seconds", String(doc().length));
-    if (v) run("timeline_set", { length: +v || doc().length });
-  });
-  $("#tl-audio").addEventListener("click", (e) => menu(e.currentTarget, [
-    { label: doc().audio ? "Replace audio…" : "Add audio…", hint: "MP3, WAV, OGG, FLAC, M4A", run: () => $("#tl-audio-file").click() },
-    { label: "Detect BPM from the audio", disabled: !doc().audio, run: () => {
-      const bpm = detectBpm();
-      if (bpm) run("timeline_set", { bpm }, { toast: `Tempo ${bpm} BPM` });
-    } },
-    { label: "Find the song's parts", hint: "intro, build, drop… as markers", disabled: !doc().audio, run: findParts },
-    { label: "Add a marker at the playhead", run: async () => {
-      const name = await promptBox("Marker", "Name (verse, drop, chorus…)", "");
-      if (name) run("timeline_set", { markers: [...(doc().markers || []), { t: +pos().toFixed(2), name }] });
-    } },
-    { label: "Remove audio", disabled: !doc().audio, danger: true, run: () => run("timeline_set", { clear_audio: true }) },
-  ]));
-  $("#tl-songs").addEventListener("click", () => import("./songs.js").then((m) => m.openSongs()));
-  $("#tl-audio-file").addEventListener("change", (e) => {
-    const f = e.target.files && e.target.files[0];
-    e.target.value = "";
-    if (f) uploadAudio(f);
-  });
+}
+
+// the timeline's tempo: typed, or tapped along with the music
+async function setTempo() {
+  const v = await promptBox("Timeline tempo", "Beats a minute (BPM)", String(+(+doc().bpm || 120).toFixed(1)), { ok: "Set" });
+  if (v !== null && +v >= 20 && +v <= 300) run("timeline_set", { bpm: +(+v).toFixed(1) });
+}
+function tapTempo() {
+  const now = performance.now();
+  taps = taps.filter((t) => now - t < 3000);
+  taps.push(now);
+  if (taps.length >= 3) {
+    const gaps = taps.slice(1).map((t, i) => t - taps[i]);
+    const bpm = Math.round(60000 / (gaps.reduce((x, y) => x + y, 0) / gaps.length) * 10) / 10;
+    run("timeline_set", { bpm });
+  }
+}
+
+// the ruler, the lanes' scrolling and zoom, the keys, and the feed
+function wireLanes() {
   // click or drag on the ruler to move the playhead
   const ruler = $("#tl-ruler");
   const seekAt = (ev) => {

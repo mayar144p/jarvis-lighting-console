@@ -45,6 +45,8 @@ const P = {
   music: '<path d="M6 12V3.5l7-1.5v8.5"/><circle cx="4.3" cy="12" r="1.8" class="fill"/><circle cx="11.3" cy="10.5" r="1.8" class="fill"/>',
   camera: '<path d="M2 5.5h3l1.2-2h3.6l1.2 2h3v7.5H2z"/><circle cx="8" cy="9" r="2.3"/>',
   play: '<path d="M4.5 2.5l9 5.5-9 5.5z" class="fill"/>',
+  pause: '<rect x="4" y="3" width="3" height="10" rx="1" class="fill"/><rect x="9" y="3" width="3" height="10" rx="1" class="fill"/>',
+  plus: '<path d="M8 3v10M3 8h10"/>',
   mic: '<rect x="6" y="1.8" width="4" height="7.6" rx="2"/><path d="M3.6 7.6a4.4 4.4 0 0 0 8.8 0M8 12v2.2M5.6 14.2h4.8"/>',
   talk: '<path d="M2.5 3h11v7.5h-6.2L4.5 13v-2.5h-2z"/><path d="M5.2 6.8h5.6"/>',
   phone: '<rect x="4.5" y="1.5" width="7" height="13" rx="1.5"/><path d="M7 12.2h2"/>',
