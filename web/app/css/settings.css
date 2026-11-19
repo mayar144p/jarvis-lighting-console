@@ -5,7 +5,7 @@
 .set-nav { display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--line); padding-right: 12px; }
 .set-nav button { text-align: left; height: calc(36px * var(--ctl)); padding: 0 12px; border: 0; border-radius: var(--r); background: transparent; color: var(--text-2); font-weight: 500; }
 .set-nav button:hover { background: var(--raised); color: var(--text); }
-.set-nav .set-group { margin: 10px 12px 2px; font-size: var(--t-xs); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.set-nav .set-group { margin: 12px 12px 2px; font-size: var(--t-xs); font-weight: 500; color: var(--text-3); }
 .set-nav .set-group:first-child { margin-top: 0; }
 .set-nav button[aria-selected=true] { background: var(--select); border-color: var(--lit); color: var(--text); font-weight: 600; box-shadow: inset 2px 0 0 var(--lit); }
 .set-pane { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
@@ -41,3 +41,19 @@
 .modal-body:has(> .settings) { flex: 1; min-height: 0; overflow: hidden; }
 .modal-body > .settings { height: 100%; min-height: 0; }
 .settings { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 20px; min-height: min(520px, 64vh); }
+
+/* on / off: a switch at the end of its row, each row ruled off from the next */
+.set-pane input[type=checkbox] {
+  appearance: none; -webkit-appearance: none; width: calc(34px * var(--ctl)); height: calc(20px * var(--ctl)); border-radius: 999px;
+  background: radial-gradient(circle at calc(10px * var(--ctl)) 50%, var(--text-2) calc(6px * var(--ctl)), transparent calc(6.5px * var(--ctl))) var(--well);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.set-pane input[type=checkbox]:checked {
+  background: radial-gradient(circle at calc(100% - 10px * var(--ctl)) 50%, var(--lit-ink) calc(6px * var(--ctl)), transparent calc(6.5px * var(--ctl))) var(--lit);
+  box-shadow: none;
+}
+.set-pane input[type=checkbox]:focus-visible { outline: 2px solid var(--lit); outline-offset: 2px; }
+.set-pane label.check:not(.row-btns *, .out-row *, td *) { display: flex; align-items: center; gap: 8px 16px; min-height: calc(40px * var(--ctl)); padding: 4px 0; border-bottom: 1px solid var(--line); }
+.set-pane label.check:not(.row-btns *, .out-row *, td *) > input[type=checkbox] { order: 9; margin-left: auto; }
+.set-pane .look-row { padding: 6px 0; border-bottom: 1px solid var(--line); }
+.look-checks { gap: 0; }

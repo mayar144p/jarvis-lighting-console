@@ -117,6 +117,15 @@ body.arranging .stage-hud.drawn-hud { left: calc(108px * var(--ctl) + 22px); }
 .vis-ind { min-width: calc(40px * var(--ctl)); height: calc(26px * var(--ctl)); padding: 0 7px; display: inline-grid; place-items: center; border-radius: 5px; background: var(--black); border: 1px solid var(--line); color: var(--text); font: 600 var(--t-s)/1 var(--font, ui-monospace, monospace); white-space: nowrap; }
 #vis-fps { min-width: calc(60px * var(--ctl)); }
 #vis-fps.idle { color: var(--text-2); }
+/* zones, lights only and the crowd are under Show ▾ (their keys still do the work) */
+.vis-bar :is(#people-btn, #zones-btn, #lightsonly-btn) { display: none; }
+/* House, Haze, Auto, Exposure and the frame rate: one panel at the foot */
+.stage-hud.bottom-right { gap: 0; padding: 3px; border: 1px solid var(--line-strong); border-radius: var(--r-float); background: color-mix(in srgb, var(--black) 82%, transparent); backdrop-filter: blur(6px); }
+.stage-hud.bottom-right > .hud-slider { border: 0; border-radius: 0; background: none; backdrop-filter: none; }
+.stage-hud.bottom-right > * + * { box-shadow: -1px 0 0 var(--line); }
+.stage-hud.bottom-right > .hud-btn { background: none; backdrop-filter: none; }
+.stage-hud.bottom-right > .hud-btn.on { color: var(--lit); }
+.stage-hud.bottom-right > #vis-fps { margin-left: 3px; border: 0; background: none; color: var(--text-3); font-weight: 500; }
 .vis-grow { flex: 1; }
 .stage canvas.box-select { cursor: crosshair; }
 .stage-wrap { container-type: inline-size; }

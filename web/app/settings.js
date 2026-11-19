@@ -345,7 +345,10 @@ export async function openSettings() {
   }
   show(last);
   const body = h("div.settings", nav, pane);
-  modal({ title: "Settings", body, wide: true });
+  let close = () => {};
+  close = modal({ title: "Settings", body, wide: true, foot: [
+    h("span.muted.small", "Changes apply straight away - the show's settings are kept with the show, this computer's on this computer."),
+    h("span.grow"), h("button.btn", { onclick: () => close() }, "Close")] });
 }
 
 // Backup: every saved show copied off this computer (a dead laptop at a

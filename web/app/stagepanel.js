@@ -240,6 +240,26 @@ export function initStage() {
   $("#people-btn").classList.toggle("on", stage.options.people);
   $("#people-btn").addEventListener("click", (e) => crowdMenu(e.currentTarget, keep));
   $("#views-more").addEventListener("click", (e) => viewsMenu(e.currentTarget));
+  // Show ▾: what the 3D draws, ticked (the old keys stay, out of sight, and do the work)
+  $("#vis-show").addEventListener("click", (e) => {
+    const btn = e.currentTarget;
+    const tick = (on) => (on ? "✓ " : "   ");
+    const onOf = (id) => $(id).classList.contains("on");
+    menu(btn, [
+      { label: tick(onOf("#zones-btn")) + "Zones", hint: "dance floor, bar, VIP...", run: () => $("#zones-btn").click() },
+      { label: tick(onOf("#lightsonly-btn")) + "Lights only", hint: "no room, truss, stage or crowd", run: () => $("#lightsonly-btn").click() },
+      { label: tick(stage.options.people) + "The crowd", run: () => {
+        const now = !stage.options.people;
+        stage.setOptions({ people: now });
+        $("#people-btn").classList.toggle("on", now);
+        keep("people", now ? "1" : "0");
+      } },
+      { label: "The crowd…", hint: "dancing, shadows, how many", run: () => crowdMenu(btn, keep) },
+      "-",
+      { label: tick(lightMapOn(stage)) + "Light map (lux)", hint: "how much light lands where", run: () => toggleLightMap(stage) },
+    ]);
+  });
+  $("#vis-capture").addEventListener("click", (e) => menu(e.currentTarget, captureItems()));
   $("#fullscreen-btn").addEventListener("click", toggleFull);
   on("lite", updateNowPlaying);
   on("snapshot", updateNowPlaying);
@@ -409,6 +429,22 @@ function pickElement(head, cell, mods) {
   toast(`#${head}: head${cells.length > 1 ? "s" : ""} ${cells.join(", ")} picked - colour and settings go to ${cells.length > 1 ? "them" : "it"} only`, "", 3500);
 }
 
+// a photo of the view, or a video (Capture ▾, and the >> menu)
+function captureItems() {
+  return [
+    { label: "Take a photo", hint: "the view at 4K, as a PNG", run: () => {
+      const url = stage.photo(3840);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `haze-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.png`;
+      a.click();
+      toast("Photo saved", "ok");
+    } },
+    { label: recording() ? "■ Stop recording" : "Record a video…", hint: recording() ? "and save it" : "the 3D view for the client (MP4)",
+      run: () => (recording() ? stopVideo() : openVideoDialog(stage)) },
+  ];
+}
+
 function viewsMenu(btn) {
   const v = (state.snap && state.snap.venue) || {};
   const sel = (state.snap && state.snap.selected) || [];
@@ -427,16 +463,7 @@ function viewsMenu(btn) {
       stage.walk(true, () => toast("Stopped walking"));
       toast("Walking: W A S D (or arrows) to move, Shift to run, drag to look round, Esc to stop", "", 5000);
     } },
-    { label: "Take a photo", hint: "the view at 4K, as a PNG", run: () => {
-      const url = stage.photo(3840);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `haze-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.png`;
-      a.click();
-      toast("Photo saved", "ok");
-    } },
-    { label: recording() ? "■ Stop recording" : "Record a video…", hint: recording() ? "and save it" : "the 3D view for the client (MP4)",
-      run: () => (recording() ? stopVideo() : openVideoDialog(stage)) },
+    ...captureItems(),
     { label: lightMapOn(stage) ? "✓ Light map (lux)" : "Light map (lux)", hint: "how much light lands where",
       run: () => toggleLightMap(stage) },
     { label: stage.xrOn ? "Leave VR" : "Walk round in VR", disabled: !vrOK && !stage.xrOn,

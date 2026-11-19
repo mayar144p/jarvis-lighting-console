@@ -336,9 +336,10 @@ const STEPS = [
   ["21-show-menu", async (p) => { await closeAll(p); await p.click("#show-btn"); await p.waitForTimeout(400); }],
   ["22-tempo-menu", async (p) => { await closeAll(p); if (await p.isVisible("#tempo-more")) await p.click("#tempo-more"); await p.waitForTimeout(300); }],
   ["23-views-menu", async (p) => { await closeAll(p); await p.click("#views-more"); await p.waitForTimeout(300); }],
-  ["24-crowd-menu", async (p) => { await closeAll(p); await p.click("#people-btn"); await p.waitForTimeout(300); }],
-  ["25-zones", async (p) => { await closeAll(p); await p.click("#zones-btn"); await p.waitForTimeout(500); }],
-  ["26-arrange", async (p) => { await closeAll(p); await p.click("#zones-btn").catch(() => {}); if (!(await p.evaluate(() => document.body.classList.contains("arranging")))) await p.click("#arrange-btn"); await p.waitForTimeout(700); }, { click: "#venue-tools" }],
+  // (zones, lights only and the crowd are under the 3D's Show ▾)
+  ["24-crowd-menu", async (p) => { await closeAll(p); await p.click("#vis-show"); await p.click('.menu button:has-text("The crowd…")'); await p.waitForTimeout(300); }],
+  ["25-zones", async (p) => { await closeAll(p); await p.click("#vis-show"); await p.click('.menu button:has-text("Zones")'); await p.waitForTimeout(500); }],
+  ["26-arrange", async (p) => { await closeAll(p); await p.click("#vis-show").then(() => p.click('.menu button:has-text("Zones")')).catch(() => {}); if (!(await p.evaluate(() => document.body.classList.contains("arranging")))) await p.click("#arrange-btn"); await p.waitForTimeout(700); }, { click: "#venue-tools" }],
   ["27-room-dialog", async (p) => { await closeAll(p); await p.click("#vt-room"); await p.waitForTimeout(600); }, { click: ".modal-scrim:last-of-type .modal" }],
   ["28-rigging-dialog", async (p) => { await closeAll(p); await p.click("#vt-rigging"); await p.waitForTimeout(600); }, { click: ".modal-scrim:last-of-type .modal" }],
   ["29-more-dialog", async (p) => { await closeAll(p); await p.click("#vt-add"); await p.waitForTimeout(500); }],

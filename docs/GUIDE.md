@@ -74,10 +74,11 @@ The stage sits in a real room: floor, walls, ceiling or an open roof, a stage
 deck, zones (dance floor, bar, seating, VIP, DJ, FOH) and the rigging lights
 go on. A fresh desk opens in a **club**. **Settings → Venue** swaps in a
 template (club, small club, warehouse, concert stage, theatre, ballroom,
-outdoor stage) and resizes the room.
+outdoor stage) and resizes the room. To add a stage, a bar, speakers or
+walls: **Arrange the room → + More**.
 
-* **House lights** (bottom right of the stage) make the room visible with the
-  rig dark. Walls between you and the stage are cut away automatically.
+* **House lights** (bottom right of the 3D view, beside Haze, Exposure and
+  the frame rate) make the room visible with the rig dark. Walls between you and the stage are cut away automatically.
 * **Exposure** (next to House and Haze) brightens or darkens the picture, the
   way a camera's exposure does; the lights themselves don't change.
   Double-click it to put it back to the middle.
@@ -85,10 +86,10 @@ outdoor stage) and resizes the room.
   New lights place themselves by type: movers and washes on the trusses,
   PARs and bars on the stage lip. A light on a truss is *mounted*, so moving
   the truss moves its lights.
-* **Crowd ▾**: show or hide the crowd, simple or varied figures, how packed
-  it is, dancing or still. People stand in the zones and are lit by the rig.
-* **Lights only**: hides the room, truss, stage, objects and crowd, so only
-  the lights and their beams are left (**Arrange** turns it off).
+* **Show ▾** ticks what is drawn: **Zones**, **Lights only** (just the lights
+  and their beams), **The crowd** (**The crowd…**: figures, how packed,
+  dancing; lit by the rig) and the **Light map (lux)**. **Capture ▾** takes a
+  photo (4K) or records a video.
 * **Views ▾**: front, sides, back, plan and whole room. There's also eye level
   from the crowd, the DJ's view, and **through the selected light** along its
   beam, the way you would check a focus. Save any view by name.
@@ -146,9 +147,10 @@ shows in haze as a beam of its own colours, and counts in the light map.
   whole selection and drop it on a truss to hang the whole row.
 * An inspector gives exact numbers: position, which rig and where along it,
   hang or stand, aim; truss ends and height; object size and rotation.
-* **+ Add** puts in rigging (truss, pipe, tower, ladder, stand, floor base)
-  and objects (DJ booth, bar, speakers, subs, pillars, LED screen, risers,
-  tables, balcony, walls, performer marks).
+* **+ Truss**, **+ Pole** and **+ Pipe** put in rigging; **+ More** adds
+  towers, ladders, stands, floor bases and objects (a stage, DJ booth, bar,
+  speakers, subs, pillars, LED screen, risers, tables, balcony, walls,
+  performer marks).
 * **Draw room** traces the walls by clicking corners, any shape.
   **Draw zone** draws a dance floor, bar, seating area and so on.
 * **Floor plan** uploads an image or a **PDF** of the venue's plan. Set its
@@ -745,7 +747,7 @@ work, and **Earlier versions…** opens any saved state of the show.
 
 ### A video for the client
 
-View -> **Record a video…** films the 3D view: pick the camera first, then
+The 3D view's **Capture ▾** → **Record a video…** films the 3D view: pick the camera first, then
 either *play the timeline from the start* (it records the whole timeline and
 stops at its end) or *record what I do* while you run the show by hand (up to
 10 minutes; the red REC button on the 3D view stops early). Full HD, 4K or a
