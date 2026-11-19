@@ -10,6 +10,7 @@ import { focusedPlayback } from "./playbacks.js";
 import { openHelp, openCueDialog, saveShow } from "./dialogs.js";
 import { makeGroup } from "./fixtures.js";
 import { stagePanel } from "./view3d.js";
+import { shortcutsOn } from "./shortcuts.js";
 
 // The cue the focused playback is on: the one O, I and D act on.
 function currentCue() {
@@ -24,7 +25,7 @@ function currentCue() {
 async function updateCue(replace = false) {
   const { pb, cue } = currentCue();
   if (cue == null) return toast("No cue to update - press GO or R first");
-  if (replace && !await confirmBox("Replace the cue", `Cue ${cue} on PB${pb} becomes exactly what is in the programmer - everything else in it goes. Ctrl+Z brings it back.`, { ok: "Replace", danger: true })) return;
+  if (replace && !await confirmBox("Replace the cue", `Cue ${cue} on PB${pb} becomes exactly what is in the programmer - everything else in it goes. Undo brings it back.`, { ok: "Replace", danger: true })) return;
   run("record_cue", { playback: pb, cue, mode: replace ? "replace" : "merge" }, { toast: true });
 }
 
@@ -35,7 +36,7 @@ const digitsSelect = () => { try { return localStorage.getItem("haze.digitsSelec
 async function deleteCue() {
   const { pb, cue } = currentCue();
   if (cue == null) return toast("No cue to delete - press GO first");
-  if (await confirmBox("Delete cue", `Delete cue ${cue} on PB${pb}? Ctrl+Z brings it back.`, { ok: "Delete", danger: true })) {
+  if (await confirmBox("Delete cue", `Delete cue ${cue} on PB${pb}? Undo brings it back.`, { ok: "Delete", danger: true })) {
     run("delete_cue", { playback: pb, cue });
   }
 }
@@ -57,6 +58,8 @@ export function initKeys() {
       if (document.body.classList.contains("stage-full")) { stagePanel().then((m) => m && m.toggleFull(false)); return; }
       return;
     }
+    // (the shortcuts are off for now - shortcuts.js; Esc above still closes)
+    if (!shortcutsOn()) return;
     if (ctrl && e.key.toLowerCase() === "k") { e.preventDefault(); openCmdbar(); return; }
     if (ctrl && e.key.toLowerCase() === "s") { e.preventDefault(); saveShow((state.snap && state.snap.show_file) || ""); return; }
     // F1 / F2 / F3: Set up, Program, Live (as the mode buttons say)

@@ -13,6 +13,7 @@ import { run } from "./actions.js";
 import { remotePanel } from "./remotepanel.js";
 import { ndiPanel } from "./ndisettings.js";
 import { h, modal, toast, confirmBox } from "./ui.js";
+import { shortcutsOn } from "./shortcuts.js";
 
 // ============================================================== settings
 const VENUE_TEMPLATES = [["club", "Club"], ["small_club", "Small club / bar"], ["warehouse", "Warehouse rave"],
@@ -266,7 +267,7 @@ export async function openSettings() {
         h("label.field", h("span", "Template"), tpl),
         h("div.field", h("span", " "), h("button.btn", {
           onclick: async () => {
-            if (!(await confirmBox("Replace the venue", "Start from this template? The room, rigging and zones are replaced; your lights stay where they are (Ctrl+Z undoes it).", { ok: "Replace" }))) return;
+            if (!(await confirmBox("Replace the venue", "Start from this template? The room, rigging and zones are replaced; your lights stay where they are (Undo takes it back).", { ok: "Replace" }))) return;
             run("venue_template", { name: tpl.value, width: +w.value || null, depth: +d.value || null, height: +ht.value || null }, { toast: true });
           },
         }, "Use template"))),
@@ -280,7 +281,8 @@ export async function openSettings() {
       skyRow(v)]],
     ["screen", "Screen & 3D", [
       h("label.check", gigBox, h("span", "Gig mode: big buttons and text everywhere")),
-      (() => {
+      // (a choice about the number keys: only while the keyboard shortcuts are on - shortcuts.js)
+      !shortcutsOn() ? null : (() => {
         const box = h("input", { type: "checkbox" });
         try { box.checked = localStorage.getItem("haze.digitsSelect") === "1"; } catch (e) { /* fine */ }
         box.addEventListener("change", () => { try { localStorage.setItem("haze.digitsSelect", box.checked ? "1" : "0"); } catch (e) { /* fine */ } });
@@ -527,7 +529,7 @@ function describeRoomRow() {
     h("div.row-btns",
       h("button.btn", { onclick: check }, "What would it build?"),
       h("button.btn.primary", { onclick: async () => {
-        if (!(await confirmBox("Build the room", "Replace the room with this one? Your lights stay patched (Ctrl+Z undoes it).", { ok: "Build" }))) return;
+        if (!(await confirmBox("Build the room", "Replace the room with this one? Your lights stay patched (Undo takes it back).", { ok: "Build" }))) return;
         run("venue_describe", { text: text.value }, { toast: true });
       } }, "Build it")));
 }

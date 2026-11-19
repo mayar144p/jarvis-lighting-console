@@ -45,7 +45,7 @@ function outputMenu(anchor) {
       toast("Blind - nothing leaves this computer");
     } } : null,
     "-",
-    { label: "Blackout", hint: "X", run: () => run("blackout", { state: 1 }) },
+    { label: "Blackout", run: () => run("blackout", { state: 1 }) },
   ]);
 }
 
@@ -71,12 +71,12 @@ function renderUndo() {
   b.disabled = !u.can_undo;
   const what = UNDO_NAMES[u.undo] || String(u.undo || "").replace(/_/g, " ");
   // what it would undo is one hover away (and in the list beside it)
-  b.title = u.can_undo ? `Undo ${what} (Ctrl+Z)` : "Nothing to undo";
+  b.title = u.can_undo ? `Undo ${what}` : "Nothing to undo";
   b.setAttribute("aria-label", u.can_undo ? `Undo ${what}` : "Undo");
   $("#redo-btn").disabled = !u.can_redo;
   const more = $("#undo-more");
   if (more) more.disabled = !(u.steps || []).length;
-  $("#redo-btn").title = u.can_redo ? `Redo ${String(u.redo || "").replace(/_/g, " ")} (Ctrl+Shift+Z)` : "Nothing to redo";
+  $("#redo-btn").title = u.can_redo ? `Redo ${String(u.redo || "").replace(/_/g, " ")}` : "Nothing to redo";
 }
 
 const LOCKS = {
@@ -150,6 +150,8 @@ function renderStatus() {
       : st === "blind" ? "Safe to program: nothing reaches the lights" : "Output stopped",
     st === "live" ? `${o.frames_sent || 0} frames sent · ${o.hz || 0} Hz`
       : st === "blind" ? `${o.simulated_frames || 0} frames simulated` : "");
+  // blackout on: said first (in Set up there is no BLACKOUT key to show it)
+  if (s.blackout) item(out, "bad", "Blackout is on - nothing lights until BLACKOUT (in Program or Live) brings the lights back", "Blackout");
   // the freeze watchdog: the lights stopped getting frames (and why was saved)
   const stall = o.stall || (o.last_stall && Date.now() / 1000 - (o.last_stall.at || 0) < 600 ? o.last_stall : null);
   if (stall) {

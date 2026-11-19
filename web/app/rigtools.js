@@ -105,7 +105,7 @@ export function openArrange() {
   close = modal({
     title: `Arrange ${heads.length} lights`,
     body: h("div.rig-form",
-      h("p.muted.small", "Where the selected lights sit in the room - the 3D and the plot follow; Ctrl+Z puts them back."),
+      h("p.muted.small", "Where the selected lights sit in the room - the 3D and the plot follow; Undo puts them back."),
       field("Which way", axis),
       h("div.row-btns",
         act("align", "Line them up", "All at the same place that way (the first light's)"),
@@ -123,9 +123,9 @@ export function selectItems() {
     { label: "Every moving light", run: () => run("select_query", { role: "pan" }, { toast: true }) },
     { label: "Every light with gobos", run: () => run("select_query", { role: "gobo" }, { toast: true }) },
     "-",
-    { label: "One at a time: the next light", hint: "]", disabled: sel.length < 2, run: () => run("select_step", { step: "next" }, { toast: true }) },
-    { label: "One at a time: the light before", hint: "[", disabled: sel.length < 2, run: () => run("select_step", { step: "prev" }, { toast: true }) },
-    { label: "All of them again", hint: "}", run: () => run("select_step", { step: "all" }, { toast: true }) },
+    { label: "One at a time: the next light", disabled: sel.length < 2, run: () => run("select_step", { step: "next" }, { toast: true }) },
+    { label: "One at a time: the light before", disabled: sel.length < 2, run: () => run("select_step", { step: "prev" }, { toast: true }) },
+    { label: "All of them again", run: () => run("select_step", { step: "all" }, { toast: true }) },
     "-",
   ];
 }

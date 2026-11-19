@@ -1,6 +1,6 @@
 // Arrange mode's controls: the toolbar (add, draw, floor plan), the
 // inspector for whatever is selected, and the floor-plan upload with its
-// two-point scale.  Every change is one engine action, so Ctrl+Z undoes it.
+// two-point scale.  Every change is one engine action, so Undo takes it back.
 import { openRoomDialog } from "./roomdialog.js";
 import { VenueEditor } from "/js/stage/editor.js";
 import { outlineOf } from "/js/stage/venue.js";
@@ -10,6 +10,7 @@ import { pickNdiSource } from "./ndipick.js";
 import { state, on, head as headOf } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, h, menu, toast, promptBox, confirmBox, choiceBox, typingInField, anyModal, modal } from "./ui.js";
+import { shortcutsOn } from "./shortcuts.js";
 
 let stage = null;
 let editor = null;
@@ -394,7 +395,7 @@ function renderInspector(sel) {
         field("Aim yaw°", num(rot ? rot[0] : "", (v) => run("set_place", { head: s.head, rot: [v, rot ? rot[1] : -45] }), { step: 5 })),
         field("Tilt°", num(rot ? rot[1] : "", (v) => run("set_place", { head: s.head, rot: [rot ? rot[0] : 180, v] }), { step: 5 })),
         h("button.btn.small.ghost", { title: "Let the visualiser aim it at the stage", onclick: () => run("set_place", { head: s.head, rot: "auto" }) }, "Auto")));
-      body.push(h("p.muted.small", "Rotate (E) to aim it with the gizmo."));
+      body.push(h("p.muted.small", "Rotate to aim it with the gizmo."));
     }
     const sel = (state.snap && state.snap.selected) || [];
     body.push(h("div.row-btns",
@@ -450,8 +451,8 @@ function renderInspector(sel) {
         h("button.btn.small.ghost", { title: "Loads and pick-up points for every piece", onclick: () => import("./rigdialog.js").then((m) => m.openRigDialog("report")) }, "Report"),
         h("button.btn.small.ghost", { title: "Bring it into view", onclick: () => editor && editor.frameRigById(s.id) }, "Frame")),
       h("p.muted.small", found.bend
-        ? "Drag the arrows to move the whole curve, or press E and drag the ring to turn it. Shift+click other rigging to line them up."
-        : "Drag the arrows to move it (it stays inside the room and snaps up to the ceiling), the yellow ends to change its length and angle, or press E and drag the ring to turn it. Shift+click other rigging to line them up."),
+        ? "Drag the arrows to move the whole curve, or press Rotate and drag the ring to turn it. Shift+click other rigging to line them up."
+        : "Drag the arrows to move it (it stays inside the room and snaps up to the ceiling), the yellow ends to change its length and angle, or press Rotate and drag the ring to turn it. Shift+click other rigging to line them up."),
       h("div.row-btns",
         sel.length ? h("button.btn.small", { onclick: () => run("attach_heads", { heads: sel, rig: s.id }, { toast: true }) }, `Put ${sel.length} selected light${sel.length === 1 ? "" : "s"} on it`) : null,
         copiesBtn(s.id, found.kind, Math.abs(found.a[0] - found.b[0]) >= Math.abs(found.a[2] - found.b[2]) ? "z" : "x"),
@@ -709,7 +710,7 @@ export async function resetVenue() {
   const n = (v.rigging || []).length + (v.objects || []).length + (v.zones || []).length + (v.stage ? 1 : 0);
   const i = await choiceBox("Clear the venue", {
     message: `Take everything out of the room to design it again: ${n} thing${n === 1 ? "" : "s"} - the stage, trusses, poles, furniture and zones.`,
-    detail: "Your lights stay where they are (unhooked from the trusses that go), and the show, cues and buttons are not touched. Ctrl+Z brings it all back.",
+    detail: "Your lights stay where they are (unhooked from the trusses that go), and the show, cues and buttons are not touched. Undo brings it all back.",
     buttons: ["Cancel", "Clear the room too", "Clear, keep the walls"], primary: 2, cancel: 0, danger: 1,
   });
   if (i === 1 || i === 2) run("venue_reset", { keep_room: i === 2 }, { toast: true });
@@ -899,6 +900,7 @@ export function initVenuePanel(theStage) {
     if (document.querySelector(".menu")) return;    // Esc closes the open menu first
     if (editor.drawing) return;                      // the editor takes its own keys
     const k = ev.key.toLowerCase();
+    if (!shortcutsOn() && ev.key !== "Escape") return;     // (off for now - shortcuts.js; Esc still leaves)
     if (k === "w") { editor.setMode("translate"); modeButtons(); ev.stopImmediatePropagation(); }
     else if (k === "e") { editor.setMode("rotate"); modeButtons(); ev.stopImmediatePropagation(); }
     else if ((ev.key === "Delete" || ev.key === "Backspace") && editor.sel) {
@@ -906,7 +908,7 @@ export function initVenuePanel(theStage) {
       if (s.type === "rig" || s.type === "object" || s.type === "zone") {
         ev.preventDefault();
         ev.stopImmediatePropagation();
-        confirmBox("Delete", "Delete this from the venue? Ctrl+Z brings it back.", { ok: "Delete", danger: true })
+        confirmBox("Delete", "Delete this from the venue? Undo brings it back.", { ok: "Delete", danger: true })
           .then((yes) => { if (yes) { run("venue_remove", { id: s.id }, { toast: true }); editor.select(null); } });
       }
     } else if (ev.key === "Escape") {

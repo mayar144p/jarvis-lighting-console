@@ -8,6 +8,7 @@ import { state, patch, selected } from "./store.js";
 import { run } from "./actions.js";
 import { h, modal, toast, confirmBox, promptBox, closeTopModal } from "./ui.js";
 import { requestFixture, openManualFixture, openFixtureBuilder, offerLightTest } from "./lightdialogs.js";
+import { shortcutsOn } from "./shortcuts.js";
 
 export { openCueDialog, openCueList } from "./cuedialogs.js";
 export { openSettings, openSettingsAt } from "./settings.js";
@@ -444,7 +445,7 @@ export function openCsvImport() {
   file.addEventListener("change", async () => { if (file.files[0]) ta.value = await file.files[0].text(); });
   const close = modal({
     title: "Import patch from CSV", wide: true,
-    body: h("div", h("p.muted.small", "Replaces the patch with the rows below (Ctrl+Z undoes it). Columns follow the exported patch sheet."), file, h("div", { style: { height: "8px" } }), ta),
+    body: h("div", h("p.muted.small", "Replaces the patch with the rows below (Undo takes it back). Columns follow the exported patch sheet."), file, h("div", { style: { height: "8px" } }), ta),
     foot: [h("button.btn", { onclick: () => close() }, "Cancel"), h("button.btn.primary", {
       onclick: async () => {
         const d = await post("/api/console/patch", { action: "from_csv", csv: ta.value }).catch((e) => ({ error: e.message }));
@@ -463,7 +464,7 @@ export async function openShowMenu(anchor, menuFn) {
   const current = (state.snap && state.snap.show_file) || "";
   menuFn(anchor, [
     { label: "New show…", hint: "a template (club, wedding, band, theatre, corporate) or empty", run: openNewShow },
-    { label: "Save", hint: "Ctrl+S", run: () => saveShow(current) },
+    { label: "Save", run: () => saveShow(current) },
     { label: "Save as…", run: () => saveShow("") },
     { label: "Save everything to a file…", hint: "to move it to another computer: the show, its fixtures, per-light settings and files", run: saveEverything },
     { label: "Open everything from a file…", hint: "a .haze file (or an older .jarvis one) from another computer", run: openEverything },
@@ -650,7 +651,7 @@ async function openVersions(name) {
 
 // MVR: a plot from Vectorworks, Capture, grandMA3, Depence... comes in
 // with every light patched (its own GDTF, mode and address) and placed;
-// lights hung in a row get a truss.  One Ctrl+Z takes it all back.
+// lights hung in a row get a truss.  One Undo takes it all back.
 export function importMvr() {
   const pick = h("input", { type: "file", accept: ".mvr", hidden: true });
   document.body.append(pick);
@@ -664,7 +665,7 @@ export function importMvr() {
       const choice = await new Promise((done) => {
         const close = modal({
           title: `Import ${file.name}`,
-          body: h("p", `There are ${patched} light(s) in this show already. Add the plot to them, or start over from the plot (the lights and the trusses go, the room is sized to the plot)? One Ctrl+Z undoes either.`),
+          body: h("p", `There are ${patched} light(s) in this show already. Add the plot to them, or start over from the plot (the lights and the trusses go, the room is sized to the plot)? One Undo takes either back.`),
           foot: [h("button.btn", { onclick: () => { close(); done(null); } }, "Cancel"), h("span.grow"),
             h("button.btn", { onclick: () => { close(); done("add"); } }, "Add to this show"),
             h("button.btn.primary", { onclick: () => { close(); done("new"); } }, "Start from the plot")],
@@ -686,7 +687,7 @@ export function importMvr() {
       title: d.ok ? "MVR imported" : "MVR not imported",
       body: h("div",
         h("p", d.summary || d.error || ""),
-        d.ok ? h("p.muted.small", "Each light has its own GDTF (with its 3D body when the file has one), its mode and its address from the plot. Ctrl+Z takes the whole import back.") : null,
+        d.ok ? h("p.muted.small", "Each light has its own GDTF (with its 3D body when the file has one), its mode and its address from the plot. Undo takes the whole import back.") : null,
         list("Changed on the way", d.notes), list("Not imported", d.problems)),
     });
   });
@@ -835,7 +836,7 @@ export function openHelp() {
   const panes = {
     start: () => h("ol.help-steps", ...steps.map(([t, d]) => h("li", h("b", t), h("span", d)))),
     keys: () => h("div.help-groups", ...KEY_GROUPS.map(([title, list]) => h("section.help-card", h("h4", title), rows(list)))),
-    cmd: () => h("div", h("p.small", "Type in the command bar (/ or any number key): console syntax runs straight away."),
+    cmd: () => h("div", h("p.small", "Type in the command bar (Command or ask… in the title bar): console syntax runs straight away."),
       h("section.help-card", rows(SYNTAX)),
       h("p.muted.small", "Anything that is not console syntax - “slow blue wash on the movers” - goes to the copilot, which shows you the plan before it touches the rig.")),
   };
@@ -846,13 +847,15 @@ export function openHelp() {
     for (const b of tabs.children) b.classList.toggle("on", b.dataset.k === k);
     pane.replaceChildren(panes[k]());
   };
-  for (const [k, l] of [["start", "Getting started"], ["keys", "Keys"], ["cmd", "Command line"]]) tabs.append(h("button", { dataset: { k }, onclick: () => show(k) }, l));
-  show(helpTab);
+  // (the Keys tab only while the keyboard shortcuts are on - shortcuts.js)
+  const keysOn = shortcutsOn();
+  for (const [k, l] of [["start", "Getting started"], ...(keysOn ? [["keys", "Keys"]] : []), ["cmd", "Command line"]]) tabs.append(h("button", { dataset: { k }, onclick: () => show(k) }, l));
+  show(helpTab === "keys" && !keysOn ? "start" : helpTab);
   modal({
     title: "Help", wide: true,
     body: h("div.help", tabs, pane),
     foot: [h("span.muted.small", "A light doing the wrong thing? Right-click it → Report a problem with this light."),
-      h("button.btn", { title: "Then click anything on the screen to see what it is (Shift+F1)", onclick: () => { closeTopModal(); import("./helpmode.js").then((m) => m.whatsThis()); } }, "What's this?"),
+      h("button.btn", { title: "Then click anything on the screen to see what it is", onclick: () => { closeTopModal(); import("./helpmode.js").then((m) => m.whatsThis()); } }, "What's this?"),
       h("button.btn", { title: "What the screen you're on is for, and how to use it", onclick: () => { closeTopModal(); import("./helpmode.js").then((m) => m.explainScreen()); } }, "Explain this screen"),
       h("button.btn.ghost", { title: "Questions the guide had no answer for (kept on this computer)", onclick: () => { closeTopModal(); import("./helpmode.js").then((m) => m.openUnanswered()); } }, "Unanswered questions"),
       h("button.btn", { title: "A minute round the mode on screen (Set up, Program or Live)", onclick: () => { closeTopModal(); startTour(); } },

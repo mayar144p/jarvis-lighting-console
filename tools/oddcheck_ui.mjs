@@ -154,10 +154,10 @@ if (check(!!tile, "the buttons page has buttons")) {
 }
 // undo from B undoes the last step, whoever did it
 const before = (await act("status")).undo || {};
-await B.keyboard.press("Control+z");
+await B.click("#undo-btn");
 await sleep(600);
 const after = (await act("status")).undo || {};
-check((after.depth ?? 0) < (before.depth ?? 1) || before.depth === undefined, "Ctrl+Z on the other screen undoes the shared last step",
+check((after.depth ?? 0) < (before.depth ?? 1) || before.depth === undefined, "Undo on the other screen undoes the shared last step",
   `depth ${before.depth} -> ${after.depth}`);
 await A.screenshot({ path: join(outDir, "two-A.png") });
 await B.screenshot({ path: join(outDir, "two-B.png") });
@@ -180,7 +180,7 @@ for (const sel of ["#int-fader", "#locate-btn", "#prog-clear", '#prog-tabs [data
   await A.click(sel, { timeout: 1500 }).catch(() => {});
   await sleep(150);
 }
-await A.keyboard.press("Control+z");
+await A.click("#undo-btn", { timeout: 1500 }).catch(() => {});
 await sleep(500);
 const toasts = await A.evaluate(() => [...document.querySelectorAll(".toast")].map((t) => t.textContent).join(" | "));
 check(errors.A.length + errors.B.length === errsBefore, "pressing while disconnected breaks nothing", [...errors.A, ...errors.B].slice(errsBefore).join(" | ").slice(0, 200));

@@ -27,7 +27,7 @@ function sync() {
   const auto = (state.lite && state.lite.autopilot) || (state.snap && state.snap.autopilot) || {};
   $("#tempo").classList.toggle("auto", !!auto.on);
   $("#tempo").title = `${t.bpm.toFixed(1)} BPM${src ? " from " + (t.source === "prodj" && t.deck ? (t.deck.name || "the CDJs") + (t.deck.master ? " (master)" : "") : src) : ""}`
-    + ` · tap on the beat (T), Shift+T for the 1 · effects locked to the beat follow it`
+    + ` · tap it on the beat · effects locked to the beat follow it`
     + (t.follow ? " · the Speed master follows it" : "");
 }
 
@@ -57,8 +57,8 @@ export const downbeat = () => run("tempo_sync", { beat: 1 }, { toast: "Beat 1 is
 function openMenu(anchor) {
   const t = tempo() || {};
   menu(anchor, [
-    { label: "Tap on the beat", hint: "T", run: tap },
-    { label: "This is the 1 (downbeat)", hint: "Shift+T", run: downbeat },
+    { label: "Tap on the beat", run: tap },
+    { label: "This is the 1 (downbeat)", run: downbeat },
     { label: `Phrase starts here (bar ${t.bar_in_phrase || 1} of 8 now)`, hint: "buttons \"on the phrase\" fire 8 bars on", run: () => run("tempo_phrase", {}, { toast: true }) },
     { label: "Type the BPM…", run: async () => {
       const v = await promptBox("Tempo", "BPM", (t.bpm || 120).toFixed(1), { ok: "Set" });

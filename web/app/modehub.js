@@ -77,7 +77,7 @@ function paintSetup() {
           btn("Import a patch (CSV)…", lazy("./dialogs.js", "openCsvImport"))] },
       { title: "Addresses", status: !n ? "add lights first" : clashes ? `${clashes} address clash${clashes > 1 ? "es" : ""}` : "no clashes", ok: n ? clashes === 0 : null,
         buttons: [btn("DMX map…", lazy("./fixtures.js", "openDmxMap")), btn("Address them all", async () => {
-          if (await confirmBox("Auto-address", "Re-address every light from 1.001 with no gaps or overlaps? Ctrl+Z undoes it.", { ok: "Re-address" })) run("auto_patch", {}, { toast: true });
+          if (await confirmBox("Auto-address", "Re-address every light from 1.001 with no gaps or overlaps? Undo takes it back.", { ok: "Re-address" })) run("auto_patch", {}, { toast: true });
         })] }]],
     ["The room", [
       { title: "Room and rigging", status: roomLine || "a plain room so far", ok: v.name || v.template || room.width ? true : null,

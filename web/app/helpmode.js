@@ -8,6 +8,7 @@ import { get, post } from "./api.js";
 import { run } from "./actions.js";
 import { h, toast, modal } from "./ui.js";
 import { openGuide } from "./guidecard.js";
+import { shortcutsOn } from "./shortcuts.js";
 
 // -- What's this? -------------------------------------------------------------
 let picking = false;
@@ -152,6 +153,6 @@ export function initHints() {
   on("snapshot", check);
   setInterval(check, 2000);
   // Shift+F1: What's this?
-  document.addEventListener("keydown", (e) => { if (e.key === "F1" && e.shiftKey) { e.preventDefault(); whatsThis(); } });
+  document.addEventListener("keydown", (e) => { if (shortcutsOn() && e.key === "F1" && e.shiftKey) { e.preventDefault(); whatsThis(); } });
 }
 export const _rules = RULES;          // (tests)

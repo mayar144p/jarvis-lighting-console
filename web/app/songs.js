@@ -49,7 +49,7 @@ export function openSongs(fresh = null) {
             if (n) act("song_rename", { id: x.id, name: n });
           } }, "Rename"),
           h("button.btn.small.ghost", { onclick: async () => {
-            if (await confirmBox("Delete song", `Delete “${x.name}”? Ctrl+Z brings it back.`, { ok: "Delete", danger: true })) act("song_delete", { id: x.id }, { toast: true });
+            if (await confirmBox("Delete song", `Delete “${x.name}”? Undo brings it back.`, { ok: "Delete", danger: true })) act("song_delete", { id: x.id }, { toast: true });
           } }, "Delete"))));
     });
     const cur = s.songs.find((x) => x.id === s.current);
@@ -165,7 +165,7 @@ export function openSongShows() {
       made++;
       say(`  ✓ ${dr.source === "llm" ? "designed by the AI" : "designed offline"}${dr.note ? ` (${dr.note})` : ""}: ${br.summary || "built"}`, ".out-ok");
     }
-    say(`Done: ${made} of ${ids.length} song(s) have a new show. Ctrl+Z undoes them one step at a time.`);
+    say(`Done: ${made} of ${ids.length} song(s) have a new show. Undo takes them back one step at a time.`);
     go.disabled = false;
     go.textContent = "Make them again";
     void close;
@@ -174,7 +174,7 @@ export function openSongShows() {
 
 /** Change part of a song's show by asking, and keep it in the song:
  * the song on the timeline, the change designed (the AI, or the desk's own
- * rules), built, kept.  Ctrl+Z undoes the build and the keeping. */
+ * rules), built, kept.  Undo takes the build and the keeping back. */
 async function changeSong(x, act) {
   const ask = await promptBox(`Change “${x.name}”`, "What should change? (the rest stays)", "", { placeholder: "make the second drop harder" });
   if (!ask) return;

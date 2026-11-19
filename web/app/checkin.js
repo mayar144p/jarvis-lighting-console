@@ -68,6 +68,6 @@ export async function openCheckin() {
       h("div.row-btns", h("button.btn.small", { onclick: () => run("add_heads", { query: x.name, universe: x.universe, address: x.address }, { toast: true }) }, "Add it")))),
     h("div.row-btns", { style: { marginTop: "14px" } },
       h("button.btn", { onclick: () => { close(); import("./dialogs.js").then((m) => m.openShowCheck()); } }, "Check the show…"),
-      h("span.muted.small", "Swapped lights keep their number, groups, cues and songs; Ctrl+Z undoes each one.")));
+      h("span.muted.small", "Swapped lights keep their number, groups, cues and songs; Undo takes each one back.")));
   if (!pairs.length && !differ.length && !alone.length && !loose.length) toast("Every light here is as the show expects", "ok");
 }

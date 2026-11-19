@@ -1,6 +1,6 @@
 // Macros: command lines (as typed in the command bar) played in one go -
 // "1-4 red", "cue 3 go", "master 60" - from the command bar or a button.
-// All the lines or none, and one Ctrl+Z undoes the lot.
+// All the lines or none, and one Undo takes the lot back.
 import { run } from "./actions.js";
 import { state } from "./store.js";
 import { h, modal, confirmBox } from "./ui.js";

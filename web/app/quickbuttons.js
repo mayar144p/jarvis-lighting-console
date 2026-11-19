@@ -12,6 +12,7 @@ import { run } from "./actions.js";
 import { post } from "./api.js";
 import { onNote, onCC, webMidiOn, setWebMidi, webMidiSupported, webMidiInputs } from "./webmidi.js";
 import { $, $$, h, modal, toast, promptBox, confirmBox, menu, throttle, byTouch, grab } from "./ui.js";
+import { shortcutsOn } from "./shortcuts.js";
 
 // what a button does, as the editor offers it (engine kinds + two made of
 // "custom": dim, and the look captured from the stage)
@@ -330,7 +331,7 @@ function profileMenu(anchor) {
     cur !== "Default" && { label: `Rename ${cur}…`, run: async () => {
       const n = await named(`Rename ${cur}`, cur); if (n && n !== cur) run("quick_profile", { rename: cur, to: n }, { toast: true }); } },
     cur !== "Default" && { label: `Delete ${cur}…`, danger: true, run: async () => {
-      if (await confirmBox(`Delete ${cur}?`, `Its buttons and pages go with it (Ctrl+Z brings them back). The desk goes back to the Default buttons.`, { ok: "Delete", danger: true }))
+      if (await confirmBox(`Delete ${cur}?`, `Its buttons and pages go with it (Undo brings them back). The desk goes back to the Default buttons.`, { ok: "Delete", danger: true }))
         go("quick_profile", { delete: cur });
     } },
   ]);
@@ -994,9 +995,9 @@ function editPages() {
         h("button.btn.small.ghost.icon", { title: "Move down (swap with the page below)", "aria-label": "Move down", disabled: p >= (q.pages || 32),
           onclick: async () => { await run("quick_page", { page: p, swap: p + 1 }); if (page === p) page = p + 1; else if (page === p + 1) page = p; draw(); render(true); } }, arrow("down")),
         // any page that is there can go; an empty one without asking
-        h("button.btn.small.ghost.danger", { title: "Delete this page's buttons, name and grid (Ctrl+Z brings them back)", disabled: !used.has(p),
+        h("button.btn.small.ghost.danger", { title: "Delete this page's buttons, name and grid (Undo brings them back)", disabled: !used.has(p),
           onclick: async () => {
-            if (n && !(await confirmBox("Delete page", `Delete the ${n} button(s) on ${pageName(p)}? Ctrl+Z brings them back.`, { ok: "Delete", danger: true }))) return;
+            if (n && !(await confirmBox("Delete page", `Delete the ${n} button(s) on ${pageName(p)}? Undo brings them back.`, { ok: "Delete", danger: true }))) return;
             await run("quick_page", { page: p, delete: true }); draw(); render(true);
           } }, "Delete")));
     }
@@ -1417,7 +1418,7 @@ function editButton(slot, btn) {
       } });
     const keyNote = h("span.qe-note", "A letter or digit on the keyboard that plays this button.");
     const playFrom = kids.length;                    // from here: how it plays
-    kids.push(row("Keyboard key", h("div.chip-row", keyIn, keyNote)));
+    if (shortcutsOn()) kids.push(row("Keyboard key", h("div.chip-row", keyIn, keyNote)));     // (off for now - shortcuts.js)
     const midiIn = h("input.qe-num.qe-key", { type: "number", min: 0, max: 127, value: s.midi, placeholder: "—",
       oninput: (e) => { const v = e.target.value; s.midi = v === "" ? "" : Math.max(0, Math.min(127, Math.round(+v))); } });
     const midiNote = h("span.qe-note", "A pad or key on a MIDI controller. Press Learn, then hit the pad.");
@@ -1581,6 +1582,7 @@ export async function learnMidi(btn, input, note, set, kind = "note") {
 // A button's keyboard key: press plays it, and for a hold button letting
 // go of the key lets go of it.  Runs before the console's own keys.
 function keyTarget(e) {
+  if (!shortcutsOn()) return [];                // (off for now - shortcuts.js)
   if (e.ctrlKey || e.metaKey || e.altKey || editing) return [];
   const t = e.target;
   if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return [];

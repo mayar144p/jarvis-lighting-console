@@ -1068,13 +1068,13 @@ function renderProgIn() {
   const label = on ? `Update PB${on.pb} · ${on.name}` : "Update";
   const lab = upd.querySelector("span");
   if (lab && lab.textContent !== label) lab.textContent = label;
-  upd.title = on ? `Merge the programmer into ${on.name} on PB${on.pb} - what you didn't touch stays (O)` : "Update: press GO on a playback first - it merges into the cue that is on (O)";
+  upd.title = on ? `Merge the programmer into ${on.name} on PB${on.pb} - what you didn't touch stays` : "Update: press GO on a playback first - it merges into the cue that is on";
   // a greyed-out button says why (a disabled button shows no tooltip everywhere)
   const why = !any ? "Nothing to record yet: select lights and set a level, colour or position (or start an effect)."
     : !hasSel() ? "Select the lights to make a button of them." : "";
   // (the why is the greyed button's own tooltip: a line of text under the
   // buttons that came and went moved the whole panel)
-  $("#prog-record").title = any ? "Record what is in the programmer as a cue (R)" : why;
+  $("#prog-record").title = any ? "Record what is in the programmer as a cue" : why;
   for (const b of [$("#prog-make"), $("#prog-clear")]) {
     if (b.dataset.title === undefined) b.dataset.title = b.title;
     b.title = (b.id === "prog-clear" ? !any : why) ? why || b.dataset.title : b.dataset.title;

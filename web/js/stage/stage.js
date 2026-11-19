@@ -1644,7 +1644,10 @@ export class Stage {
   _wireKeys() {
     const dom = this.renderer.domElement;
     const views = { 1: "front", 2: "left", 3: "right", 4: "back", 5: "top", 6: "overview", 7: "dj" };
+    // (the desk's shortcuts are off for now: app/shortcuts.js, the same switch)
+    const keysOn = () => { try { return localStorage.getItem("haze.shortcuts") === "1"; } catch (e) { return false; } };
     dom.addEventListener("keydown", (ev) => {
+      if (!keysOn()) return;
       if (views[ev.key]) { this.view(views[ev.key]); ev.preventDefault(); ev.stopPropagation(); }
       else if (ev.key === "0") { this.view("front"); ev.preventDefault(); ev.stopPropagation(); }
       else if (ev.key === "f" || ev.key === "F") {

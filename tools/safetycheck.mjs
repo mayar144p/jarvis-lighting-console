@@ -56,6 +56,17 @@ const tabs = await p.evaluate(() => [...document.querySelectorAll("#prog-tabs bu
 // (a moving spot: Colour, Position, Beam, Effects, Palettes - the level is the bar beside them)
 check("every programmer tab shows its whole name at 1366 (Palettes too)", tabs.length >= 5 && tabs.every((t) => !t.cut && t.w > 10), JSON.stringify(tabs));
 
+// the keyboard's shortcuts are off for now (shortcuts.js): a key fires nothing
+await blur();
+const idle = (await status()).playbacks[0].index;
+for (const k of ["x", "Space", "Enter", "1", "g", "Control+z"]) { await p.keyboard.press(k); await sleep(150); }
+await sleep(400);
+const quiet = await status();
+check("shortcuts off: X, Space, Enter, a number, G and Ctrl+Z do nothing (no blackout, no GO, no command line)",
+  !quiet.blackout && quiet.playbacks[0].index === idle && !(await cmdOpen()), JSON.stringify({ blackout: quiet.blackout, idx: quiet.playbacks[0].index }));
+// ...and turned on (the code is kept for later), the keys are as safe as ever
+await p.evaluate(() => localStorage.setItem("haze.shortcuts", "1"));
+
 // the keyboard: Enter never fires GO; a number starts a command
 await blur();
 const before = (await status()).playbacks[0].index;

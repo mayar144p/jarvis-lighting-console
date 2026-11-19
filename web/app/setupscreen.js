@@ -31,7 +31,7 @@ export function paintSetupScreen(box, steps) {
           h("h2", "Patch"),
           h("button.btn.primary", { type: "button", onclick: lazy("./dialogs.js", "openAddDialog") }, "+ Add lights"),
           h("button.btn", { type: "button", "aria-haspopup": "menu", onclick: (e) => importMenu(e.currentTarget) }, "Import ▾"),
-          h("button.btn", { type: "button", title: "Every light from 1.001 on, no gaps or overlaps (Ctrl+Z undoes it)", onclick: autoAddress }, "Auto-address"),
+          h("button.btn", { type: "button", title: "Every light from 1.001 on, no gaps or overlaps (Undo takes it back)", onclick: autoAddress }, "Auto-address"),
           h("button.btn", { type: "button", title: "The DMX nodes on the network", onclick: lazy("./fixtures.js", "scanRig") }, "Find nodes"),
           h("span.grow"),
           h("button.btn.ghost.icon", { type: "button", "aria-label": "More for the patch", title: "DMX map, ask the lights (RDM), venue check-in, export the patch", onclick: (e) => patchMenu(e.currentTarget) }, "⋯")),
@@ -73,7 +73,7 @@ function patchMenu(anchor) {
 }
 
 async function autoAddress() {
-  if (await confirmBox("Auto-address", "Re-address every light from 1.001 with no gaps or overlaps? Ctrl+Z undoes it.", { ok: "Re-address" })) run("auto_patch", {}, { toast: true });
+  if (await confirmBox("Auto-address", "Re-address every light from 1.001 with no gaps or overlaps? Undo takes it back.", { ok: "Re-address" })) run("auto_patch", {}, { toast: true });
 }
 
 function groupsOf(n) {
@@ -185,13 +185,22 @@ function paintChecklist(box, steps) {
   const judged = all.filter((st) => st.ok !== null && !st.optional);
   const done = judged.filter((st) => st.ok).length;
   const next = all.find((st) => st.ok === false);
+  const hidden = checkHidden();
+  box.classList.toggle("collapsed", hidden);
+  // the head folds the steps away (and back); folded, it still says how far and what's next
   box.replaceChildren(
-    h("div.su-check-head", h("h2", "Before the show"), h("span", `${done} of ${judged.length} done`)),
-    h("div.su-steps", ...steps.map(([name, list]) => [
+    h("button.su-check-head", { type: "button", "aria-expanded": String(!hidden), "aria-controls": "su-steps",
+      title: hidden ? "Show the steps" : "Hide the steps", onclick: () => { setCheckHidden(!checkHidden()); checkKey = ""; paintChecklist(box, steps); } },
+      h("i.su-chev", { "aria-hidden": "true" }),
+      h("span.su-check-title", h("h2", "Before the show"), hidden && next ? h("small", `Next: ${next.title.toLowerCase()}`) : null),
+      h("span.su-check-count", `${done} of ${judged.length} done`)),
+    h("div.su-steps#su-steps", { hidden }, ...steps.map(([name, list]) => [
       h("h3.su-step-group", name),
       ...list.map((st) => stepRow(st, st === next)),
     ]).flat()));
 }
+const checkHidden = () => { try { return localStorage.getItem("haze.setup.checkHidden") === "1"; } catch (e) { return false; } };
+const setCheckHidden = (v) => { try { localStorage.setItem("haze.setup.checkHidden", v ? "1" : "0"); } catch (e) { /* private window */ } };
 
 function stepRow(st, isNext) {
   const [main, ...rest] = st.buttons.filter(Boolean);

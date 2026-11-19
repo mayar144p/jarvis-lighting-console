@@ -6,11 +6,11 @@ How to use the desk. Getting it running is in the [README](../README.md)'s quick
 
 | Region | What it does |
 |---|---|
-| **Title bar** | the show's name and its menu (new, save, open, paperwork, **Check the show…**), **Blind** / **Go live…** (the output), **Arm FX** / **Kill FX**, the three modes, the tempo, the command line (<kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd>), the **Copilot**, undo and redo with the last changes named, the lock, the 3D view, the phone remote, settings and help |
+| **Title bar** | the show's name and its menu (new, save, open, paperwork, **Check the show…**), **Blind** / **Go live…** (the output), **Arm FX** / **Kill FX**, the three modes, the tempo, the command line (**Command or ask…**), the **Copilot**, undo and redo with the last changes named, the lock, the 3D view, the phone remote, settings and help |
 | **Groups and Lights** (the side panel, left) | **Groups** at the top, each with its colour, its name and how many lights: click one to select its lights (Ctrl / Shift + click adds them or takes them out), hold it to flash them, hover it to ring them in the 3D view (double-click frames them), right-click to add the selected lights, take them out, make it exactly the selection, rename or delete it; **+** makes a group of the selection. Buttons, faders and sound links that use a group follow. **Lights** below: every light, one line each - number, kind, name, address (a run of the same light folds into one line: its numbers open it); the magnifier filters the list, **+** adds lights, **⋯** has the rest (the same type, every mover, every light with gobos, one light at a time, Highlight, the DMX map, parking, arranging, limits). **Drag** a light (or the selected lights) onto a group to put it in. At the foot, the selection: how many, **Locate**, **Group…** (make a group of them, add them to a group, take them out of one), then **All**, **None**, **Odd**, **Even**, **Left**, **Right** |
 | **Programmer** (the middle) | tabs for what the selection can actually do: **Colour** (HSV picker, swatches, hex, white temperature, wheel steps), **Position** (pan/tilt pad, aim in degrees, **aim at a spot** or a performer mark, home), **Beam** (strobe speeds, gobo/prism steps, zoom/iris/frost, every attribute), **Effects** and **Palettes** - a laser's and a special effect's own tabs too when one is selected. The busy tabs come in parts, each remembered: **Position** - *Point* (aim, spots, the room map, the pad), *Move* (movements, A → B, waves), *Limits* (stay on the floor, each light's range, laser safety); **Beam** - *Quick* (one-press strobe, gobo, prism, zoom...) and *All channels*; **Effects** - *Effects*, *Running* (with how many run) and *Step & paint*. Beside every tab, the **Level** bar with **Full** and **Out** under it (double-click the bar: full); under the tab, the value bar; along the foot, **Clear**, **Make a button…**, **Update** and **Record cue…** |
 | **The dock** (under the programmer) | **Buttons** (pages of instant buttons), **Cues** (the playbacks: a fader, GO, Flash, back and stop each, **+** for a new one, the cue list of the one in focus), **Timeline** (the show against the music) and **Group faders**; ⤢ gives it the whole middle |
-| **Master** (right) | the grand master, **Release all** (hold it) and **BLACKOUT**: the same place in every mode |
+| **Master** (right) | the grand master, **Release all** (hold it) and **BLACKOUT**: the same place in Program and Live (Set up is for patching: the status bar says when blackout is on) |
 | **Status bar** | output target and rate, network, what is connected, feed health, last save |
 
 The 3D view opens in a window of its own (the cube in the title bar) - put
@@ -58,7 +58,7 @@ check-in → Check in…** asks the lights here (RDM) and lines them up against 
 - **lights to swap in**: a light of the show that didn't answer, and a light
   of the same kind found here (*#5 LED PAR isn't here; the SlimPAR at 1.033
   is a PAR*) - **Use it** makes it take #5's place: its type and address
-  change, its number, place, groups, cues and songs stay (one Ctrl+Z);
+  change, its number, place, groups, cues and songs stay (one Undo);
   another found light can be picked instead;
 - patched here but a different light (change it to the one that answered);
 - the show's lights not heard, with no light of their kind (park dark);
@@ -255,8 +255,8 @@ physically is and who made it:
   **Open the 3D window**, and untick showing it in the desk's window): the
   desk's own buttons stay quick however long a picture takes.
 
-Views: <kbd>1</kbd>–<kbd>6</kbd> (front, house left, house right, back, plan,
-whole room), <kbd>F</kbd> to frame the selection.
+Views: the 3D view's **>>** menu (front, house left, house right, back,
+plan, whole room) and **Frame the selection**.
 
 ### The light map (how much light lands where)
 
@@ -414,7 +414,7 @@ played one after another with **GO**.
    lets it go.
 4. To change a cue: open it, change the look, and **Update** on the
    programmer bar. Cues can be dragged to reorder, inserted (**Insert before**)
-   and deleted; Ctrl+Z brings any of it back.
+   and deleted; Undo brings any of it back.
 
 ### Effects
 
@@ -457,7 +457,7 @@ dimmer effects on the selected lights.
   which timecode is the timeline's 0.
 * The **engine owns the clock**, so the lights stay in time even if the browser
   stutters, and the audio follows it. Seeking puts the rig where it would be
-  at that moment. <kbd>Shift</kbd>+<kbd>Space</kbd> plays and pauses.
+  at that moment.
 
 ### A light show per song
 
@@ -475,7 +475,7 @@ A song can keep its own show, so the same track looks the same every night:
 **Songs** lists them: **Play** puts a song's timeline and cues back and
 plays it; **Edit** puts it on the timeline to change, then **Update**. Any
 number of songs share the same playback: each brings its own cues with it.
-Ctrl+Z undoes keeping, deleting and renaming.
+Undo takes back keeping, deleting and renaming.
 
 **With Pro DJ Link (CDJs / XDJs):** play the track on the tempo-master deck
 and press **Tie to deck** next to its song (the desk remembers the track's
@@ -537,7 +537,7 @@ it**, or **Change…** next to a song: “make the second drop harder”, “the
 breakdown in blue and white”, “no strobes in the intro”, “movers on the crowd
 in drop 2”. The AI gets the show as it is and changes only what you name; the
 desk checks it like a new show. You see the parts that changed before
-building; one Ctrl+Z undoes it. With no AI the desk's own rules understand
+building; one Undo takes it back. With no AI the desk's own rules understand
 harder / softer, strobes or no strobes, colours, where the movers aim, and
 slower or snappier fades - and say so when they don't understand. A show
 made before this version has no design kept with it: make it once more
@@ -684,7 +684,7 @@ and settings are on its Laser or SFX tab.
   *Spot (DJ)* moves the beams' spot left / right / away / nearer as the DJ
   sees it, and *● middle* sends them to the middle; the spots list has a
   *Middle* too.  The map redraws when objects, trusses or lights move.  The
-  3D's **DJ** view (key 7) looks from the booth the way the DJ faces, so
+  3D's **DJ** view looks from the booth the way the DJ faces, so
   dragging lights there works from the DJ's side.
 * **Move tab -> A → B.** A move between two angles in each light's own
   degrees (0 is the middle of its travel): *pan −100° → +40°*, tilt from
@@ -737,7 +737,7 @@ session's tempo and its place in the bar, and joins no session of its own).
 ### Shows
 
 The show name in the top bar opens the **show menu**: New show (a template
-or empty), Save (Ctrl+S), Save as, and the first 8 shows (A to Z) to open.
+or empty), Save, Save as, and the first 8 shows (A to Z) to open.
 **All shows…** lists every one with when it was saved and its earlier
 versions; find one by name, and **Open**, **Rename**, **Copy** (start next
 week's venue from this one) or **Delete** it. A deleted show goes to the
@@ -815,26 +815,15 @@ out and back in; **Unlock** puts them back).
 
 ### Keyboard
 
-*Where:* Help (?) → Keys
-
-| key | does | key | does |
-|---|---|---|---|
-| <kbd>Space</kbd> | GO on the focused playback (Enter never fires GO) | <kbd>B</kbd> | cue back |
-| <kbd>X</kbd> / <kbd>Shift</kbd>+<kbd>X</kbd> | BLACKOUT / lights back | <kbd>C</kbd> | clear the programmer |
-| <kbd>A</kbd> / <kbd>Shift</kbd>+<kbd>A</kbd> | select all / none | <kbd>L</kbd> | locate |
-| <kbd>0</kbd>–<kbd>9</kbd> | start a command (`1 thru 4 @ 70`, `3 go`); Enter runs it | <kbd>↑</kbd> <kbd>↓</kbd> | intensity ±5 (<kbd>Shift</kbd> ±1) |
-| <kbd>R</kbd> | record a cue | <kbd>G</kbd> | group the selection |
-| <kbd>O</kbd> / <kbd>Shift</kbd>+<kbd>O</kbd> | update the current cue (merge) / replace it | <kbd>I</kbd> / <kbd>D</kbd> | insert after / delete the current cue |
-| <kbd>F</kbd> | frame the selection | <kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd> | command bar |
-| <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> | undo / redo | <kbd>Ctrl</kbd>+<kbd>S</kbd> | save show |
-| <kbd>?</kbd> | help | <kbd>Esc</kbd> | close the top panel |
-| <kbd>Shift</kbd>+<kbd>Space</kbd> | play / pause the timeline | <kbd>W</kbd> / <kbd>E</kbd> | Arrange: move / rotate |
-
-Typing in a field never fires the rig.
+Keyboard shortcuts are off for now: the desk is played with the pointer and
+the touch screen, so a stray key can't fire the rig. Typing in a box, Enter
+to confirm it, Esc to close a dialog or a menu, and the arrow keys on a
+slider you have clicked work as ever. Undo and redo are the arrows in the
+title bar.
 
 ### Command bar
 
-<kbd>/</kbd> opens it. It searches every action and also takes desk syntax:
+**Command or ask…** in the title bar opens it. It searches every action and also takes desk syntax:
 `1-4 red`, `1-8 at 60`, `all dimmer 40`, `1-4 pan 90`, `cue 3 go`.
 `at` (or `@`) is the level, as on other desks: `1 thru 6 at 70`,
 `3 @ full`, `1-4 at out`. `1-4 aim 90 -30` points them (pan, then
@@ -867,7 +856,7 @@ really do, from its own file, and says what it couldn't: *"the 6 PARs can't
 tilt, so they stay"*. It talks about the desk and nothing else.
 
 Everything it does runs in 3D first (**Keep** / **Throw away**) and is one
-Ctrl+Z. Going live, arming, firing confetti / CO2 / lasers / haze, saving or
+Undo. Going live, arming, firing confetti / CO2 / lasers / haze, saving or
 opening a show and every delete are only **prepared**: each shows up with
 **Do it** / **No**, and nothing happens until you tap. Calibration, the
 network, locks and undo stay yours. **New chat** starts over.
@@ -922,7 +911,7 @@ below.
     by earlier versions (*Auto · …*) can be tidied away in one tap (the
     *Tidy auto copies* chip under Groups).
 
-  You see the plan first. Building it is one <kbd>Ctrl</kbd>+<kbd>Z</kbd>, and
+  You see the plan first. Building it is one Undo, and
   your own timeline tracks are kept. It works offline too, with a style-aware
   designer; pick a style chip (techno, house, EDM, hip hop, lounge, wedding,
   latin) or describe it.
@@ -949,7 +938,7 @@ buttons.
 With the online AI (Settings → AI → your key), **Talk** in the copilot
 starts a spoken conversation: you talk, it answers out loud, and you can talk
 over it. What you ask it to do goes to the copilot as if typed - the room's
-rules, the preview and one Ctrl+Z all hold. Press it again to stop. Without
+rules, the preview and one Undo all hold. Press it again to stop. Without
 the online AI, hold the microphone key to speak one request.
 
 ### What the AI has learned
@@ -1176,7 +1165,7 @@ the computer). It also offers a **template**, or an empty show, and a short
 - a first set of cues and the timeline.
 
 It's a normal show, so change anything. A template, or **Empty show**, is
-one Ctrl+Z, and that brings back the show that was open.
+one Undo, and that brings back the show that was open.
 
 ## Look and help
 
@@ -1363,7 +1352,7 @@ like chairs, are counted and left out). With a show already patched you choose *
 show** or **Start from the plot** (the old lights and trusses go, and the room
 is sized to the plot). What couldn't come in is listed: a GDTF missing from
 the file, or a mode the file doesn't have (the light gets its first mode).
-The whole import is one Ctrl+Z.
+The whole import is one Undo.
 
 A light whose GDTF isn't in the MVR comes in from the desk's own fixtures or
 the libraries when one has the same maker and model (the import says so;

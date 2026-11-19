@@ -258,7 +258,7 @@ export function openCueList(n) {
             { label: (c.block ? "✓ " : "") + "Block", hint: "tracking: start afresh here", disabled: !pb.tracking, run: () => run("cue_set", { playback: n, cue: c.n, block: !c.block }, { toast: true }).then(refresh) },
             { label: `Actions… ${(c.actions || []).length ? "(" + c.actions.length + ")" : ""}`, hint: "buttons, macros, other lists, timeline, tempo", run: () => openCueActions(n, c, refresh) },
             "-",
-            { label: "Delete", danger: true, hint: "Ctrl+Z brings it back", run: () => run("delete_cue", { playback: n, cue: c.n }).then(refresh) },
+            { label: "Delete", danger: true, hint: "Undo brings it back", run: () => run("delete_cue", { playback: n, cue: c.n }).then(refresh) },
           ]) }, "⋯"))));
       // drag a row onto another to move the cue there
       tr.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", String(c.n)); tr.classList.add("dragging"); });

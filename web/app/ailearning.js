@@ -43,7 +43,7 @@ export async function openLearning() {
         (d.one_off || []).slice(0, 12).map((x) => row(x.text, `${x.show} (${x.page})`, []))),
       section("Kept examples", "Requests you kept (👍): the AI is shown one like it with a new request.",
         (d.examples || []).map((x) => row(`“${x.prompt}”`, (x.how || []).slice(0, 3).join(" → "), [btn("Un-keep", "Not a good example after all", { op: "unkeep", id: x.id })]))),
-      section("Recently undone", "Your Ctrl+Z on the AI's work (last month): for a request like it, it does it differently.",
+      section("Recently undone", "Your Undo on the AI's work (last month): for a request like it, it does it differently.",
         (d.undone || []).map((x) => row(`“${x.prompt}”`, x.at || "", [btn("Forget", "That undo wasn't about the AI's choice", { op: "forget_undo", id: x.id })]))));
   }
   draw();

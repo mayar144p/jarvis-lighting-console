@@ -472,16 +472,16 @@ async function steps() {
   check(lights(V).filter((h) => F[h] && +F[h].a > 0.5).length > lights(V).length / 2, `${tag}GO brings the recorded look back`);
   await shot(`${tag}08-go`);
 
-  console.log("9. Undo from the keyboard");
+  console.log("9. Undo (the title bar's key)");
   const undoDepth = () => p.evaluate(async () => (((await import("/app/store.js")).state.snap || {}).undo || {}).depth || 0);
   const depth = await undoDepth();
   await p.bringToFront();                        // the desk, not a field in it
   await p.evaluate(() => { if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur(); });
-  await p.keyboard.press("Control+z");
+  await p.click("#undo-btn");
   // (as soon as the page has handled it: a slow 3D keeps the page busy)
   let after = depth;
   for (let i = 0; i < 40 && after >= depth; i++) { await sleep(200); after = await undoDepth(); }
-  check(depth > 0 && after < depth, `${tag}Ctrl+Z undoes a step`, `${depth} -> ${after}`);
+  check(depth > 0 && after < depth, `${tag}Undo undoes a step`, `${depth} -> ${after}`);
   await layers("after undo");
 
   if (BRANDS) await effects();

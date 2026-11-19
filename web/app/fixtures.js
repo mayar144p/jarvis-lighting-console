@@ -324,7 +324,7 @@ function selGroupMenu(anchor) {
   const addTo = groups.filter((g) => sel.some((x) => !(g.heads || []).includes(x)));
   const outOf = groups.filter((g) => sel.some((x) => (g.heads || []).includes(x)));
   menu(anchor, [
-    { label: `Make a group of them…`, hint: "G", run: makeGroup },
+    { label: `Make a group of them…`, run: makeGroup },
     ...(addTo.length ? ["-", ...addTo.slice(0, 12).map((g) => ({ label: `Add them to “${g.name}”`,
       run: () => run("group_edit", { group: g.n, add: sel }, { toast: true }) }))] : []),
     ...(outOf.length ? ["-", ...outOf.slice(0, 12).map((g) => ({ label: `Take them out of “${g.name}”`,
@@ -530,7 +530,7 @@ export function rowMenu(btn, head) {
     { label: "Report a problem with this light…", hint: "its file, DMX and 3D go with it", run: () => openBugReport(head) },
     "-",
     { label: "Remove from patch", danger: true, run: async () => {
-      if (await confirmBox("Remove fixture", `Remove #${head} ${hd.name || hd.model} from the patch?\nCtrl+Z brings it back.`, { ok: "Remove", danger: true })) {
+      if (await confirmBox("Remove fixture", `Remove #${head} ${hd.name || hd.model} from the patch?\nUndo brings it back.`, { ok: "Remove", danger: true })) {
         run("remove_heads", { heads: [head] });
       }
     } },
@@ -564,7 +564,7 @@ function foldMenu(anchor, heads) {
     { label: "Frame on stage", run: () => window.hazeStage && window.hazeStage.frame(heads) },
     "-",
     { label: `Remove ${n} from the patch`, danger: true, run: async () => {
-      if (await confirmBox("Remove from the patch", `Remove ${n} from the patch? Their cues and palettes forget them. Ctrl+Z brings them back.`, { ok: `Remove ${n}`, danger: true })) run("remove_heads", { heads }, { toast: true });
+      if (await confirmBox("Remove from the patch", `Remove ${n} from the patch? Their cues and palettes forget them. Undo brings them back.`, { ok: `Remove ${n}`, danger: true })) run("remove_heads", { heads }, { toast: true });
     } },
   ]);
 }
@@ -688,9 +688,9 @@ async function toolsMenu(btn) {
   const hl = (state.snap && state.snap.highlight) || {};
   menu(btn, [
     ...selectItems(),
-    { label: hl.on ? "Highlight off" : "Highlight the selection", hint: "H", disabled: !hl.on && !sel.length,
+    { label: hl.on ? "Highlight off" : "Highlight the selection", disabled: !hl.on && !sel.length,
       run: () => run("highlight", { state: !hl.on }, { toast: true }) },
-    { label: "Solo the selection", hint: "Shift+H · the rest dark", disabled: !sel.length,
+    { label: "Solo the selection", hint: "the rest dark", disabled: !sel.length,
       run: () => run("highlight", { state: true, solo: true }, { toast: true }) },
     "-",
     { label: "Add lights…", run: () => openAddDialog() },
@@ -700,12 +700,12 @@ async function toolsMenu(btn) {
     ...(autoCopies().length ? [{ label: `Tidy ${autoCopies().length} auto group copies`,
       hint: "old “Auto ·” copies the show builder made", run: async () => {
         const n = autoCopies().length;
-        if (await confirmBox("Tidy auto groups", `Delete the ${n} “Auto ·” group copies the show builder made? Your own groups, cues and buttons stay. Ctrl+Z brings them back.`, { ok: "Tidy away", danger: true })) {
+        if (await confirmBox("Tidy auto groups", `Delete the ${n} “Auto ·” group copies the show builder made? Your own groups, cues and buttons stay. Undo brings them back.`, { ok: "Tidy away", danger: true })) {
           run("group_delete", { auto: true }, { toast: true });
         }
       } }] : []),
     { label: "Auto-address the patch", run: async () => {
-      if (await confirmBox("Auto-address", "Re-address every fixture from 1.001 with no gaps or overlaps?\nCtrl+Z undoes it.", { ok: "Re-address" })) run("auto_patch", {}, { toast: true });
+      if (await confirmBox("Auto-address", "Re-address every fixture from 1.001 with no gaps or overlaps?\nUndo takes it back.", { ok: "Re-address" })) run("auto_patch", {}, { toast: true });
     } },
     "-",
     { label: "Export patch as CSV", run: () => exportCsv() },
@@ -730,11 +730,11 @@ async function toolsMenu(btn) {
     // the two that take lights out of the show: last, in red, the count said
     // on the menu and again on the button that does it
     { label: sel.length ? `Remove ${lights(sel.length)} from the patch` : "Remove the selection from the patch", danger: true, disabled: !sel.length, run: async () => {
-      if (await confirmBox("Remove from the patch", `Remove ${lights(sel.length)} from the patch? Their cues and palettes forget them. Ctrl+Z brings them back.`, { ok: `Remove ${lights(sel.length)}`, danger: true })) run("remove_heads", { heads: sel }, { toast: true });
+      if (await confirmBox("Remove from the patch", `Remove ${lights(sel.length)} from the patch? Their cues and palettes forget them. Undo brings them back.`, { ok: `Remove ${lights(sel.length)}`, danger: true })) run("remove_heads", { heads: sel }, { toast: true });
     } },
     { label: `Clear the whole patch${patch().length ? ` (${lights(patch().length)})` : ""}`, danger: true, disabled: !patch().length, run: async () => {
       const n = patch().length;
-      if (await confirmBox("Clear the whole patch", `Remove all ${lights(n)} from the patch? Every cue and palette loses them. Ctrl+Z brings them back.`, { ok: `Remove all ${lights(n)}`, danger: true })) post("/api/console/patch", { action: "clear" }).then(() => toast("Patch cleared - Ctrl+Z brings it back"));
+      if (await confirmBox("Clear the whole patch", `Remove all ${lights(n)} from the patch? Every cue and palette loses them. Undo brings them back.`, { ok: `Remove all ${lights(n)}`, danger: true })) post("/api/console/patch", { action: "clear" }).then(() => toast("Patch cleared - Undo brings it back"));
     } },
   ]);
 }

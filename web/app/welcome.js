@@ -37,7 +37,7 @@ async function startFrom(id, demo = false) {
   toast(demo ? "Opening the demo…" : "Building the show…", "", 1800);
   const r = await run("show_template", { name: id, demo });
   if (!r.ok) return false;
-  toast(`${r.summary}${demo ? " - playing" : ""}. One Ctrl+Z brings back what was there.`, "ok", 5000);
+  toast(`${r.summary}${demo ? " - playing" : ""}. One Undo brings back what was there.`, "ok", 5000);
   return true;
 }
 
@@ -56,7 +56,7 @@ export async function openNewShow() {
   close = modal({
     title: "New show", wide: true,
     body: h("div.tpl",
-      h("p.muted.small", patched ? "The show that's open now goes (save it first if you want to keep it - one Ctrl+Z also brings it back)." : "Pick the kind of show: a room, lights, groups, palettes, buttons and cues, ready to change."),
+      h("p.muted.small", patched ? "The show that's open now goes (save it first if you want to keep it - one Undo also brings it back)." : "Pick the kind of show: a room, lights, groups, palettes, buttons and cues, ready to change."),
       cards(list, pick)),
     foot: [h("button.btn", { onclick: async () => { close(); const r = await run("show_new", {}); if (r.ok) toast("An empty show", "ok"); } }, "Empty show"),
       h("span.grow"), h("button.btn", { onclick: () => close() }, "Cancel")],
@@ -101,7 +101,7 @@ const SETUP_STEPS = [
 const LIVE_STEPS = [
   ["#qb", "Your buttons", "The button page is the screen in Live: flashes, colours, moves, effects. The page tabs are above it."],
   ["#grp-dock", "Group faders", "A fader for each group, under the buttons. Drag the strip's top edge to make it taller, or fold it away."],
-  ["#rail", "Master and blackout", "The grand master, Release all (hold it) and BLACKOUT (X): the same place in every mode."],
+  ["#rail", "Master and blackout", "The grand master, Release all (hold it) and BLACKOUT: the same place in Program and Live."],
   ["#mode-seg", "Back to programming", "Program to change looks and record cues; Set up for the room and the lights."],
 ];
 const STEPS = [

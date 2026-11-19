@@ -5025,12 +5025,12 @@ console.log(JSON.stringify({ bottoms: W.BOTTOMS, names: W.BOTTOM_NAMES,
     check("nothing saved: Program, the dock on Buttons", got["none"]["mode"] == "program"
           and got["none"]["by"]["program"]["bottom"] == "buttons", str(got["none"]))
     st, pr, lv = got["setup"], got["program"], got["live"]
-    check("Set up: the lights and its own screen, no dock (nothing plays while setting up)",
-          st["side"] and st["hub"] and not st["dock"] and not st["programmer"], str(st))
+    check("Set up: its own screen (its patch lists the lights), no dock, no master - it is for patching",
+          not st["side"] and st["hub"] and not st["dock"] and not st["programmer"] and not st["rail"], str(st))
     check("Program: the lights, the programmer over the dock", pr["side"] and pr["programmer"] and pr["dock"] and not pr["max"], str(pr))
     check("Live: no side panel, the dock on the whole work area, the group faders as a strip, what plays now",
           not lv["side"] and lv["dock"] and lv["max"] and lv["strip"] and lv["now"] and not lv["programmer"], str(lv))
-    check("the master rail in every mode", st["rail"] and pr["rail"] and lv["rail"])
+    check("the master rail in Program and Live (Set up is for patching)", not st["rail"] and pr["rail"] and lv["rail"])
     check("Program: the dock can have the whole work area (the programmer hides)",
           got["max"]["max"] and not got["max"]["programmer"], str(got["max"]))
     check("Live has the group faders under every tab, so no Group faders tab there",
@@ -8167,8 +8167,10 @@ def test_b6_layouts() -> None:
     check("small screens: the dock follows the window, group faders fold and scroll, 5 fixture rows, the side panel's minimum",
           "--dock-def: clamp(" in css and 'id="grp-fold-btn"' in html and ".grp-dock.folded" in css
           and ".fx-table-wrap { position: relative; flex: 1; min-height: 150px;" in css and "--side-w: clamp(calc(264px * var(--ctl))" in css, "")
-    check("one BLACKOUT on screen, on the master rail, in every mode", html.count('id="bo-btn"') == 1 and 'id="qb-bo"' not in html
-          and ".live-bo" not in css and html.index('id="rail"') < html.index('id="bo-btn"'), "")
+    check("one BLACKOUT on screen, on the master rail (Program and Live; in Set up the X key and the status bar)", html.count('id="bo-btn"') == 1 and 'id="qb-bo"' not in html
+          and ".live-bo" not in css and html.index('id="rail"') < html.index('id="bo-btn"')
+          and 'body[data-mode="setup"] .workspace > .side, body[data-mode="setup"] .workspace > .rail { display: none; }' in css
+          and "if (s.blackout) item(out, \"bad\"" in (web / "topbar.js").read_text(encoding="utf-8"), "")
     pb = (web / "playbacks.js").read_text(encoding="utf-8")
     check("Theatre: the cue list beside the faders, a tap is GO to that cue", 'id="pb-cues"' in html and "function renderCues" in pb
           and '"cue_go"' in pb, "")
@@ -10428,7 +10430,8 @@ def test_room_by_pointing() -> None:
           'body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after' in css
           and "document.body.dataset.lock = lk" in (ROOT / "web" / "app" / "topbar.js").read_text(encoding="utf-8"), "")
     dj = (ROOT / "web" / "app" / "dialogs.js").read_text(encoding="utf-8")
-    check("Help in three tabs, the keys grouped", '["start", "Getting started"], ["keys", "Keys"], ["cmd", "Command line"]' in dj and "KEY_GROUPS" in dj, "")
+    check("Help in tabs: Getting started, Command line - and the keys, grouped, only while the shortcuts are on",
+          '[["start", "Getting started"], ...(keysOn ? [["keys", "Keys"]] : []), ["cmd", "Command line"]]' in dj and "KEY_GROUPS" in dj, "")
     lu = (ROOT / "web" / "app" / "lineup.js").read_text(encoding="utf-8")
     check("Line up: another spot is tapped on a plan of the room (the metres typed only if wanted, explained)",
           "Tap the plan where the spot is" in lu and "0 = the middle, minus = left, plus = right" in lu, "")
@@ -12786,8 +12789,39 @@ def test_setup_screen() -> None:
     check("the light picked: name, mode, address and Pan / Tilt switches, each doing the real thing",
           all(k in ss for k in ('"rename_head"', '"change_type"', '"set_address"', '"set_orient"', '"Pan"', '"Tilt"', '"Test this light…"', '"Limits…"')), "")
     check("no side panel in Set up (the patch lists the lights), its width kept for Program",
-          'body[data-mode="setup"] .workspace > .side { display: none; }' in css and 'body[data-mode="setup"] .workspace { --side-w: 0px; }' in css
+          'body[data-mode="setup"] .workspace > .side, body[data-mode="setup"] .workspace > .rail { display: none; }' in css and 'body[data-mode="setup"] .workspace { --side-w: 0px; }' in css
           and 'saved.sideW && f.mode !== "setup"' in (web / "workspaces.js").read_text(encoding="utf-8"), "")
+
+
+def test_shortcuts_off() -> None:
+    """The keyboard shortcuts are off for now: one switch (shortcuts.js, off unless
+    localStorage says so) in front of every handler - the desk's keys, a button's and a
+    playback's own key, the timeline's, help's, arranging's, the 3D view's; Esc still closes;
+    no tooltip, menu or message points at a key that does nothing; the key fields hide."""
+    web = ROOT / "web" / "app"
+    sc = (web / "shortcuts.js").read_text(encoding="utf-8")
+    check("one switch, off unless turned on", 'localStorage.getItem("haze.shortcuts") === "1"' in sc and "export function shortcutsOn()" in sc, "")
+    keys = (web / "keys.js").read_text(encoding="utf-8")
+    esc_at, gate_at = keys.find('if (e.key === "Escape") {'), keys.find("if (!shortcutsOn()) return;")
+    check("...the desk's keys wait on it, Esc still closes before it", 0 <= esc_at < gate_at, "")
+    guarded = {"playbacks.js": "if (!shortcutsOn()) return;", "quickbuttons.js": "if (!shortcutsOn()) return [];",
+               "timeline.js": "!shortcutsOn()) return;", "helpmode.js": "shortcutsOn() && e.key === \"F1\"",
+               "venuepanel.js": 'if (!shortcutsOn() && ev.key !== "Escape") return;'}
+    check("...and so do a playback's and a button's own key, the timeline, What's this?, arranging",
+          all(g in (web / f).read_text(encoding="utf-8") for f, g in guarded.items()), "")
+    st = (ROOT / "web" / "js" / "stage" / "stage.js").read_text(encoding="utf-8")
+    check("...and the 3D view's keys (the same switch)", 'localStorage.getItem("haze.shortcuts") === "1"' in st and "if (!keysOn()) return;" in st, "")
+    html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+    code = "".join((web / f).read_text(encoding="utf-8") for f in ("topbar.js", "fixtures.js", "rigtools.js", "tempo.js", "stagepanel.js", "programmer.js", "help.js"))
+    dead = [k for k in ("(Ctrl+Z)", "(Ctrl+Shift+Z)", "Blackout (X)", "(F1)", "(F2)", "(F3)", "<kbd>/</kbd>", "(Shift+Space)", "Full (F)", "(Ctrl+A)", "key F", "hint: \"G\"", "hint: \"X\"", "hint: \"T\"")
+            if k in html or k in code]
+    check("no tooltip or menu points at a key that does nothing", not dead, ", ".join(dead))
+    msgs = "".join(f.read_text(encoding="utf-8") for f in web.glob("*.js") if f.name not in ("keys.js", "shortcuts.js"))
+    check("...and no message says Ctrl+Z (it says Undo, the title bar's key)",
+          not any(m in msgs for m in ("Ctrl+Z brings", "Ctrl+Z undoes", "Ctrl+Z takes", "Ctrl+Z puts")), "")
+    qb, pb = (web / "quickbuttons.js").read_text(encoding="utf-8"), (web / "playbacks.js").read_text(encoding="utf-8")
+    check("a button's and a playback's key fields show only while the shortcuts are on",
+          'if (shortcutsOn()) kids.push(row("Keyboard key"' in qb and 'shortcutsOn() ? row("GO key", keyIn' in pb, "")
 
 
 def test_stylesheet_rules() -> None:

@@ -91,7 +91,7 @@ function planView(plan, onApply) {
     apply.disabled = preview.disabled = discard.disabled = true;
     const res = await onApply();
     mark(res);
-    bar.replaceChildren(h("span.muted.small", res && res.ok ? "Applied - Ctrl+Z undoes all of it." : `Nothing changed: ${(res && res.error) || "failed"}`));
+    bar.replaceChildren(h("span.muted.small", res && res.ok ? "Applied - Undo takes all of it back." : `Nothing changed: ${(res && res.error) || "failed"}`));
   });
   preview.addEventListener("click", async () => {
     if (state.snap && state.snap.blind && state.snap.blind.on) { toast("Already in preview - Apply runs it in 3D only"); return; }
@@ -112,7 +112,7 @@ function planView(plan, onApply) {
     keep.addEventListener("click", async () => {
       keep.disabled = drop.disabled = true;
       await act("blind", { state: false, keep: true });
-      done("Kept - the rig has it now. Ctrl+Z undoes all of it.");
+      done("Kept - the rig has it now. Undo takes all of it back.");
     });
     drop.addEventListener("click", async () => {
       keep.disabled = drop.disabled = true;
@@ -291,7 +291,7 @@ async function assist(text) {
       const done = (t) => bar.replaceChildren(h("span.muted.small", t));
       // (kept = a good example for teaching the offline AI, thrown away = a bad one)
       const verdict = (good) => r.example && post("/api/console/assistant", { example: r.example, good }).catch(() => {});
-      keep.addEventListener("click", async () => { keep.disabled = drop.disabled = true; await act("blind", { state: false, keep: true }); verdict(true); done("Kept - the rig has it now. Ctrl+Z undoes all of it."); });
+      keep.addEventListener("click", async () => { keep.disabled = drop.disabled = true; await act("blind", { state: false, keep: true }); verdict(true); done("Kept - the rig has it now. Undo takes all of it back."); });
       drop.addEventListener("click", async () => { keep.disabled = drop.disabled = true; await act("undo"); await act("blind", { state: false }); verdict(false); done("Thrown away - the rig never saw it."); });
       extra.append(bar);
     } else if (r.example && !r.changed) {
@@ -301,7 +301,7 @@ async function assist(text) {
       extra.append(h("div.ai-rate", h("button.btn.small.ghost", { title: "A good answer", onclick: rate(true) }, "👍"),
         h("button.btn.small.ghost", { title: "Not right", onclick: rate(false) }, "👎")));
     } else if (r.changed) {
-      extra.append(h("div.muted.small", "Done - Ctrl+Z undoes all of it."));
+      extra.append(h("div.muted.small", "Done - Undo takes all of it back."));
     }
     if (r.guide_card) {
       // it looked it up: the guide's own steps, one tap away
@@ -540,7 +540,7 @@ function showPlan(r, ask = "") {
     h("div.row-btns",
       h("button.btn.primary", { onclick: async () => {
         const pb = ask ? (autoDesign.playback || +$("#auto-pb").value || 1) : (+$("#auto-pb").value || 1);
-        if (!(await confirmBox(ask ? "Build the change" : "Build the show", `Build “${autoDesign.name}”? It replaces the cues on PB${pb} and the timeline's Auto tracks (your own tracks stay). Ctrl+Z undoes all of it.`, { ok: "Build" }))) return;
+        if (!(await confirmBox(ask ? "Build the change" : "Build the show", `Build “${autoDesign.name}”? It replaces the cues on PB${pb} and the timeline's Auto tracks (your own tracks stay). Undo takes all of it back.`, { ok: "Build" }))) return;
         // a change to the show rebuilds its cues and timeline; its buttons stay
         // (it used to make a new button profile - "Halloween 2" - every time)
         const res = await post("/api/console/autoshow", { apply: true, design: autoDesign, playback: pb, buttons: !ask }).catch((e) => ({ error: e.message }));
@@ -708,6 +708,6 @@ export function initCopilot() {
   });
   syncTools();
   say("bot", assistantOn()
-    ? "Tell me what you want - a look, a feeling (\"the drop needs to hit harder\"), or a question about the show. I'll work the desk, check the real lights, and show it in 3D first; one Ctrl+Z undoes it."
-    : "Tell me the look you want in plain words. I'll show you the plan first - nothing touches the rig until you press Apply, and one Ctrl+Z undoes it.");
+    ? "Tell me what you want - a look, a feeling (\"the drop needs to hit harder\"), or a question about the show. I'll work the desk, check the real lights, and show it in 3D first; one Undo takes it back."
+    : "Tell me the look you want in plain words. I'll show you the plan first - nothing touches the rig until you press Apply, and one Undo takes it back.");
 }

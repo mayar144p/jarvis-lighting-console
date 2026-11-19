@@ -9,6 +9,7 @@ import { $, h, menu, modal, toast, promptBox, typingInField, cssVar } from "./ui
 import { songParts, loudness, musicTraits } from "./songparts.js";
 import { icon } from "./icons.js";
 import { groupColour, GROUP_TINTS } from "./groupcolour.js";
+import { shortcutsOn } from "./shortcuts.js";
 
 const LANE_H = 46;
 const KINDS = [["cue", "Cue track", "GO a playback's cues at set times"],
@@ -75,7 +76,7 @@ function trackMenu(anchor, tr) {
     } },
     { label: tr.mute ? "Play it again" : "Mute it", run: () => run("timeline_track", { id: tr.id, mute: !tr.mute }) },
     "-",
-    { label: "Delete the track", danger: true, hint: "Ctrl+Z brings it back", run: () => run("timeline_track", { id: tr.id, remove: true }) },
+    { label: "Delete the track", danger: true, hint: "Undo brings it back", run: () => run("timeline_track", { id: tr.id, remove: true }) },
   ]);
 }
 
@@ -705,7 +706,7 @@ function wireLanes() {
     }
   }, { passive: false });
   document.addEventListener("keydown", (e) => {
-    if (!visible || typingInField(e)) return;
+    if (!visible || typingInField(e) || !shortcutsOn()) return;     // (off for now - shortcuts.js)
     if (e.key === " " && e.shiftKey) { e.preventDefault(); e.stopImmediatePropagation(); run(transport.playing ? "timeline_pause" : "timeline_play"); }
     if ((e.key === "Delete" || e.key === "Backspace") && selectedClip && !document.querySelector(".modal-scrim")) {
       e.preventDefault(); e.stopImmediatePropagation();

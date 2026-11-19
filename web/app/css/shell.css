@@ -47,9 +47,12 @@ body[data-mode="live"].rail-left .workspace { --cols: var(--rail-w) minmax(0, 1f
 :root.has3d body[data-mode="live"] .workspace { --cols: minmax(0, 1fr) var(--work-w) var(--rail-w); --areas: "stage work rail"; }
 :root.has3d body[data-mode="live"].rail-left .workspace { --cols: var(--rail-w) minmax(0, 1fr) var(--work-w); --areas: "rail stage work"; }
 body[data-mode="live"] .workspace > .side { display: none; }
-/* Set up: the patch table is the list of lights - the side panel steps aside */
+/* Set up is for patching: the patch table is the list of lights (the side
+   panel steps aside), and no master, Release all or BLACKOUT (the X key
+   still blacks out; the status bar says when blackout is on) */
+body[data-mode="setup"] { --rail-w: 0px; }
 body[data-mode="setup"] .workspace { --side-w: 0px; }
-body[data-mode="setup"] .workspace > .side { display: none; }
+body[data-mode="setup"] .workspace > .side, body[data-mode="setup"] .workspace > .rail { display: none; }
 body[data-mode="setup"] #mode-hub > .panel-head { display: none; }
 /* the copilot open: a column of its own beside the master rail - the
    master and BLACKOUT stay in reach, the work area gives it the room (in

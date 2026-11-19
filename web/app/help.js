@@ -35,7 +35,7 @@ const HELP = {
   "auto-btn": "Design a whole show for this rig, on the timeline.",
   "design-btn": "Three show concepts to choose from.", "doctor-btn": "Check the rig, patch and output for problems.",
   "gm-fader": "Grand master: every light's level, last in line.",
-  "bo-btn": "Blackout (X): everything off at once.",
+  "bo-btn": "Blackout: everything off at once.",
 };
 let tip = null, timer = 0, held = null;
 

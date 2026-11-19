@@ -66,9 +66,9 @@
 
     <div class="tb-spacer"></div>
     <div class="seg mode-seg" id="mode-seg" role="group" aria-label="Mode">
-      <button data-mode="setup" title="Set up: the lights, the room, the connections, the checks (F1)">Set up</button>
-      <button data-mode="program" title="Program: the programmer, cues, palettes, effects, buttons, timeline (F2)">Program</button>
-      <button data-mode="live" title="Live: the show running - your buttons, the group faders, what plays now (F3)">Live</button>
+      <button data-mode="setup" title="Set up: the lights, the room, the connections, the checks">Set up</button>
+      <button data-mode="program" title="Program: the programmer, cues, palettes, effects, buttons, timeline">Program</button>
+      <button data-mode="live" title="Live: the show running - your buttons, the group faders, what plays now">Live</button>
     </div>
     <div class="tb-spacer"></div>
 
@@ -78,20 +78,20 @@
     </div>
     <!-- the command line: console syntax runs, anything else goes to the AI -->
     <div class="cmd-group tb-pair" role="group" aria-label="Command line">
-      <button class="tb-btn palette-btn" id="palette-btn" title="Command line - type a command (1 thru 6 at 70) or ask in plain English (/ or Ctrl+K)">
+      <button class="tb-btn palette-btn" id="palette-btn" title="Command line - type a command (1 thru 6 at 70) or ask in plain English">
         <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
-        <span>Command or ask…</span><kbd>/</kbd>
+        <span>Command or ask…</span>
       </button>
       <button class="tb-btn ai" id="ai-btn" title="Copilot: ask the AI to program, design a show or find what's wrong" aria-label="Copilot"><span>Copilot</span></button>
     </div>
     <div class="undo-group tb-pair" role="group" aria-label="Undo and redo">
-      <button class="tb-btn icon" id="undo-btn" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
+      <button class="tb-btn icon" id="undo-btn" title="Undo" aria-label="Undo" disabled>
         <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4L2.5 7.5 6 11"/><path d="M3 7.5h6.5a4 4 0 010 8H8"/></svg>
       </button>
       <button class="tb-btn icon undo-more" id="undo-more" title="The last changes - undo back to any of them" aria-label="Undo history" aria-haspopup="menu" disabled>
         <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6.5l4 4 4-4"/></svg>
       </button>
-      <button class="tb-btn icon" id="redo-btn" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled>
+      <button class="tb-btn icon" id="redo-btn" title="Redo" aria-label="Redo" disabled>
         <svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 4l3.5 3.5L10 11"/><path d="M13 7.5H6.5a4 4 0 000 8H8"/></svg>
       </button>
     </div>
@@ -128,7 +128,7 @@
       <div class="side-sec side-groups" id="side-groups">
         <div class="side-head">
           <h2>Groups <span class="count" id="grp-count">0</span></h2>
-          <button class="btn ghost small icon" id="group-btn" title="Make a group of the selected lights (G)" aria-label="New group"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+          <button class="btn ghost small icon" id="group-btn" title="Make a group of the selected lights" aria-label="New group"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
         </div>
         <div class="grp-list" id="grp-list" role="list"></div>
       </div>
@@ -136,7 +136,7 @@
       <div class="side-sec side-lights">
         <div class="side-head">
           <h2>Lights <span class="count" id="fx-count">0</span></h2>
-          <button class="btn ghost small icon" id="fx-find" title="Find a light: its name, type, maker or address (Ctrl+F)" aria-label="Find a light" aria-expanded="false"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.3"/><path d="M10.2 10.2l3.6 3.6"/></svg></button>
+          <button class="btn ghost small icon" id="fx-find" title="Find a light: its name, type, maker or address " aria-label="Find a light" aria-expanded="false"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.3"/><path d="M10.2 10.2l3.6 3.6"/></svg></button>
           <button class="btn ghost small icon" id="add-btn" title="Add lights" aria-label="Add lights"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
           <button class="btn ghost small icon" id="fx-more" title="The lights: select by kind, highlight, arrange, park, the patch" aria-haspopup="menu" aria-label="More">⋯</button>
         </div>
@@ -160,13 +160,13 @@
       <div class="sel-bar" id="sel-bar">
         <div class="sel-row">
           <b id="sel-count">Nothing selected</b>
-          <button class="btn small on" id="hl-btn" hidden title="Highlight is on: the selection at full, open white. Click to turn it off (H)">Highlight</button>
-          <button class="btn small" id="locate-btn" title="Find them: full, open white, centred (L)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r="1.2" class="fill"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2"/></svg>Locate</button>
+          <button class="btn small on" id="hl-btn" hidden title="Highlight is on: the selection at full, open white. Click to turn it off">Highlight</button>
+          <button class="btn small" id="locate-btn" title="Find them: full, open white, centred"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r="1.2" class="fill"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2"/></svg>Locate</button>
           <button class="btn small" id="sel-group" title="Make a group of them, or add them to one or take them out" aria-haspopup="menu">Group…</button>
         </div>
         <div class="sel-picks" id="sel-picks">
-          <button class="btn small" data-act="select_all" title="Every light (Ctrl+A)">All</button>
-          <button class="btn small" data-act="clear_selection" title="None (Esc)">None</button>
+          <button class="btn small" data-act="select_all" title="Every light">All</button>
+          <button class="btn small" data-act="clear_selection" title="None">None</button>
           <button class="btn small" data-split="odd" title="Keep the odd ones of the selection">Odd</button>
           <button class="btn small" data-split="even" title="Keep the even ones of the selection">Even</button>
           <button class="btn small" data-split="left" title="Keep the left half of the selection">Left</button>
@@ -187,7 +187,7 @@
         </div>
         <button class="vis-btn" id="vis-fit" title="Fit the whole room in the view">Fit<span class="vis-long"> to whole room</span></button>
         <div class="vis-seg" id="vis-cams" role="group" aria-label="View">
-          <button data-cam="per" class="on" title="Perspective: the room shaded and lit, as the audience sees it (keys 1-7 for the named views)">Per<span class="vis-long"> View</span></button>
+          <button data-cam="per" class="on" title="Perspective: the room shaded and lit, as the audience sees it">Per<span class="vis-long"> View</span></button>
           <button data-cam="top" title="Straight down from above: a line drawing, white on black">Top<span class="vis-long"> View</span></button>
           <button data-cam="front" title="From the front: a line drawing, white on black">Front<span class="vis-long"> View</span></button>
           <button data-cam="side" title="From the side: a line drawing, white on black">Side<span class="vis-long"> View</span></button>
@@ -210,12 +210,12 @@
         <button class="hud-btn icon" id="fullscreen-btn" title="Stage full screen (Esc to leave)">
           <svg viewBox="0 0 16 16"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/></svg>
         </button>
-        <button class="hud-btn" id="views-more" title="More: the named views (front, sides, plan, 3D, from the DJ booth, keys 1-7), frame the selection (F), saved views, a photo, a video">&gt;&gt;</button>
+        <button class="hud-btn" id="views-more" title="More: the named views (front, sides, plan, 3D, from the DJ booth), frame the selection, saved views, a photo, a video">&gt;&gt;</button>
       </div>
       <div class="venue-tools" id="venue-tools" hidden>
         <div class="seg vertical">
-          <button id="vt-move" title="Move (W)">Move</button>
-          <button id="vt-rotate" title="Rotate / aim (E)">Rotate</button>
+          <button id="vt-move" title="Move">Move</button>
+          <button id="vt-rotate" title="Rotate / aim">Rotate</button>
         </div>
         <button class="hud-btn" id="vt-venues" title="My venues: save this venue, open a saved one">Venues ▾</button>
         <button class="hud-btn" id="vt-room" title="Make the room: a shape and its sizes, described in words, a template, a floor plan, or drawn">Room…</button>
@@ -285,7 +285,7 @@
           <output class="big-num" id="int-num">–</output>
           <div class="big-fader-row"><div class="vfader big level-bar" id="int-fader" data-min="0" data-max="100" aria-label="Level: drag up or down"></div></div>
           <div class="level-keys">
-            <button class="btn small" id="int-full" title="Full (F)">Full</button>
+            <button class="btn small" id="int-full" title="Full: level 100">Full</button>
             <button class="btn small" id="int-out" title="Out: level 0">Out</button>
           </div>
           <div class="chip-row" id="int-gate" hidden></div>
@@ -412,11 +412,11 @@
       <div class="prog-values" id="prog-wheels" hidden></div>
       <!-- the programmer's actions: always here, on every tab -->
       <div class="prog-acts" id="prog-acts">
-        <button class="btn" id="prog-clear" title="Clear the programmer (C)">Clear</button>
+        <button class="btn" id="prog-clear" title="Clear the programmer">Clear</button>
         <span class="grow"></span>
         <button class="btn" id="prog-make" title="A button (on / off) of what the selected lights do now - position, colour, beam and the movement running. It turns on and holds those lights: change them again by turning it off.">Make a button…</button>
-        <button class="btn" id="prog-update" title="Update: merge the programmer into the cue that is on (O)">Update</button>
-        <button class="btn rec" id="prog-record" title="Record what is in the programmer as a cue (R)">Record cue…</button>
+        <button class="btn" id="prog-update" title="Update: merge the programmer into the cue that is on">Update</button>
+        <button class="btn rec" id="prog-record" title="Record what is in the programmer as a cue">Record cue…</button>
         <span class="muted small prog-why" id="prog-why" aria-live="polite"></span>
       </div>
     </section>
@@ -470,7 +470,7 @@
         </div>
         <div class="dock-tools tl-bar" data-for="timeline" hidden>
           <button class="btn small icon" id="tl-stop" title="Stop and go back to the start" aria-label="Stop"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><rect class="fill" x="3.5" y="3.5" width="9" height="9" rx="1"/></svg></button>
-          <button class="btn small primary" id="tl-play" title="Play / pause (Shift+Space)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.5l9 5.5-9 5.5z" class="fill"/></svg><span>Play</span></button>
+          <button class="btn small primary" id="tl-play" title="Play / pause"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.5l9 5.5-9 5.5z" class="fill"/></svg><span>Play</span></button>
           <output class="tl-time"><span id="tl-pos">0:00.0</span> / <button class="link" id="tl-length" title="Change the length"><span id="tl-len">2:00</span></button></output>
           <button class="btn small ghost" id="tl-loop" title="Loop the timeline">Loop</button>
           <button class="btn small ghost" id="tl-tc" title="Following timecode - MIDI (MTC) or audio (LTC): the timeline jumps to it and plays along" aria-haspopup="menu">Timecode</button>
@@ -531,7 +531,7 @@
         <output class="m-num" id="gm-num">100</output>
       </div>
       <button class="btn pb-relall" id="pb-relall" disabled title="Nothing is running"><span>Release all</span><b id="pb-relall-n"></b></button>
-      <button class="blackout" id="bo-btn" title="Blackout (X)">BLACKOUT</button>
+      <button class="blackout" id="bo-btn" title="Blackout: everything off at once">BLACKOUT</button>
     </aside>
   </main>
 
@@ -598,7 +598,7 @@
   <div class="ctab" data-cpane="design" hidden>
     <section class="autoshow cp-card">
       <h4>Build the whole show <span class="muted small">· the AI</span></h4>
-      <p class="muted small">It reads your rig in the 3D view - what each light is, where it hangs, what it can do - and the song on the timeline, then programs every section: a cue per section, effects, strobe hits on the beat and master fades, on the timeline. You preview it first; building it is one Ctrl+Z.</p>
+      <p class="muted small">It reads your rig in the 3D view - what each light is, where it hangs, what it can do - and the song on the timeline, then programs every section: a cue per section, effects, strobe hits on the beat and master fades, on the timeline. You preview it first; building it is one Undo.</p>
       <textarea id="auto-text" rows="3" placeholder="The style, the colours, how hard it hits…" spellcheck="false"></textarea>
       <div class="chip-row" id="auto-styles"></div>
       <div class="row-btns">

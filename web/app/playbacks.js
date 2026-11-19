@@ -13,6 +13,7 @@ import { openCueList, openCueDialog } from "./dialogs.js";
 import { setTimelineVisible } from "./timeline.js";
 import { groupColour } from "./groupcolour.js";
 import { groupColourMenu } from "./groupcolourmenu.js";
+import { shortcutsOn } from "./shortcuts.js";
 
 const cards = new Map();
 let gm = null;
@@ -47,7 +48,7 @@ function build() {
     const fader = h("div.vfader", { "aria-label": `Playback ${n} level` });
     const name = h("span.name", { title: "Cue list" });
     const lvl = h("output.pb-lvl", { title: "Fader level" });
-    const keys = h("kbd.pb-keys", { hidden: true, title: "This playback's key and MIDI (⋯ -> Keys and MIDI)" });
+    const keys = h("kbd.pb-keys", { hidden: true, title: "This playback's MIDI (⋯ -> MIDI)" });
     const cue = h("div.pb-cue");
     const prog = h("div.pb-prog", h("i"));
     const flash = h("button.flash", { title: "Flash: full while held" }, "Flash");
@@ -174,7 +175,7 @@ function pbMenu(btn, n) {
     { label: "Record cue from programmer…", run: () => openCueDialog(n) },
     { label: "Edit cue list…", run: () => openCueList(n) },
     "-",
-    { label: "Keys and MIDI…", hint: bindText(b) || "a key or a pad for GO, Flash, the fader", run: () => openBind(n) },
+    { label: shortcutsOn() ? "Keys and MIDI…" : "MIDI…", hint: bindText(b) || (shortcutsOn() ? "a key or a pad for GO, Flash, the fader" : "a pad for GO, Flash, the fader"), run: () => openBind(n) },
     { label: b.swop ? "Flash button: back to Flash" : "Flash button works as Swop", hint: b.swop ? "" : "this one alone while held",
       run: () => run("playback_bind", { playback: n, ...b, swop: !b.swop }, { toast: true }) },
     "-",
@@ -187,13 +188,13 @@ function pbMenu(btn, n) {
     "-",
     { label: "Release", run: () => run("playback_release", { playback: n }) },
     { label: "Delete every cue on this playback", danger: true, disabled: !(pb.stack || []).length, run: async () => {
-      if (!(await confirmBox("Delete cues", `Delete all ${(pb.stack || []).length} cue(s) on PB${n}? Ctrl+Z brings them back.`, { ok: "Delete", danger: true }))) return;
+      if (!(await confirmBox("Delete cues", `Delete all ${(pb.stack || []).length} cue(s) on PB${n}? Undo brings them back.`, { ok: "Delete", danger: true }))) return;
       for (let i = (pb.stack || []).length; i >= 1; i--) await run("delete_cue", { playback: n, cue: i }, { silentError: true });
     } },
   ]);
 }
 
-const bindText = (b) => [b.key ? `${b.key.toUpperCase()}` : "", b.go != null ? `♪${b.go}` : "",
+const bindText = (b) => [b.key && shortcutsOn() ? `${b.key.toUpperCase()}` : "", b.go != null ? `♪${b.go}` : "",
   b.flash != null ? `F♪${b.flash}` : "", b.fader != null ? `CC${b.fader}` : ""].filter(Boolean).join(" ");
 
 // A playback's own controls: a keyboard key for GO, a MIDI pad for GO and
@@ -219,9 +220,9 @@ async function openBind(n) {
   };
   const row = (label, el, help) => h("div.bind-row", h("label", label), el, h("small.muted", help));
   const close = modal({
-    title: `PB${n} ${pb.name || ""}: keys and MIDI`,
+    title: `PB${n} ${pb.name || ""}: ${shortcutsOn() ? "keys and MIDI" : "MIDI"}`,
     body: h("div.bind-box",
-      row("GO key", keyIn, "a key on the keyboard"),
+      shortcutsOn() ? row("GO key", keyIn, "a key on the keyboard") : null,
       row("GO pad", num("go", "note"), "a MIDI note"),
       row("Flash pad", num("flash", "note"), s.swop ? "held: this one alone (Swop)" : "held: full"),
       row("Fader", num("fader", "cc"), "a MIDI fader or knob (CC)"),
@@ -548,6 +549,7 @@ function wireBindings() {
   if (document.documentElement.dataset.window === "stage") return;
   const typing = (t) => t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
   document.addEventListener("keydown", (e) => {
+    if (!shortcutsOn()) return;                 // (off for now - shortcuts.js)
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || typing(e.target) || document.querySelector(".modal-scrim")) return;
     const k = (e.key || "").toLowerCase();
     if (k.length !== 1) return;

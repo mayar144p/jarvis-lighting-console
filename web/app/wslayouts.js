@@ -61,7 +61,9 @@ export function frameFor(saved, mode) {
   let tab = bottom(mem.bottom);
   if (live && tab === "groups") tab = "buttons";
   return {
-    mode: m, side: !live, programmer: m === "program" && !max, hub: setup, now: live,
-    dock: !setup, max, bottom: tab, strip: live, rail: true,
+    // (Set up is for patching: its patch lists the lights, and no master -
+    // the X key still blacks out)
+    mode: m, side: m === "program", programmer: m === "program" && !max, hub: setup, now: live,
+    dock: !setup, max, bottom: tab, strip: live, rail: !setup,
   };
 }
