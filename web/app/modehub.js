@@ -81,7 +81,7 @@ function paintSetup() {
         })] }]],
     ["The room", [
       { title: "Room and rigging", status: roomLine || "a plain room so far", ok: v.name || v.template || room.width ? true : null,
-        buttons: [btn("Arrange in 3D", () => needs3d("Arranging the room") && import("./venuepanel.js").then((m) => m.setArranging(true))),
+        buttons: [btn("Arrange the room", () => needs3d("Arranging the room") && import("./venuepanel.js").then((m) => m.setArranging(true))),
           btn("Room shape…", lazy("./roomdialog.js", "openRoomDialog")), btn("Rigging…", lazy("./rigdialog.js", "openRigDialog")),
           btn("Plot…", lazy("./plot.js", "openPlot")),
           btn("Describe it in words…", lazy("./settings.js", "openSettingsAt", "venue")), btn("Start again…", lazy("./venuepanel.js", "resetVenue"))] },

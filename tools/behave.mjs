@@ -240,7 +240,7 @@ await p.locator("#ai-send").click(); await sleep(1500);
 const card = p.locator(".guide-card").last();
 const ans = await card.innerText().catch(() => "");
 check("'help me align the lights' gets a card: the topic, where it is, and numbered steps",
-  /Lining up/.test(ans) && (await card.locator(".gc-where .gc-ui", { hasText: "Line up with the real lights" }).count()) === 1
+  /Lining up/.test(ans) && (await card.locator(".gc-where .gc-ui", { hasText: "Line up…" }).count()) === 1
   && (await card.locator(".gc-step").count()) >= 5 && !/\*\*/.test(ans), ans.slice(0, 200));
 check("...the first 4 steps show, the rest behind 'Show all'", (await card.locator(".gc-step:visible").count()) === 4
   && (await card.locator(".gc-more").count()) === 1, "");
@@ -248,9 +248,9 @@ await card.locator(".gc-more").click();
 await card.locator(".gc-tick input").first().check(); await card.locator(".gc-tick input").nth(1).check();
 check("...steps tick off and the bar shows how far you are", /2 of 5 done/.test(await card.locator(".gc-count").innerText()), "");
 await p.getByRole("button", { name: "Set up", exact: true }).first().click(); await sleep(800);
-await card.locator(".gc-where .gc-ui", { hasText: "Line up with the real lights" }).click(); await sleep(300);
+await card.locator(".gc-where .gc-ui", { hasText: "Line up…" }).click(); await sleep(300);
 check("...tapping a button name lights that button up on the screen",
-  (await p.locator("button.gc-pulse", { hasText: "Line up with the real lights" }).count()) >= 1, "");
+  (await p.locator("button.gc-pulse", { hasText: "Line up…" }).count()) >= 1, "");
 check("...and nothing on the rig changed", JSON.stringify(((await snap()).patch || []).map((x) => [x.head_no, x.x, x.y, x.z])) === rigBefore, "");
 // -- help wherever you are ------------------------------------------------------
 console.log("Help: the card's buttons, the coach, search, What's this?, hints, undo history");
@@ -278,7 +278,7 @@ const cmd = async (text) => {
 };
 check("the command bar finds a guide topic ('strobe safety')", /How to: Strobe safety/.test(await cmd("strobe safety")), "");
 check("...a lighting word ('gobo')", /What is .gobo.\?/.test(await cmd("gobo")), "");
-check("...and a button on the screen now ('line up')", /Show me: Line up with the real lights/.test(await cmd("line up")), "");
+check("...and a button on the screen now ('line up')", /Show me: Line up/.test(await cmd("line up")), "");
 await p.evaluate(() => import("/app/helpmode.js").then((m) => m.whatsThis())); await sleep(300);
 await p.getByRole("button", { name: "Arrange the room", exact: true }).first().click(); await sleep(1200);
 const wt = await p.locator(".modal .guide-card").innerText().catch(() => "");

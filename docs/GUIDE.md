@@ -26,7 +26,7 @@ cue lists and buttons aren't all there at once.
 
 | Mode | On screen | For |
 |---|---|---|
-| **Set up** | the **patch** (every light: number, name, maker, kind, mode, address, channels, groups; each universe drawn under it), **Before the show** beside it, and the selected light's name, mode, address and which way it is hung (no faders: nothing plays yet) | the patch (**+ Add lights**, **Import** a plot or CSV, **Auto-address**, **Find nodes**; ⋯: DMX map, RDM); then each step with how it stands (20 lights patched · no clashes) and its key: the lights, the room (**Arrange in 3D**, **Line up…**, zones), the connections (**Output…**, DJ gear, Hue, a backup desk), on the day (**Venue check-in**, the **Ready check**) |
+| **Set up** | the **patch** (every light: number, name, maker, kind, mode, address, channels, groups; each universe drawn under it), **Before the show** beside it, and the selected light's name, mode, address and which way it is hung (no faders: nothing plays yet) | the patch (**+ Add lights**, **Import** a plot or CSV, **Auto-address**, **Find nodes**; ⋯: DMX map, RDM); then each step with how it stands (20 lights patched · no clashes) and its key: the lights, the room (**Arrange the room**, **Line up…**, zones), the connections (**Output…**, DJ gear, Hue, a backup desk), on the day (**Venue check-in**, the **Ready check**) |
 | **Program** | the lights, the programmer and the dock | looks, cues, palettes, effects, buttons, the timeline and songs |
 | **Live** | the buttons page full size, the playbacks with GO above it, the group faders, the master | running the show: what plays now and what comes next |
 
@@ -135,7 +135,7 @@ shows in haze as a beam of its own colours, and counts in the light map.
 
 ### Arrange mode
 
-*Where:* Set up → Room and rigging → Arrange in 3D (or the 3D view's **Arrange the room**)
+*Where:* Set up → Room and rigging → Arrange the room (the same key is on the 3D view)
 
 **Arrange** (stage toolbar) turns the stage into an editor:
 
