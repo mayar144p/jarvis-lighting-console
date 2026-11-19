@@ -1,87 +1,109 @@
-/* Haze - the desk's look: the lights on the left.
+/* Haze - the desk's look: the side panel.
  *
- * The groups first, each with its colour (open one to see its lights), then
- * the lights in no group - one line each: number, kind, name, address -
- * and what is selected at the foot, with what to do with it.
+ * The groups at the top - each with its colour, its name and how many -
+ * then every light, one line each: number, kind, name, address.  What is
+ * selected sits at the foot: how many, Locate, Group…, and the quick picks
+ * (All, None, Odd, Even, Left, Right).
  */
 
-/* ---------------------------------------------------------------- head */
-.fixtures .panel-head { min-height: calc(44px * var(--ctl)); }
-.fixtures .panel-head h2 { font-size: var(--t); }
-.fx-toolbar { display: flex; gap: 4px; padding: 0 var(--pad) 8px; }
-.fx-toolbar input { flex: 1; height: var(--h); }
-.fx-clash { display: flex; flex-direction: column; gap: 6px; margin: 0 var(--pad) 8px; padding: 8px 10px; border-radius: var(--r); background: var(--live-face); color: var(--live-ink); font-size: var(--t-s); }
+.fixtures { display: flex; flex-direction: column; min-height: 0; }
+.side-sec { display: flex; flex-direction: column; min-height: 0; }
+.side-groups { flex: 0 1 auto; max-height: 45%; border-bottom: 1px solid var(--line); }
+.side-lights { flex: 1 1 0; }
+/* a section's head: its name and count, its keys at the right */
+.side-head { display: flex; align-items: center; gap: 2px; flex: none; min-height: calc(40px * var(--ctl)); padding: 0 6px 0 var(--pad); }
+.side-head h2 { flex: 1; min-width: 0; color: var(--text-2); font-size: var(--t-s); font-weight: 500; }
+.side-head h2 .count { margin-left: 4px; color: var(--text-3); font-weight: 400; }
+.side-head .btn.icon { color: var(--text-2); }
+.side-head .btn.icon:hover, .side-head .btn.icon.on { color: var(--text); }
+.side-head .btn.icon .ic { width: calc(15px * var(--ctl)); height: calc(15px * var(--ctl)); }
 
-/* --------------------------------------------------------------- table */
-.fx-table-wrap { position: relative; flex: 1; min-height: 150px; overflow: auto; border-top: 1px solid var(--line); }
+/* -------------------------------------------------------------- groups */
+.grp-list { overflow-y: auto; padding-bottom: 6px; overscroll-behavior: contain; }
+.grp-row { display: flex; align-items: center; gap: 10px; height: calc(26px * var(--ctl)); padding: 0 var(--pad); cursor: pointer; user-select: none; touch-action: pan-y; }
+.grp-row:hover { background: var(--raised); }
+.grp-sq { flex: none; width: calc(10px * var(--ctl)); height: calc(10px * var(--ctl)); border-radius: 2px; background: var(--c, var(--text-3)); }
+.grp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grp-n { flex: none; color: var(--text-3); font-size: var(--t-s); font-variant-numeric: tabular-nums; }
+.grp-row.auto .grp-name { color: var(--text-2); }
+/* all its lights selected: lit faintly, a lit edge */
+.grp-row.sel { background: var(--select); box-shadow: inset 2px 0 var(--lit); }
+.grp-row.sel .grp-name { color: var(--text); font-weight: 500; }
+/* held: the group flashes */
+.grp-row.flashing { background: var(--pressed); }
+.grp-row.flashing .grp-sq { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--lit)) 50%, transparent); }
+.grp-empty { margin: 0; padding: 4px var(--pad) 8px; color: var(--text-3); font-size: var(--t-s); }
+/* dragging lights onto a group */
+body.dragging-heads .grp-row { outline: 1px dashed color-mix(in srgb, var(--lit) 45%, transparent); outline-offset: -1px; }
+.grp-row.drop-on { background: var(--select); outline: 2px solid var(--lit); outline-offset: -2px; }
+
+/* -------------------------------------------------------------- lights */
+.fx-toolbar { display: flex; gap: 4px; padding: 0 var(--pad) 8px; }
+.fx-toolbar[hidden] { display: none; }
+.fx-toolbar input { flex: 1; height: var(--h-s); }
+.fx-clash { display: flex; flex-direction: column; gap: 6px; margin: 0 var(--pad) 8px; padding: 8px 10px; border-radius: var(--r); background: var(--live-face); color: var(--live-ink); font-size: var(--t-s); }
+.fx-table-wrap { position: relative; flex: 1; min-height: 150px; overflow: auto; }
 .fx-table-wrap.snug { overflow-y: hidden; }
 .fx-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-.fx-table th { position: sticky; top: 0; z-index: 1; height: calc(26px * var(--ctl)); padding: 0 8px; border-bottom: 1px solid var(--line); background: var(--panel); color: var(--text-3); font-size: var(--t-xs); font-weight: 500; text-align: left; }
-.fx-table td { height: var(--row); padding: 0 8px; overflow: hidden; vertical-align: middle; }
-.fx-table .c-no { width: calc(54px * var(--ctl)); color: var(--text-3); font-size: var(--t-s); white-space: nowrap; }
-.fx-table td.c-no { padding-right: 0; }
+.fx-table th { position: sticky; top: 0; z-index: 1; height: calc(24px * var(--ctl)); padding: 0 8px; border-bottom: 1px solid var(--line); background: var(--panel); color: var(--text-3); font-size: var(--t-xs); font-weight: 500; text-align: left; }
+.fx-table th.c-no { padding-left: var(--pad); }
+.fx-table td { height: calc(28px * var(--ctl)); padding: 0 8px; overflow: hidden; vertical-align: middle; }
+.fx-table .c-no { width: calc(46px * var(--ctl)); color: var(--text-3); font-size: var(--t-s); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fx-table td.c-no { padding-left: var(--pad); padding-right: 0; }
 .fx-table td.c-no > * { vertical-align: middle; }
-.fx-table .c-addr { width: calc(62px * var(--ctl)); color: var(--text-2); font-size: var(--t-s); text-align: right; }
+.fx-table .c-addr { width: calc(56px * var(--ctl)); padding-right: var(--pad); color: var(--text-2); font-size: var(--t-s); text-align: right; font-variant-numeric: tabular-nums; }
 .fx-table td.c-name { position: relative; padding-right: 4px; }
 .fx-table tr { cursor: pointer; user-select: none; }
 .fx-table tbody tr:hover { background: var(--raised); }
-/* what is selected: a lit edge, the row lit faintly; some of a fold or a
-   group selected: a quiet edge */
+/* what is selected: lit faintly, a lit edge; some of a fold selected: a quiet edge */
 .fx-table tbody tr.sel { background: var(--select); box-shadow: inset 2px 0 var(--lit); }
 .fx-table tbody tr.sel td { color: var(--text); background-color: transparent; }
-.fx-table tbody tr.sel .c-no { color: var(--text); font-weight: 600; }
+.fx-table tbody tr.sel .c-no { color: var(--text); }
 .fx-table tbody tr.part { box-shadow: inset 2px 0 var(--line-strong); }
-.fx-table .f-name { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
+.fx-table .f-name { display: flex; align-items: center; gap: 9px; min-width: 0; overflow: hidden; }
 .fx-table .f-text { flex: 1; min-width: 0; }
-.fx-table .f-name b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.fx-table tbody tr.sel .f-name b { font-weight: 600; }
-.fx-table .f-sub { display: none; }
-.fx-table .f-qty { color: var(--text-3); font-style: normal; font-weight: 500; white-space: nowrap; }
+.fx-table .f-name b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 400; }
+.fx-table tbody tr.sel .f-name b { font-weight: 500; }
+.fx-table .f-qty { color: var(--text-3); font-style: normal; font-weight: 400; white-space: nowrap; }
+.type-ic { flex: none; width: calc(15px * var(--ctl)); height: calc(15px * var(--ctl)); fill: none; stroke: var(--text-3); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.fx-table tbody tr.sel .type-ic { stroke: var(--text-2); }
+/* the light's colour now: a dot in the margin before its number, while it is on */
+.fx-table td.c-no { position: relative; }
+.fx-table .lamp { position: absolute; top: 50%; left: 4px; width: 5px; height: 5px; margin-top: -2.5px; border-radius: 50%; background: transparent; }
 /* its actions, on hover (always, on a touch screen) */
 .fx-table .row-menu.btn { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); opacity: 0; background: var(--hover); }
 .fx-table tr:hover .row-menu, .row-menu:focus-visible { opacity: 1; }
 body.gig .row-menu { opacity: 1; }
 @media (hover: none) { .row-menu { opacity: 1; } }
 /* several of the same light in a row: one line, opened with its arrow */
-.fx-table tr:is(.fold, .folder) td { background-color: color-mix(in srgb, var(--text) 2%, transparent); }
+.fx-table tr.fold td { background-color: color-mix(in srgb, var(--text) 2%, transparent); }
 .fx-table tr.fold .c-no { font-size: var(--t-xs); }
 .fx-table tr.fold .c-addr small { display: none; }
-.fx-table tr.fold-child td:first-child { padding-left: 22px; background-image: linear-gradient(var(--line-strong), var(--line-strong)); background-size: 1px 100%; background-position: 13px 0; background-repeat: no-repeat; }
-.fold-btn { width: calc(20px * var(--ctl)); height: calc(22px * var(--ctl)); margin-right: 2px; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--text-3); font-size: var(--t-s); line-height: 1; }
-.fold-btn:hover { background: var(--hover); color: var(--text); }
-/* a group: its colour, its name (click: select its lights), how many */
-.folder-line { display: flex; align-items: center; gap: 8px; min-height: var(--row); }
-.grp-sq { flex: none; width: calc(10px * var(--ctl)); height: calc(10px * var(--ctl)); border-radius: 2px; background: var(--c, var(--text-3)); }
-.folder-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.fx-table tr.folder td { padding-top: 4px; padding-bottom: 4px; }
-.fx-table tr.folder.sel .folder-name { font-weight: 600; }
-/* held: the group flashes */
-.fx-table tbody tr.folder.flashing { background: var(--pressed); }
-.fx-table tr.folder.flashing .grp-sq { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c, var(--lit)) 50%, transparent); }
-.folder-count { color: var(--text-3); font-size: var(--t-s); }
-/* dragging lights onto a group */
-body.dragging-heads #fx-rows tr.folder { outline: 1px dashed color-mix(in srgb, var(--lit) 45%, transparent); outline-offset: -1px; }
-.drop-on, #fx-rows tr.drop-on td { background: var(--select); outline: 2px solid var(--lit); }
+.fx-table tr.fold-child td:first-child { padding-left: calc(var(--pad) + 12px); background-image: linear-gradient(var(--line-strong), var(--line-strong)); background-size: 1px 100%; background-position: calc(var(--pad) + 4px) 0; background-repeat: no-repeat; }
+/* (its arrow in the margin before the numbers, so "7–10" fits; the
+   numbers open it too, a tap on the name selects them all) */
+.fold-btn { position: absolute; inset: 0; padding: 0 0 0 2px; border: 0; border-radius: 0; background: none; color: var(--text-3); font-size: var(--t-xs); line-height: 1; text-align: left; }
+.fold-btn:hover { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
 #fx-rows tr[draggable="true"] { cursor: grab; }
-/* a light switched off the rig for now (parked), one whose 3D is a stand-in */
-tr.parked td:first-child::after { content: " P"; color: var(--blind); font-weight: 800; font-size: var(--t-xs); }
-.type-ic.drawn { outline: 1px dashed color-mix(in srgb, var(--blind) 80%, transparent); outline-offset: 1px; border-radius: 3px; color: var(--blind); }
+/* a light switched off the rig for now (parked) */
+tr.parked td:first-child::after { content: " P"; color: var(--blind); font-weight: 700; font-size: var(--t-xs); }
 /* nothing patched: the list says how to start */
 .fx-table-wrap .empty { display: none; padding: 28px 18px; text-align: center; color: var(--text-2); }
 .fx-table-wrap .empty p { margin: 6px 0 12px; }
 .fx-table-wrap.is-empty .empty { display: block; }
 .fx-table-wrap.is-empty table { display: none; }
-.fixtures:has(.fx-table-wrap.is-empty) #add-btn, .fixtures:has(.fx-table-wrap.is-empty) .sel-actions { visibility: hidden; }
+.fixtures:has(.fx-table-wrap.is-empty) .sel-bar { visibility: hidden; }
 
 /* ------------------------------------------------------- the selection */
-/* how many and which, then what to do with them */
-.sel-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px var(--pad) 10px; border-top: 1px solid var(--line); color: var(--text-2); font-size: var(--t-s); }
-/* how many, and beside it the ⋯ of more ways to select; the rest below */
-#sel-count { flex: 1 0 calc(100% - var(--h-s) - 6px); color: var(--text); font-weight: 600; }
-#sel-more { width: var(--h-s); height: var(--h-s); padding: 0; }
-.sel-split { gap: 2px; margin: 0; }
-.sel-split .chip { min-height: var(--h-s); padding: 0 8px; }
-.sel-bar .sel-actions { display: flex; flex-wrap: wrap; gap: 2px; margin-left: auto; }
-body.gig .sel-split .chip { min-height: calc(36px * var(--ctl)); padding: 0 12px; font-size: var(--t); }
+.sel-bar { display: grid; gap: 8px; flex: none; padding: 10px var(--pad) 12px; border-top: 1px solid var(--line); }
+.sel-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+#sel-count { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: var(--t-s); font-weight: 600; }
+.sel-row .btn .ic { width: calc(14px * var(--ctl)); height: calc(14px * var(--ctl)); margin-right: 2px; }
+#hl-btn[hidden] { display: none; }
+/* the quick picks, side by side across the panel */
+.sel-picks { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 3px; }
+.sel-picks .btn { min-width: 0; padding: 0 2px; }
+body.gig .sel-picks .btn, body.gig .sel-row .btn { min-height: calc(40px * var(--ctl)); }
 
 body.gig .fx-table td { height: calc(40px * var(--ctl)); }
+body.gig .grp-row { height: calc(40px * var(--ctl)); }

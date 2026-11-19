@@ -12,24 +12,34 @@ let anchor = null;                 // last plain-clicked head, for shift ranges
 let filterText = "";
 let lastSig = "";
 
+// each kind of light's line drawing (18 x 18): a moving head's yoke and head,
+// a wash's lens rings, a laser's beam, a bar's cells, a PAR's lens...
 const ICONS = {
-  moving: '<path d="M5 17h8M9 17v-3M5 7h8v6H5zM9 7V4"/>',
-  par: '<circle cx="9" cy="9" r="5"/><circle cx="9" cy="9" r="2"/>',
-  bar: '<rect x="2" y="7" width="14" height="4" rx="1"/><path d="M5 9h.01M9 9h.01M13 9h.01"/>',
+  spot: '<path d="M4 15.5V9a5 5 0 0 1 10 0v6.5"/><circle cx="9" cy="9.5" r="2.4"/><path d="M6 15.5h6"/>',
+  wash: '<path d="M4 15.5V9a5 5 0 0 1 10 0v6.5"/><circle cx="9" cy="9.5" r="2.8"/><circle cx="9" cy="9.5" r="1.1"/><path d="M6 15.5h6"/>',
+  beam: '<path d="M4 15.5V9a5 5 0 0 1 10 0v6.5"/><circle cx="9" cy="9.5" r="1.5"/><path d="M6 15.5h6"/>',
+  laser: '<path d="M2.5 15.5h6M4.5 15.5L15.5 4"/><path d="M9 15.5l6.5-4" opacity=".55"/>',
+  par: '<circle cx="9" cy="9" r="5.5"/><circle cx="9" cy="9" r="2.2"/>',
+  bar: '<rect x="1.5" y="6.5" width="15" height="5" rx="1.3"/><path d="M4.5 9h.01M7.5 9h.01M10.5 9h.01M13.5 9h.01"/>',
   profile: '<path d="M3 7h6l5-3v10l-5-3H3z"/>',
-  strobe: '<rect x="3" y="6" width="12" height="6" rx="1"/><path d="M5 9h8"/>',
+  strobe: '<rect x="2.5" y="5.5" width="13" height="7" rx="1.2"/><path d="M5 9h8"/>',
   tube: '<path d="M9 2v14"/><circle cx="9" cy="16" r="1"/>',
+  confetti: '<path d="M3 15.5l3.2-8.6 5.4 5.4z"/><path d="M11 3.2l.6 1.6M14.6 6.2l1.6-.5M12.6 4.8l1.7-1.7"/>',
+  cloud: '<path d="M5.2 13.5h7.6a3 3 0 0 0 .3-6 4.1 4.1 0 0 0-7.8-1.1 3.5 3.5 0 0 0-.1 7.1z"/>',
   other: '<rect x="4" y="4" width="10" height="10" rx="2"/>',
 };
 
 function iconFor(body) {
   const t = (body && body.type) || "";
-  const k = t.startsWith("moving") ? "moving"
-    : t === "par" || t === "par_can" || t === "fresnel" || t === "wash_panel" || t === "cyc" ? "par"
-      : t === "bar" || t === "matrix" ? "bar"
-        : t === "profile" || t === "followspot" ? "profile"
-          : t === "strobe" || t === "blinder" ? "strobe"
-            : t === "tube" ? "tube" : "other";
+  const k = t === "moving_wash" ? "wash" : t === "moving_beam" ? "beam" : t.startsWith("moving") ? "spot"
+    : t.startsWith("laser") ? "laser"
+      : t === "par" || t === "par_can" || t === "fresnel" || t === "wash_panel" || t === "cyc" ? "par"
+        : t === "bar" || t === "matrix" ? "bar"
+          : t === "profile" || t === "followspot" ? "profile"
+            : t === "strobe" || t === "blinder" ? "strobe"
+              : t === "tube" ? "tube"
+                : t === "confetti" || t === "spark" || t === "flame" ? "confetti"
+                  : t === "co2" || t === "fog" || t === "atmos" || t === "bubble" ? "cloud" : "other";
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 18 18");
   svg.setAttribute("class", "type-ic");
@@ -82,20 +92,25 @@ function typeIcon(body, n) {
   return ic;
 }
 
-function headRow(hd, child = false, inGroup = null) {
+// a light's own name, less the number the desk put on the end (the number has a column of its own)
+const shortName = (hd) => {
+  const nm = hd.name || hd.model || "";
+  const cut = nm.replace(new RegExp(`\\s*#?${hd.head_no}$`), "");
+  return cut || nm;
+};
+
+function headRow(hd, child = false) {
   const b = hd.body || {};
   return h("tr" + (child ? ".fold-child" : "") + (parked().includes(hd.head_no) ? ".parked" : ""),
-    { dataset: { head: hd.head_no, ...(inGroup !== null ? { ingroup: inGroup } : {}) }, draggable: "true" },
+    { dataset: { head: hd.head_no }, draggable: "true" },
     h("td.c-no", h("i.lamp"), h("span", hd.head_no)),
     h("td.c-name", h("div.f-name",
       typeIcon(b, hd.head_no),
       h("div.f-text",
         h("b", { title: [hd.name || hd.model, ...[b.brand_name && b.brand_name !== "Generic" ? b.brand_name : hd.manufacturer, b.label, hd.mode]
-          .filter(Boolean)].join(" · ") }, hd.name || hd.model),
-        h("div.f-sub", [b.brand_name && b.brand_name !== "Generic" ? b.brand_name : hd.manufacturer, b.label, hd.mode]
-          .filter(Boolean).join(" · "))),
+          .filter(Boolean)].join(" · ") }, shortName(hd))),
       hd.unverified ? h("span.warn-ic", { title: "Generic channel layout - check it matches the real fixture" }, "⚠") : null,
-      h("button.btn.ghost.small.icon.row-menu", { title: "Fixture actions", "aria-label": "Fixture actions" }, "⋯"))),
+      h("button.btn.ghost.small.icon.row-menu", { title: "This light: test, line up, limits, rename, change type…", "aria-label": "This light's menu" }, "⋯"))),
     h("td.c-addr", addr(hd)));
 }
 
@@ -111,31 +126,82 @@ function foldRow(c) {
       h("div.f-text",
         h("b", { title: [first.model, b.brand_name && b.brand_name !== "Generic" ? b.brand_name : first.manufacturer, b.label, first.mode]
           .filter(Boolean).join(" · ") }, first.model, h("em.f-qty", ` × ${c.heads.length}`)),
-        h("div.f-sub", [b.brand_name && b.brand_name !== "Generic" ? b.brand_name : first.manufacturer, b.label, first.mode]
-          .filter(Boolean).join(" · "))))),
+        ))),
     h("td.c-addr", h("span", addr(first)), h("small", "–" + addr(lastHd))));
 }
 
-// Groups as folders, like a code editor's file tree: the lights in a
-// group live in its folder (open it with the arrow), clicking the name
-// selects them all, hovering it points them out in the 3D view.  Lights in
-// no group stay in the list under the folders.
-let openFolders = new Set();
-try { openFolders = new Set(JSON.parse(localStorage.getItem("haze.openFolders") || "[]")); } catch (e) { /* private window */ }
-const keepFolders = () => { try { localStorage.setItem("haze.openFolders", JSON.stringify([...openFolders])); } catch (e) { /* fine */ } };
+// The groups, a list of their own above the lights: each with its colour
+// (as on its fader and on the phone), its name and how many lights.  A tap
+// selects its lights (Ctrl / Shift adds them or takes them out), holding
+// flashes them, hovering points them out in the 3D view and a double-click
+// frames them there, a right-click changes it, and lights dropped on it
+// join it.  Your own groups first; the show builder's "Auto ·" ones after.
 const userGroups = () => (state.snap && state.snap.groups) || [];
+const isAuto = (g) => /^auto\s*·/i.test(g.name || "");
+let groupSig = "";
+const rowHeads = (row) => (row.dataset.heads ? row.dataset.heads.split(",").map(Number) : []);
 
-function folderRow(g, members, open) {
-  // the group's colour (as on its fader and on the phone), where a folder icon was
-  const sq = h("i.grp-sq", { "aria-hidden": "true" });
-  sq.style.setProperty("--c", groupColour(g, userGroups().indexOf(g)));
-  return h("tr.folder" + (open ? ".open" : ""), { dataset: { group: g.n, fold: members.map((x) => x.head_no).join(","), head: members[0].head_no } },
-    h("td.c-name", { colSpan: 3 }, h("div.folder-line",
-      h("button.fold-btn", { title: open ? "Close the group" : "Show its lights", "aria-label": open ? `Close ${g.name}` : `Open ${g.name}`,
-        "aria-expanded": open ? "true" : "false" }, open ? "▾" : "▸"),
-      sq,
-      h("b.folder-name", { title: `Select the ${members.length} light(s) in ${g.name} - hold to flash them, hover to see them in the 3D view` }, g.name),
-      h("span.folder-count", String(members.length)))));
+function renderGroups(sel) {
+  const list = $("#grp-list");
+  const all = userGroups();
+  const groups = [...all.filter((g) => !isAuto(g)), ...all.filter(isAuto)];
+  const sig = JSON.stringify([groups.map((g) => [g.n, g.name, g.heads, g.colour])]);
+  if (sig !== groupSig) {
+    groupSig = sig;
+    list.replaceChildren(...(groups.length ? groups.map((g) => {
+      const sq = h("i.grp-sq", { "aria-hidden": "true" });
+      sq.style.setProperty("--c", groupColour(g, all.indexOf(g)));
+      const n = (g.heads || []).length;
+      return h("div.grp-row" + (isAuto(g) ? ".auto" : ""), { role: "listitem", dataset: { group: g.n, heads: (g.heads || []).join(",") },
+        title: `${g.name}: ${n} light${n === 1 ? "" : "s"} - tap to select them, hold to flash them, right-click to change the group` },
+        sq, h("span.grp-name", g.name), h("span.grp-n", String(n)));
+    }) : [h("p.grp-empty", "Select some lights, then + to make a group of them.")]));
+    $("#grp-count").textContent = String(groups.length);
+  }
+  for (const row of list.querySelectorAll(".grp-row")) {
+    const heads = rowHeads(row);
+    row.classList.toggle("sel", heads.length > 0 && heads.every((x) => sel.has(x)));
+  }
+}
+
+function wireGroups() {
+  const list = $("#grp-list");
+  list.addEventListener("click", (e) => {
+    const row = e.target.closest(".grp-row");
+    if (!row) return;
+    const heads = rowHeads(row);
+    if (!heads.length) return;
+    const cur = new Set(selected());
+    const all = heads.every((x) => cur.has(x));
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      if (all) select([...cur].filter((x) => !heads.includes(x))); else select(heads, { add: true });
+    } else {
+      select(all && cur.size === heads.length ? [] : heads);
+    }
+  });
+  list.addEventListener("contextmenu", (e) => {
+    // (a finger held on a group flashes it: no menu over the flash)
+    if (e.target.closest(".grp-row.flashing")) { e.preventDefault(); return; }
+    const row = e.target.closest(".grp-row");
+    const g = row && userGroups().find((x) => x.n === +row.dataset.group);
+    if (g) { e.preventDefault(); groupMenu(atPointer(e), g); }
+  });
+  list.addEventListener("dblclick", (e) => {
+    const row = e.target.closest(".grp-row");
+    if (row && window.hazeStage) window.hazeStage.frame(rowHeads(row));
+  });
+  // a group under the pointer: its lights pointed out in the 3D view
+  let peeking = null;
+  const peek = (row) => {
+    if (row === peeking) return;
+    peeking = row;
+    if (window.hazeStage && window.hazeStage.setPeek) window.hazeStage.setPeek(row ? rowHeads(row) : []);
+  };
+  list.addEventListener("pointerover", (e) => peek(e.target.closest(".grp-row")));
+  list.addEventListener("pointerleave", () => peek(null));
+  holdToFlash(list);
+  list.addEventListener("dragover", dragOver);
+  list.addEventListener("drop", drop);
 }
 
 // Hold a group's line to flash its lights - full, over everything else -
@@ -145,8 +211,8 @@ function holdToFlash(list) {
   let timer = 0, row = null;
   const stop = () => { clearTimeout(timer); row = null; };
   list.addEventListener("pointerdown", (e) => {
-    const tr = e.target.closest("tr.folder");
-    if (!tr || e.button !== 0 || e.target.closest(".fold-btn")) return;
+    const tr = e.target.closest(".grp-row");
+    if (!tr || e.button !== 0) return;
     stop();
     row = tr;
     const group = +tr.dataset.group;
@@ -180,26 +246,12 @@ function render() {
   const sel = new Set(selected());
   const stale = new Set(((state.snap && state.snap.stale_heads) || []).map(Number));
   const tbody = $("#fx-rows");
-  const groups = userGroups();
   const sig = JSON.stringify([rows.map((r) => [r.head_no, r.name, r.universe, r.address, r.model, r.mode, r.body && r.body.type, r.unverified]),
-    [...stale], [...expanded], parked(), groups.map((g) => [g.n, g.name, g.heads]), [...openFolders], filterText,
-    [...(state.drawn3d || [])]]);
+    [...stale], [...expanded], parked(), filterText, [...(state.drawn3d || [])]]);
   if (sig !== lastSig) {
     lastSig = sig;
     const out = [];
-    const byNo = new Map(rows.map((r) => [r.head_no, r]));
-    const grouped = new Set();
-    // your own groups first; the show builder's "Auto · ..." ones after
-    const auto = (g) => /^auto\s*·/i.test(g.name || "");
-    for (const g of [...groups.filter((x) => !auto(x)), ...groups.filter(auto)]) {
-      const members = (g.heads || []).map((n) => byNo.get(n)).filter(Boolean);
-      for (const hd of members) grouped.add(hd.head_no);
-      if (!members.length) continue;                 // (a search that matches nothing in it)
-      const open = openFolders.has(g.n) || !!filterText.trim();
-      out.push(folderRow(g, members, open));
-      if (open) out.push(...members.map((hd) => headRow(hd, true, g.n)));
-    }
-    for (const c of clusters(rows.filter((r) => !grouped.has(r.head_no)))) {
+    for (const c of clusters(rows)) {
       if (c.heads.length < FOLD_MIN) { out.push(...c.heads.map((hd) => headRow(hd))); continue; }
       out.push(foldRow(c));
       if (expanded.has(c.heads[0].head_no)) out.push(...c.heads.map((hd) => headRow(hd, true)));
@@ -217,6 +269,7 @@ function render() {
   const n = patch().length;
   $("#fx-count").textContent = n;
   $(".fx-table-wrap").classList.toggle("is-empty", n === 0);
+  renderGroups(sel);
   renderSelBar(sel);
   paintLamps();
   snugSoon();
@@ -251,17 +304,32 @@ if (typeof ResizeObserver !== "undefined") {
 // "6 selected · LED PARs" and, for two or more, the quick splits
 function renderSelBar(sel) {
   const count = sel.size;
-  const autos = (state.snap && state.snap.auto_groups) || [];
-  const user = (state.snap && state.snap.groups) || [];
+  const user = userGroups();
   const same = (heads) => heads.length === count && heads.every((x) => sel.has(x));
-  const named = count ? ([...user].find((g) => same(g.heads)) || autos.find((g) => same(g.heads))) : null;
-  $("#sel-count").textContent = count ? `${count} selected${named ? " · " + named.name : ""}` : "Nothing selected";
-  const box = $("#sel-split");
-  const key = count >= 2 ? "on" : "";
-  if (box.dataset.key === key) return;
-  box.dataset.key = key;
-  box.replaceChildren(...(count >= 2 ? [["odd", "Odd"], ["even", "Even"], ["left", "Left"], ["right", "Right"]].map(([v, label]) =>
-    h("button.chip", { title: `Keep the ${v} half of the selection`, onclick: () => run("select_split", { split: v }) }, label)) : []));
+  // named by its group when it is one: the operator's, or one the desk makes (by kind, by truss)
+  const autos = (state.snap && state.snap.auto_groups) || [];
+  const named = count ? user.find((g) => same(g.heads || [])) || autos.find((g) => same(g.heads || [])) : null;
+  const c = $("#sel-count");
+  c.textContent = count ? `${count} selected` : "Nothing selected";
+  c.title = named ? `${named.name}` : "";
+  for (const b of document.querySelectorAll("#sel-picks [data-split]")) b.disabled = count < 2;
+}
+
+// The selection's Group…: a new group of them, or add them to one, or take
+// them out of one
+function selGroupMenu(anchor) {
+  const sel = selected();
+  if (!sel.length) { toast("Select lights first"); return; }
+  const groups = userGroups().filter((g) => !isAuto(g));
+  const addTo = groups.filter((g) => sel.some((x) => !(g.heads || []).includes(x)));
+  const outOf = groups.filter((g) => sel.some((x) => (g.heads || []).includes(x)));
+  menu(anchor, [
+    { label: `Make a group of them…`, hint: "G", run: makeGroup },
+    ...(addTo.length ? ["-", ...addTo.slice(0, 12).map((g) => ({ label: `Add them to “${g.name}”`,
+      run: () => run("group_edit", { group: g.n, add: sel }, { toast: true }) }))] : []),
+    ...(outOf.length ? ["-", ...outOf.slice(0, 12).map((g) => ({ label: `Take them out of “${g.name}”`,
+      run: () => run("group_edit", { group: g.n, remove: sel.filter((x) => (g.heads || []).includes(x)) }, { toast: true }) }))] : []),
+  ]);
 }
 
 // The row lamps follow the light feed (30 times a second), so only a
@@ -296,7 +364,7 @@ function paintLamps() {
 
 const autoCopies = () => userGroups().filter((g) => /^auto\s*·/i.test(g.name || ""));
 
-// One group's menu (its chip's ⋯, a right-click on the chip or its folder):
+// One group's menu (a right-click on it in the Groups list):
 // change the lights in it from the selection, rename, delete.
 export function groupMenu(anchor, g) {
   const sel = selected();
@@ -330,13 +398,6 @@ export function groupMenu(anchor, g) {
 function rowClick(e) {
   const tr = e.target.closest("tr[data-head]");
   if (!tr) return;
-  if (tr.dataset.group !== undefined && e.target.closest(".fold-btn")) {
-    const n = +tr.dataset.group;
-    if (openFolders.has(n)) openFolders.delete(n); else openFolders.add(n);
-    keepFolders();
-    render();
-    return;
-  }
   if (tr.dataset.fold) {
     const members = tr.dataset.fold.split(",").map(Number);
     if (e.target.closest(".fold-btn")) {
@@ -621,9 +682,17 @@ export async function openRdm() {
 const parked = () => (state.snap && state.snap.parked) || [];
 const lights = (n) => `${n} light${n === 1 ? "" : "s"}`;
 
-function toolsMenu(btn) {
+async function toolsMenu(btn) {
   const sel = selected();
+  const { selectItems } = await import("./rigtools.js");
+  const hl = (state.snap && state.snap.highlight) || {};
   menu(btn, [
+    ...selectItems(),
+    { label: hl.on ? "Highlight off" : "Highlight the selection", hint: "H", disabled: !hl.on && !sel.length,
+      run: () => run("highlight", { state: !hl.on }, { toast: true }) },
+    { label: "Solo the selection", hint: "Shift+H · the rest dark", disabled: !sel.length,
+      run: () => run("highlight", { state: true, solo: true }, { toast: true }) },
+    "-",
     { label: "Add lights…", run: () => openAddDialog() },
     { label: "DMX map…", hint: clashes().length ? `${clashes().length} clash(es)` : "who uses which channels", run: openDmxMap },
     { label: "Find nodes", hint: "the DMX nodes on the network", run: () => scanRig() },
@@ -699,23 +768,20 @@ export async function scanRig() {
 }
 
 // ---------------------------------------------------------- drag and drop
-// Drag a light (the selection when it is selected, or a folded type) onto
-// a group - its folder in the list or its chip - to put it in.  Dragged out
-// of a group's folder: onto the list outside the folders takes it out,
-// onto another group moves it (Alt copies).  "＋ New group" while dragging.
+// Drag a light (the selection when it is selected, or a folded run) onto a
+// group to put it in.  (A group's menu takes lights out.)
 const DRAG = "application/x-haze-heads";
-let dragging = null;                     // {heads, from}
+let dragging = null;                     // {heads}
 function dragStart(e) {
   const tr = e.target.closest && e.target.closest("tr[data-head]");
-  if (!tr || tr.classList.contains("folder")) return;
+  if (!tr) return;
   let heads = tr.dataset.fold ? tr.dataset.fold.split(",").map(Number) : [+tr.dataset.head];
   const sel = selected();
   if (!tr.dataset.fold && sel.includes(heads[0]) && sel.length > 1) heads = [...sel];
-  const from = tr.dataset.ingroup !== undefined ? +tr.dataset.ingroup : null;
-  dragging = { heads, from };
+  dragging = { heads };
   e.dataTransfer.setData(DRAG, JSON.stringify(dragging));
   e.dataTransfer.setData("text/plain", heads.map((n) => "#" + n).join(" "));
-  e.dataTransfer.effectAllowed = "copyMove";
+  e.dataTransfer.effectAllowed = "copy";
   document.body.classList.add("dragging-heads");
 }
 function dragEnd() {
@@ -723,25 +789,18 @@ function dragEnd() {
   document.body.classList.remove("dragging-heads");
   for (const el of document.querySelectorAll(".drop-on")) el.classList.remove("drop-on");
 }
-// where a drop would go: {to: group n} | {out: true} | null
+// where a drop would go: a group's row
 function dropTarget(el) {
   if (!dragging || !el || !el.closest) return null;
-  const folder = el.closest("tr.folder");
-  if (folder) return { el: folder, to: +folder.dataset.group };
-  const row = el.closest("tr[data-head]");
-  const inList = el.closest(".fx-table-wrap");
-  if (dragging.from !== null && inList && (!row || row.dataset.ingroup === undefined)) return { el: inList, out: true };
-  if (dragging.from !== null && row && row.dataset.ingroup !== undefined && +row.dataset.ingroup !== dragging.from) {
-    return { el: row, to: +row.dataset.ingroup };
-  }
-  return null;
+  const row = el.closest(".grp-row");
+  return row ? { el: row, to: +row.dataset.group } : null;
 }
 function dragOver(e) {
   const t = dropTarget(e.target);
   for (const el of document.querySelectorAll(".drop-on")) if (!t || el !== t.el) el.classList.remove("drop-on");
-  if (!t || (t.to !== undefined && t.to === dragging.from)) return;
+  if (!t) return;
   e.preventDefault();
-  e.dataTransfer.dropEffect = t.out ? "move" : (e.altKey || dragging.from === null ? "copy" : "move");
+  e.dataTransfer.dropEffect = "copy";
   t.el.classList.add("drop-on");
 }
 async function drop(e) {
@@ -750,26 +809,9 @@ async function drop(e) {
   dragEnd();
   if (!t || !d) return;
   e.preventDefault();
-  const groupsNow = userGroups();
-  const name = (n) => (groupsNow.find((g) => g.n === n) || {}).name || `group ${n}`;
-  if (t.out) {
-    run("group_edit", { group: d.from, remove: d.heads }, { toast: true });
-    return;
-  }
-  if (t.to === d.from) return;
-  const r = await run("group_edit", { group: t.to, add: d.heads }, { toast: true });
-  // out of one folder into another: a move (Alt keeps it in both)
-  if (r.ok && d.from !== null && !e.altKey) {
-    await run("group_edit", { group: d.from, remove: d.heads }, { silentError: true });
-    toast(`${d.heads.length === 1 ? "Light" : `${d.heads.length} lights`} moved from ${name(d.from)} to ${name(t.to)}`, "ok");
-  }
+  run("group_edit", { group: t.to, add: d.heads }, { toast: true });
 }
 function wireDrag() {
-  for (const box of [$("#fx-rows"), $(".fx-table-wrap")]) {
-    if (!box) continue;
-    box.addEventListener("dragover", dragOver);
-    box.addEventListener("drop", drop);
-  }
   $("#fx-rows").addEventListener("dragstart", dragStart);
   $("#fx-rows").addEventListener("dragend", dragEnd);
 }
@@ -784,16 +826,9 @@ async function makeGroup() {
 export function initFixtures() {
   $("#fx-rows").addEventListener("click", rowClick);
   wireDrag();
-  holdToFlash($("#fx-rows"));
+  wireGroups();
   $("#fx-rows").addEventListener("contextmenu", (e) => {
-    // (a finger held on a group flashes it: no menu over the flash)
-    if (e.target.closest("tr.flashing")) { e.preventDefault(); return; }
     const tr = e.target.closest("tr[data-head]");
-    if (tr && tr.dataset.group !== undefined) {
-      const g = userGroups().find((x) => x.n === +tr.dataset.group);
-      if (g) { e.preventDefault(); groupMenu(atPointer(e), g); }
-      return;
-    }
     if (!tr) return;
     e.preventDefault();
     if (tr.dataset.fold) foldMenu(atPointer(e), tr.dataset.fold.split(",").map(Number));
@@ -802,31 +837,36 @@ export function initFixtures() {
   $("#fx-rows").addEventListener("dblclick", (e) => {
     const tr = e.target.closest("tr[data-head]");
     if (!tr || !window.hazeStage) return;
-    window.hazeStage.frame(tr.dataset.group !== undefined ? tr.dataset.fold.split(",").map(Number) : [+tr.dataset.head]);
+    window.hazeStage.frame(tr.dataset.fold ? tr.dataset.fold.split(",").map(Number) : [+tr.dataset.head]);
   });
-  // a folder under the pointer: its lights pointed out in the 3D view
-  let peeking = null;
-  const peek = (tr) => {
-    if (tr === peeking) return;
-    peeking = tr;
-    if (window.hazeStage && window.hazeStage.setPeek) window.hazeStage.setPeek(tr ? tr.dataset.fold.split(",").map(Number) : []);
+  // find a light: the field opens under the heading, Esc closes it
+  const findBox = $("#fx-toolbar"), find = $("#fx-filter"), findBtn = $("#fx-find");
+  const showFind = (on) => {
+    findBox.hidden = !on;
+    findBtn.classList.toggle("on", on);
+    findBtn.setAttribute("aria-expanded", String(on));
+    if (on) find.focus();
+    else if (find.value) { find.value = ""; filterText = ""; render(); }
   };
-  $("#fx-rows").addEventListener("pointerover", (e) => peek(e.target.closest("tr.folder")));
-  $("#fx-rows").addEventListener("pointerleave", () => peek(null));
-  $("#fx-filter").addEventListener("input", (e) => { filterText = e.target.value; render(); });
-  $("#fx-filter").addEventListener("keydown", (e) => {
+  findBtn.addEventListener("click", () => showFind(findBox.hidden));
+  find.addEventListener("input", (e) => { filterText = e.target.value; render(); });
+  find.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       const heads = visible().map((x) => x.head_no);
       if (heads.length) select(heads);
     }
+    if (e.key === "Escape") { e.stopPropagation(); showFind(false); }
   });
   $("#add-btn").addEventListener("click", () => openAddDialog());
   $("#add-btn-2").addEventListener("click", () => openAddDialog());
   $("#fx-more").addEventListener("click", (e) => toolsMenu(e.currentTarget));
   $("#group-btn").addEventListener("click", makeGroup);
-  $("#sel-more").addEventListener("click", (e) => import("./rigtools.js").then((m) => m.selectMenu(e.currentTarget)));
-  for (const b of document.querySelectorAll("#sel-bar [data-act]")) {
+  $("#sel-group").addEventListener("click", (e) => selGroupMenu(e.currentTarget));
+  for (const b of document.querySelectorAll("#sel-picks [data-act]")) {
     b.addEventListener("click", () => (b.dataset.act === "clear_selection" ? select([]) : run(b.dataset.act)));
+  }
+  for (const b of document.querySelectorAll("#sel-picks [data-split]")) {
+    b.addEventListener("click", () => run("select_split", { split: b.dataset.split }));
   }
   on("snapshot", () => { modelDefs(); render(); renderClashes(); });
   on("models3d", render);

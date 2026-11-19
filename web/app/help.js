@@ -13,7 +13,6 @@ const HELP = {
   "fx-filter": "Find lights by name, type, brand or DMX address (U1.17).",
   house: "House lights: how lit the room is in the 3D view (not the rig).",
   haze: "Haze in the 3D view: more haze, more visible beams.",
-  "int-fade": "Fade: seconds the level takes to get there.",
   "hex-in": "A colour as #rrggbb.",
   kelvin: "White by colour temperature: low warm, high cool.",
   "aim-pan": "Pan in degrees for Aim.", "aim-tilt": "Tilt in degrees for Aim.",

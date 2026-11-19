@@ -1211,7 +1211,7 @@ def test_big_rig_groups() -> None:
             e.shutdown()
     fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
     st = stage_js()
-    check("the list folds lights of one model into one row, with automatic group chips and splits",
+    check("the list folds lights of one model into one row; the selection named by its group (an automatic one too) and split",
           "FOLD_MIN" in fx and "auto_groups" in fx and '"select_split"' in fx, "")
     check("Shift-drag on the stage box-selects", "headsInRect" in st and "onBox" in st, "")
     css = desk_css()

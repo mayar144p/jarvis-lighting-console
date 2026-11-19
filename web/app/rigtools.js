@@ -7,11 +7,11 @@
 //  * Arrange - the side panel's tools: line the selected lights up, spread
 //    them evenly or mirror them, across the stage, front to back or in
 //    height.
-//  * The selection's shortcuts - the selection bar's ⋯: the same type as
-//    the first, the movers, the lights with gobos, one light at a time.
+//  * The selection's shortcuts - the Lights ⋯: the same type as the
+//    first, the movers, the lights with gobos, one light at a time.
 import { run } from "./actions.js";
 import { patch, selected } from "./store.js";
-import { h, modal, menu, toast } from "./ui.js";
+import { h, modal, toast } from "./ui.js";
 
 // the attributes these lights have (not the fine halves or unused channels)
 function rolesOf(heads) {
@@ -115,10 +115,10 @@ export function openArrange() {
   });
 }
 
-/** The selection bar's ⋯: select by kind, one light at a time. */
-export function selectMenu(anchor) {
+/** Select by kind, one light at a time (the Lights ⋯). */
+export function selectItems() {
   const sel = selected();
-  menu(anchor, [
+  return [
     { label: "The same type as the first", hint: sel.length ? "" : "select one first", disabled: !sel.length, run: () => run("select_similar", { head: sel[0] }) },
     { label: "Every moving light", run: () => run("select_query", { role: "pan" }, { toast: true }) },
     { label: "Every light with gobos", run: () => run("select_query", { role: "gobo" }, { toast: true }) },
@@ -126,5 +126,6 @@ export function selectMenu(anchor) {
     { label: "One at a time: the next light", hint: "]", disabled: sel.length < 2, run: () => run("select_step", { step: "next" }, { toast: true }) },
     { label: "One at a time: the light before", hint: "[", disabled: sel.length < 2, run: () => run("select_step", { step: "prev" }, { toast: true }) },
     { label: "All of them again", hint: "}", run: () => run("select_step", { step: "all" }, { toast: true }) },
-  ]);
+    "-",
+  ];
 }

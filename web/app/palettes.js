@@ -76,10 +76,22 @@ export function paletteSwatch(kind, p) {
     return ref === null ? null : goboIcon(ref);
   }
   if (kind !== "colour") return null;
-  const v = p.values || {};
-  const hex = p.hex || (("red" in v || "green" in v || "blue" in v)
-    ? "#" + ["red", "green", "blue"].map((r) => Math.max(0, Math.min(255, v[r] || 0)).toString(16).padStart(2, "0")).join("") : null);
+  const hex = mixedHex(p.values || {}) || p.hex;
   return hex ? h("i.pool-sw", { style: { background: hex } }) : null;
+}
+
+/** The colour a palette's values make on a light that mixes: red, green and
+ *  blue, with its white, amber and UV on top (UV reads as violet) - so Pink
+ *  is pink beside Magenta, and UV violet beside Blue.  null when it holds
+ *  no mix (a colour wheel's step only: its stored colour stands). */
+export function mixedHex(v) {
+  if (!["red", "green", "blue"].some((r) => typeof v[r] === "number")) return null;
+  const n = (r) => Math.max(0, Math.min(255, +v[r] || 0));
+  const w = n("white"), a = n("amber"), u = n("uv");
+  const rgb = [n("red") + w + a + u * 0.35, n("green") + w + a * 0.7, n("blue") + w + u];
+  const top = Math.max(...rgb);
+  const k = top > 255 ? 255 / top : 1;
+  return "#" + rgb.map((c) => Math.round(c * k).toString(16).padStart(2, "0")).join("");
 }
 
 // the usual palettes, offered only when a light here can do them (no
@@ -110,26 +122,37 @@ const record = (kind) => async () => {
   if (name) run("record_palette", { kind, name }, { toast: true });
 };
 
-function poolTiles(kind, letter) {
-  const pals = (snap().palettes || {})[kind] || [];
-  const tiles = pals.map((p) => {
-    const fits = paletteFits(p);
-    const per = p.per ? " (each light keeps its own)" : "";
-    const tile = h("button.pool-tile" + (paletteOn(kind, p) ? ".on" : "") + (fits === false ? ".na" : ""), {
-      type: "button", dataset: { kind },
-      title: fits === false ? `${p.name}${per}: the selected lights can't take it (${p.per ? "it was recorded on other lights" : "they don't have its channels"}) · right-click for more`
+/** A palette's tile, the same wherever it shows (the Palettes pools, the
+ *  Colour, Position and Beam tabs): its colour or gobo, its number and name;
+ *  lit while the selected lights hold it (a tap takes it off), faded when
+ *  they can't take it; right-click: update, rename, delete. */
+export function paletteTile(kind, p) {
+  const fits = paletteFits(p);
+  const on = paletteOn(kind, p);
+  const per = p.per ? " (each light keeps its own)" : "";
+  return h("button.pool-tile" + (on ? ".on" : "") + (fits === false ? ".na" : ""), {
+    type: "button", dataset: { kind }, "aria-pressed": String(on),
+    title: fits === false ? `${p.name}${per}: the selected lights can't take it (${p.per ? "it was recorded on other lights" : "they don't have its channels"}) · right-click for more`
+      : on ? `${p.name}${per}: on the selected lights - tap to take it off · right-click for more`
         : `${p.name}${per}: tap to put it on the selected lights · right-click for more`,
-      onclick: () => {
-        if (!selected().length) { toast("Select lights first"); return; }
-        if (fits === false) { toast(`${p.name} isn't for the selected lights`); return; }
-        run("include_palette", { kind, palette: p.n });
-      },
-      oncontextmenu: (e) => { e.preventDefault(); paletteMenu(e.currentTarget, kind, p); },
-    }, paletteSwatch(kind, p), h("small.pool-n", `${letter}${p.n}`), h("b", p.name));
-    return tile;
-  });
-  tiles.push(h("button.pool-tile.pool-add", { type: "button", title: `Save the selection's ${kind} as a palette`, "aria-label": `Save a ${kind} palette`,
-    onclick: record(kind) }, "+ Save"));
+    onclick: () => {
+      if (!selected().length) { toast("Select lights first"); return; }
+      if (fits === false) { toast(`${p.name} isn't for the selected lights`); return; }
+      if (on) run("clear_attrs", { group: kind, heads: selected() });
+      else run("include_palette", { kind, palette: p.n });
+    },
+    oncontextmenu: (e) => { e.preventDefault(); paletteMenu(e.currentTarget, kind, p); },
+  }, paletteSwatch(kind, p), h("small.pool-n", String(p.n)), h("b", p.name));
+}
+
+/** The "+" tile after a kind's palettes: save the selection's as a new one. */
+export const saveTile = (kind) => h("button.pool-tile.pool-add", { type: "button", title: `Save the selection's ${kind} as a palette`,
+  "aria-label": `Save a ${kind} palette`, onclick: record(kind) }, "+");
+
+function poolTiles(kind) {
+  const pals = (snap().palettes || {})[kind] || [];
+  const tiles = pals.map((p) => paletteTile(kind, p));
+  tiles.push(saveTile(kind));
   if (!pals.length && canMake(kind) && !noOffer().includes(kind)) {
     const t = h("button.pool-tile.pool-add.pool-offer", { type: "button", title: "For this rig, each light its own values",
       onclick: () => run("palette_defaults", { kind }, { toast: true }) }, DEFAULTS_LABEL[kind]);
@@ -150,9 +173,9 @@ export function renderPools(force = false) {
   const key = JSON.stringify([pals, selected(), progVals(), noOffer(), patch().length]);
   if (!force && key === lastKey) return;            // the same: tiles stay put under the pointer
   lastKey = key;
-  for (const [kind, , letter] of POOLS) {
+  for (const [kind] of POOLS) {
     const tiles = $(`#pool-${kind}`);
-    if (tiles) tiles.replaceChildren(...poolTiles(kind, letter));
+    if (tiles) tiles.replaceChildren(...poolTiles(kind));
     const n = $(`#pool-${kind}-n`);
     if (n) n.textContent = String((pals[kind] || []).length);
   }

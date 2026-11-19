@@ -123,38 +123,55 @@
   <main class="workspace">
 
     <!-- ------------------------------------------------------- fixtures -->
-    <section class="panel fixtures side" id="fixtures-panel" aria-label="Lights">
-      <div class="panel-head">
-        <h2>Lights <span class="count" id="fx-count">0</span></h2>
-        <button class="btn primary small" id="add-btn">+ Add</button>
+    <section class="panel fixtures side" id="fixtures-panel" aria-label="Groups and lights">
+      <!-- the groups: a tap selects one, holding flashes it, a right-click changes it, lights dropped on it join it -->
+      <div class="side-sec side-groups" id="side-groups">
+        <div class="side-head">
+          <h2>Groups <span class="count" id="grp-count">0</span></h2>
+          <button class="btn ghost small icon" id="group-btn" title="Make a group of the selected lights (G)" aria-label="New group"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+        </div>
+        <div class="grp-list" id="grp-list" role="list"></div>
       </div>
-      <div class="fx-toolbar">
-        <input type="search" id="fx-filter" placeholder="Filter: name, type, brand, U1…" autocomplete="off" spellcheck="false">
-        <button class="btn ghost small icon" id="fx-more" title="Patch tools" aria-haspopup="menu">⋯</button>
-      </div>
-      <div class="fx-clash" id="fx-clash" hidden></div>
-      <div class="fx-table-wrap">
-        <table class="fx-table" id="fx-table">
-          <thead><tr><th class="c-no">No.</th><th>Light</th><th class="c-addr">Address</th></tr></thead>
-          <tbody id="fx-rows"></tbody>
-        </table>
-        <div class="empty" id="fx-empty">
-          <p><b>No fixtures yet.</b></p>
-          <p>Add lights from the library - they appear on the stage straight away, modelled for their type and brand.</p>
-          <button class="btn primary" id="add-btn-2">Add lights</button>
+      <!-- the lights: every one, by number -->
+      <div class="side-sec side-lights">
+        <div class="side-head">
+          <h2>Lights <span class="count" id="fx-count">0</span></h2>
+          <button class="btn ghost small icon" id="fx-find" title="Find a light: its name, type, maker or address (Ctrl+F)" aria-label="Find a light" aria-expanded="false"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.3"/><path d="M10.2 10.2l3.6 3.6"/></svg></button>
+          <button class="btn ghost small icon" id="add-btn" title="Add lights" aria-label="Add lights"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+          <button class="btn ghost small icon" id="fx-more" title="The lights: select by kind, highlight, arrange, park, the patch" aria-haspopup="menu" aria-label="More">⋯</button>
+        </div>
+        <div class="fx-toolbar" id="fx-toolbar" hidden>
+          <input type="search" id="fx-filter" placeholder="Find: name, type, maker, U1…" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="fx-clash" id="fx-clash" hidden></div>
+        <div class="fx-table-wrap">
+          <table class="fx-table" id="fx-table">
+            <thead><tr><th class="c-no">No.</th><th>Light</th><th class="c-addr">Address</th></tr></thead>
+            <tbody id="fx-rows"></tbody>
+          </table>
+          <div class="empty" id="fx-empty">
+            <p><b>No lights yet.</b></p>
+            <p>Add them from the library - they appear in the 3D straight away, modelled for their type and maker.</p>
+            <button class="btn primary" id="add-btn-2">Add lights</button>
+          </div>
         </div>
       </div>
+      <!-- the selection: how many, find them, group them; and pick from it -->
       <div class="sel-bar" id="sel-bar">
-        <span id="sel-count">Nothing selected</span>
-        <button class="btn ghost small icon" id="sel-more" title="Select by kind - the same type, the movers, those with gobos - or one light at a time" aria-label="More ways to select">⋯</button>
-        <span class="sel-split chip-row" id="sel-split"></span>
-        <span class="sel-actions">
-          <button class="btn small" id="locate-btn" title="Full, open white, centred (L)">Locate</button>
-          <button class="btn small" id="hl-btn" title="Highlight: the selection at full, open white until you turn it off (H); Shift: solo, everything else dark">Highlight</button>
-          <button class="btn ghost small" data-act="select_all">All</button>
-          <button class="btn ghost small" data-act="clear_selection">None</button>
-          <button class="btn ghost small" id="group-btn" title="Make a group from the selection (G)">Group</button>
-        </span>
+        <div class="sel-row">
+          <b id="sel-count">Nothing selected</b>
+          <button class="btn small on" id="hl-btn" hidden title="Highlight is on: the selection at full, open white. Click to turn it off (H)">Highlight</button>
+          <button class="btn small" id="locate-btn" title="Find them: full, open white, centred (L)"><svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5"/><circle cx="8" cy="8" r="1.2" class="fill"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2"/></svg>Locate</button>
+          <button class="btn small" id="sel-group" title="Make a group of them, or add them to one or take them out" aria-haspopup="menu">Group…</button>
+        </div>
+        <div class="sel-picks" id="sel-picks">
+          <button class="btn small" data-act="select_all" title="Every light (Ctrl+A)">All</button>
+          <button class="btn small" data-act="clear_selection" title="None (Esc)">None</button>
+          <button class="btn small" data-split="odd" title="Keep the odd ones of the selection">Odd</button>
+          <button class="btn small" data-split="even" title="Keep the even ones of the selection">Even</button>
+          <button class="btn small" data-split="left" title="Keep the left half of the selection">Left</button>
+          <button class="btn small" data-split="right" title="Keep the right half of the selection">Right</button>
+        </div>
       </div>
     </section>
 
@@ -250,8 +267,8 @@
           <button role="tab" data-tab="sfx" aria-selected="false" title="Special effects: confetti, CO2, fog, flame…" hidden>Special FX</button>
           <button role="tab" data-tab="desk" aria-selected="true" title="Palettes: your looks, colours, positions and beams - tap one and the selected lights take it">Palettes</button>
         </nav>
+        <span class="prog-sel" id="prog-sel"></span>
         <div class="prog-heads" id="prog-heads" hidden></div>
-        <span class="prog-sel" id="prog-sel">Select fixtures</span>
       </div>
       <div class="prog-in" id="prog-in" hidden></div>
       <div class="prog-cells" id="prog-cells" hidden></div>
@@ -265,7 +282,10 @@
           <span class="level-k">Level</span>
           <output class="big-num" id="int-num">–</output>
           <div class="big-fader-row"><div class="vfader big level-bar" id="int-fader" data-min="0" data-max="100" aria-label="Level: drag up or down"></div></div>
-          <label class="level-fade" title="Fade: seconds the level takes to get there"><span>Fade</span><input type="number" id="int-fade" min="0" max="600" step="0.5" value="0" aria-label="Fade seconds"><em>s</em></label>
+          <div class="level-keys">
+            <button class="btn small" id="int-full" title="Full (F)">Full</button>
+            <button class="btn small" id="int-out" title="Out: level 0">Out</button>
+          </div>
           <div class="chip-row" id="int-gate" hidden></div>
         </div>
       <div class="prog-body" id="prog-body">
@@ -288,20 +308,33 @@
 
         <div class="tab-pane" data-pane="colour" hidden>
           <div class="mode-hint" id="mode-hint" hidden></div>
-          <div class="palette-strip" data-kind="colour"></div>
-          <div class="picker" id="picker">
-            <canvas id="picker-canvas" width="440" height="440" aria-label="Colour wheel"></canvas>
+          <!-- the wheel and its hex | the saved colours | the quick colours, white and its temperature -->
+          <div class="col-grid">
+            <div class="col-pick">
+              <div class="picker" id="picker">
+                <canvas id="picker-canvas" width="440" height="440" aria-label="Colour wheel"></canvas>
+              </div>
+              <div class="colour-row">
+                <label class="hex-field"><span>Hex</span><input type="text" id="hex-in" maxlength="7" spellcheck="false" placeholder="#ffffff"></label>
+                <i class="hex-swatch" id="hex-swatch" aria-hidden="true"></i>
+              </div>
+              <span class="reach" id="colour-reach"></span>
+            </div>
+            <div class="col-saved">
+              <h3 class="col-h">Saved colours</h3>
+              <div class="palette-strip" data-kind="colour"></div>
+            </div>
+            <div class="col-quick">
+              <h3 class="col-h col-quick-h">Quick colours</h3>
+              <div class="swatches" id="swatches"></div>
+              <div class="chip-row" id="wheel-steps" hidden></div>
+              <h3 class="col-h col-white" id="white-h">White</h3>
+              <div class="colour-extra" id="colour-extra"></div>
+              <label class="kelvin-row" id="kelvin-row"><span>Temperature</span>
+                <input type="range" id="kelvin" min="2000" max="10000" step="100" value="5600"><output id="kelvin-out">5600 K</output></label>
+              <button class="btn small" id="colour-match" title="LEDs differ between brands: match this model's colours to the rest of the rig">Match colours across brands…</button>
+            </div>
           </div>
-          <div class="swatches" id="swatches"></div>
-          <div class="colour-row">
-            <label class="field inline"><span>Hex</span><input type="text" id="hex-in" maxlength="7" spellcheck="false" placeholder="#ffffff"></label>
-            <span class="reach" id="colour-reach"></span>
-          </div>
-          <div class="colour-extra" id="colour-extra"></div>
-          <label class="field kelvin-row" id="kelvin-row"><span>White temperature <output id="kelvin-out">5600 K</output></span>
-            <input type="range" id="kelvin" min="2000" max="10000" step="100" value="5600"></label>
-          <div class="chip-row" id="wheel-steps" hidden></div>
-          <button class="btn small ghost" id="colour-match" title="LEDs differ between brands: match this model's colours to the rest of the rig">Match colours across brands…</button>
         </div>
 
         <div class="tab-pane" data-pane="position" hidden>

@@ -982,8 +982,12 @@ class ProgrammerMixin:
         if disagree:
             entry["per"] = per                 # the lights differ: each its own
         if key == "colour":
-            # its tile's colour (a wheel light's too)
-            first = next((h for h in heads if str(h["head_no"]) in per), None)
+            # its tile's colour: from a light that mixes when one does (a
+            # wheel light only gets near it - Pink would read magenta, UV
+            # blue), else the wheel light's own step
+            mixes = ("red", "green", "blue", "cyan", "magenta", "yellow")
+            first = next((h for h in heads if any(k in per.get(str(h["head_no"]), {}) for k in mixes)), None) \
+                or next((h for h in heads if str(h["head_no"]) in per), None)
             if first is not None:
                 try:
                     entry["hex"] = self._hex_for(first, per[str(first["head_no"])])

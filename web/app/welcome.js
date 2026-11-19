@@ -93,7 +93,7 @@ function offerTour() {
 // one per mode: what is on screen in Set up, Program and Live
 const SETUP_STEPS = [
   ["#mode-seg", "Three modes", "Set up, Program, Live: the screen arranged for each job. You are in Set up."],
-  ["#fixtures-panel", "Your lights", "Add lights here (+ Add finds any light in the library). Click to select; groups are folders."],
+  ["#fixtures-panel", "Groups and lights", "Your groups at the top, every light below (+ finds any light in the library). Click to select; hold a group to flash it."],
   ["#mode-hub", "Set up, in order", "The lights, the room, the connections, the checks - each with how it stands now and a button to do it."],
   ["#output", "Output", "Blind means nothing reaches the real lights. Go live… when the rig is connected."],
   ["#rail", "Master", "The grand master, Release all and BLACKOUT: in the same place in every mode."],

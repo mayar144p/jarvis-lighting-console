@@ -107,7 +107,7 @@ await A.evaluate(() => fetch("/api/console", { method: "POST", headers: { "conte
 let ms = await until(B, () => document.querySelector("#fx-count").textContent.trim() === "14");
 check(ms >= 0, "a light patched on one screen appears on the other", ms >= 0 ? `${ms} ms` : "not within 3 s");
 // select in B by clicking All -> A's programmer shows the selection
-await B.click('.sel-actions [data-act="select_all"]');
+await B.click('#sel-picks [data-act="select_all"]');
 ms = await until(A, () => /14/.test(document.querySelector("#sel-count").textContent));
 check(ms >= 0, "selecting on one screen selects on the other", ms >= 0 ? `${ms} ms` : await A.evaluate(() => document.querySelector("#sel-count").textContent));
 // the level set on its bar, as a finger does: a press where the level is

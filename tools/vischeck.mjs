@@ -364,7 +364,7 @@ async function steps() {
   }
 
   console.log("2. All -> Full");
-  await click('.sel-actions [data-act="select_all"]', "All");
+  await click('#sel-picks [data-act="select_all"]', "All");
   // the level bar beside every tab: a double-click is full
   try { await p.dblclick("#int-fader", { timeout: 20000 }); } catch (e) { check(false, `${tag}double-click the level bar (Full)`, String(e.message).split("\n")[0]); }
   await p.waitForTimeout(600);
@@ -383,7 +383,7 @@ async function steps() {
 
   console.log("4. One light: blue (only it changes)");
   const before = F;
-  await click('.sel-actions [data-act="clear_selection"]', "None");
+  await click('#sel-picks [data-act="clear_selection"]', "None");
   const target = patch.find((x) => /Mega PAR/.test(x.model || "")) || patch.find((x) => canRed(x.head_no) && lights(V).includes(x.head_no));
   const tno = target ? target.head_no : null;
   if (tno !== null) {
@@ -407,7 +407,7 @@ async function steps() {
   console.log("5. Movers to the dance floor");
   const movers = Object.entries(V).filter(([, v]) => v.moving).map(([h]) => +h);
   if (movers.length || !BRANDS) {
-  await click('.sel-actions [data-act="clear_selection"]', "None");
+  await click('#sel-picks [data-act="clear_selection"]', "None");
   await p.evaluate((hs) => import("/app/actions.js").then((m) => m.select(hs)), movers);
   await click('#prog-tabs [data-tab="position"]', "Move tab");
   const pan0 = Object.fromEntries(movers.map((h) => [h, F[h] && F[h].pan]));
@@ -420,7 +420,7 @@ async function steps() {
   }
 
   console.log("6. Rainbow on everything");
-  await click('.sel-actions [data-act="select_all"]', "All");
+  await click('#sel-picks [data-act="select_all"]', "All");
   await click('#prog-tabs [data-tab="fx"]', "FX tab");
   await clickText(".fx-card", "Rainbow");
   const f1 = await feed();

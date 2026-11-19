@@ -7,13 +7,16 @@
 import { state, on } from "./store.js";
 import { act } from "./api.js";
 import { h, $ } from "./ui.js";
+import { icon } from "./icons.js";
 
 const WHEELS = {
-  colour: [["red", "Red"], ["green", "Green"], ["blue", "Blue"], ["white", "White"], ["cyan", "Cyan"], ["magenta", "Magenta"], ["yellow", "Yellow"]],
+  colour: [["red", "Red"], ["green", "Green"], ["blue", "Blue"], ["white", "White"], ["amber", "Amber"], ["uv", "UV"]],
   position: [["pan", "Pan"], ["tilt", "Tilt"]],
 
   beam: [["zoom", "Zoom"], ["focus", "Focus"], ["iris", "Iris"], ["frost", "Frost"], ["gobo_rot", "Gobo spin"], ["prism_rot", "Prism spin"]],
 };
+// a light that mixes with colour flags: those too, after the rest
+const CMY = [["cyan", "Cyan"], ["magenta", "Magenta"], ["yellow", "Yellow"]];
 const COARSE = 0.01, FINE = 0.001;                 // a share of the travel per notch
 let fine = false;
 let tab = "colour";
@@ -51,6 +54,14 @@ function valueOf(attr) {
     const v = attr === "pan" || attr === "tilt" ? lk[attr]
       : attr === "red" ? hexPart(lk.hex, 0) : attr === "green" ? hexPart(lk.hex, 1) : attr === "blue" ? hexPart(lk.hex, 2) : undefined;
     if (typeof v === "number") vals.push(v);
+  }
+  // what the live feed doesn't carry (white, amber, UV, zoom...): the programmer's own value
+  if (!vals.length) {
+    const prog = ((state.snap && state.snap.programmer) || {}).values || {};
+    for (const n of selHeads()) {
+      const v = (prog[n] || prog[String(n)] || {})[attr];
+      if (typeof v === "number") vals.push(v / 255);
+    }
   }
   if (!vals.length) return null;
   const pct = vals.map((v) => Math.round(Math.max(0, Math.min(1, v)) * 100));
@@ -98,7 +109,8 @@ function showValues() {
     const got = el.classList.contains("off") ? null : valueOf(el.dataset.attr);
     const text = !got ? "–" : got.mixed ? "mix" : `${got.v}%`;
     const b = el.querySelector(".pv-val");
-    if (b.textContent !== text) b.textContent = text;
+    // the number large, its % small after it
+    if (b.textContent !== text) b.replaceChildren(...(got && !got.mixed ? [String(got.v), h("small.pv-unit", "%")] : [text]));
     el.setAttribute("aria-valuetext", text);
     el.style.setProperty("--v", got ? `${got.v}%` : "0%");
   }
@@ -112,7 +124,7 @@ export function renderWheels(name = tab) {
   // every wheel of the tab is always in its place; one the selected lights
   // don't have (Tilt on a light that only pans) is greyed, not taken away
   // - the row never shifts under the pointer
-  const list = WHEELS[name] || [];
+  const list = name === "colour" ? [...WHEELS.colour, ...CMY.filter(([a]) => roles.has(a))] : WHEELS[name] || [];
   box.hidden = !WHEELS[name];
   const sig = name + list.map(([a]) => (roles.has(a) ? a : "-")).join();
   if (box.dataset.sig === sig) return;              // the same wheels: keep them (a drag in progress)
@@ -130,7 +142,7 @@ export function renderWheels(name = tab) {
     return el;
   }), h("span.grow"),
   h("button.btn.small", { type: "button", title: "Fan a value across the selection: from the first light to the last",
-    onclick: () => import("./rigtools.js").then((m) => m.openFan((list.find(([a]) => roles.has(a)) || [""])[0])) }, "Fan…"),
+    onclick: () => import("./rigtools.js").then((m) => m.openFan((list.find(([a]) => roles.has(a)) || [""])[0])) }, icon("fan"), "Fan"),
   fineBtn);
   showValues();
 }

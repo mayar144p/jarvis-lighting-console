@@ -7,8 +7,8 @@ How to use the desk. Getting it running is in the [README](../README.md)'s quick
 | Region | What it does |
 |---|---|
 | **Title bar** | the show's name and its menu (new, save, open, paperwork, **Check the show…**), **Blind** / **Go live…** (the output), **Arm FX** / **Kill FX**, the three modes, the tempo, the command line (<kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd>), the **Copilot**, undo and redo with the last changes named, the lock, the 3D view, the phone remote, settings and help |
-| **Lights** (the side panel, left) | the patch as a list; filter, **+ Add**, select by click / ctrl-click / shift-click, select similar. **Change a group after it exists:** a right-click on its folder adds the selected lights, takes them out, makes it exactly the selection, renames or deletes it; a light's own menu has *Add to “group”* / *Take it out of “group”*. Buttons, faders and sound links that use the group follow. **Drag and drop:** drag a light (or the selected lights, or a folded type) onto a group's folder to put it in; drag it out of a group's folder onto the list to take it out; from one group onto another moves it (hold Alt to keep it in both); *＋ New group* appears while you drag. **Your groups are folders**, like a code editor's file tree: ▸ opens one, clicking its name selects all its lights, hovering it rings them in the 3D view (double-click frames them). Lights in no group stay in the list below. Hold a group's name to flash its lights. At its foot, the selection: how many, its **⋯** (the same type, every mover, every light with gobos, one light at a time), Odd / Even / Left / Right, **Locate**, **Highlight**, All, None, **Group** |
-| **Programmer** (the middle) | tabs for what the selection can actually do: **Colour** (HSV picker, swatches, hex, white temperature, wheel steps), **Position** (pan/tilt pad, aim in degrees, **aim at a spot** or a performer mark, home), **Beam** (strobe speeds, gobo/prism steps, zoom/iris/frost, every attribute), **Effects** and **Palettes** - a laser's and a special effect's own tabs too when one is selected. The busy tabs come in parts, each remembered: **Position** - *Point* (aim, spots, the room map, the pad), *Move* (movements, A → B, waves), *Limits* (stay on the floor, each light's range, laser safety); **Beam** - *Quick* (one-press strobe, gobo, prism, zoom...) and *All channels*; **Effects** - *Effects*, *Running* (with how many run) and *Step & paint*. Beside every tab, the **Level** bar and its fade (double-click: full); under the tab, the value bar; along the foot, **Clear**, **Make a button…**, **Update** and **Record cue…** |
+| **Groups and Lights** (the side panel, left) | **Groups** at the top, each with its colour, its name and how many lights: click one to select its lights (Ctrl / Shift + click adds them or takes them out), hold it to flash them, hover it to ring them in the 3D view (double-click frames them), right-click to add the selected lights, take them out, make it exactly the selection, rename or delete it; **+** makes a group of the selection. Buttons, faders and sound links that use a group follow. **Lights** below: every light, one line each - number, kind, name, address (a run of the same light folds into one line: its numbers open it); the magnifier filters the list, **+** adds lights, **⋯** has the rest (the same type, every mover, every light with gobos, one light at a time, Highlight, the DMX map, parking, arranging, limits). **Drag** a light (or the selected lights) onto a group to put it in. At the foot, the selection: how many, **Locate**, **Group…** (make a group of them, add them to a group, take them out of one), then **All**, **None**, **Odd**, **Even**, **Left**, **Right** |
+| **Programmer** (the middle) | tabs for what the selection can actually do: **Colour** (HSV picker, swatches, hex, white temperature, wheel steps), **Position** (pan/tilt pad, aim in degrees, **aim at a spot** or a performer mark, home), **Beam** (strobe speeds, gobo/prism steps, zoom/iris/frost, every attribute), **Effects** and **Palettes** - a laser's and a special effect's own tabs too when one is selected. The busy tabs come in parts, each remembered: **Position** - *Point* (aim, spots, the room map, the pad), *Move* (movements, A → B, waves), *Limits* (stay on the floor, each light's range, laser safety); **Beam** - *Quick* (one-press strobe, gobo, prism, zoom...) and *All channels*; **Effects** - *Effects*, *Running* (with how many run) and *Step & paint*. Beside every tab, the **Level** bar with **Full** and **Out** under it (double-click the bar: full); under the tab, the value bar; along the foot, **Clear**, **Make a button…**, **Update** and **Record cue…** |
 | **The dock** (under the programmer) | **Buttons** (pages of instant buttons), **Cues** (the playbacks: a fader, GO, Flash, back and stop each, **+** for a new one, the cue list of the one in focus), **Timeline** (the show against the music) and **Group faders**; ⤢ gives it the whole middle |
 | **Master** (right) | the grand master, **Release all** (hold it) and **BLACKOUT**: the same place in every mode |
 | **Status bar** | output target and rate, network, what is connected, feed health, last save |
@@ -357,16 +357,16 @@ another button or the whole page; what the buttons do stays the same.
 
 ### Groups
 
-*Where:* Lights (the side panel) → Group
+*Where:* Groups (the side panel, top) → + (or the selection's Group… under the lights)
 
 A group is a set of lights you pick often (the back truss, the floor PARs).
 
 1. Select the lights (click, Ctrl+click, or drag in the 3D / the list).
-2. Press **Group** under the list of lights (or right-click →
-   **Make a group of them…**), name it, **Create group**.
-3. The groups sit at the top of the list, each with its colour: click a
-   group's name to select its lights again, its arrow to see them, and hold
-   it down to flash them (full, until you let go). Right-click a group:
+2. Press **+** beside *Groups* (or **Group…** → **Make a group of them…**
+   under the list of lights), name it, **Create group**.
+3. The groups sit at the top of the side panel, each with its colour: click
+   a group to select its lights again, and hold it down to flash them (full,
+   until you let go). Right-click a group:
    **Add the selected lights**, **Take the selected lights out**, **Rename…**,
    **Delete group…**. Buttons and faders that use the group follow the change.
 4. Each group gets a **fader** next to the masters at the bottom: its lights at
@@ -1195,7 +1195,7 @@ one Ctrl+Z, and that brings back the show that was open.
 - **Hover help:** rest the pointer on any control for what it does (on by
   default). **Look back to how it came** undoes all of it.
 
-**Arranging lights:** select some, then the side panel's **⋯** →
+**Arranging lights:** select some, then the Lights **⋯** →
 **Arrange the selection…**: line them up, spread them evenly or mirror
 them - across the stage, front to back or in height (or the quick *in a
 row across the stage* / *all at the same height*). **Clear the

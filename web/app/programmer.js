@@ -3,7 +3,7 @@ import { get } from "./api.js";
 import { state, on, patch, selected, selectionHeads } from "./store.js";
 import { run, select } from "./actions.js";
 import { $, $$, h, vfader, throttle, toast, promptBox, confirmBox, modal, menu } from "./ui.js";
-import { paletteOn, paletteFits, paletteSwatch, renderPools } from "./palettes.js";
+import { paletteFits, paletteTile, saveTile, renderPools } from "./palettes.js";
 import { knob, SPEED_PRESETS, TURN_PRESETS, SIZE_PRESETS } from "./speedpick.js";
 import { createPicker, rgbToHex } from "./picker.js";
 import { openCueDialog, openLightTest } from "./dialogs.js";
@@ -16,7 +16,7 @@ const SWATCHES = [
   ["Red", "#ff2a1f"], ["Orange", "#ff7a00"], ["Amber", "#ffb000"], ["Yellow", "#ffe600"],
   ["Green", "#1aff4a"], ["Cyan", "#00e5ff"], ["Blue", "#1f4bff"], ["Congo", "#5b2bff"],
   ["UV", "#8f00ff"], ["Magenta", "#ff00d4"], ["Pink", "#ff0080"], ["Light pink", "#ff5fa2"], ["Lavender", "#b69cff"],
-  ["Warm", "#ffd9a8"], ["Neutral", "#fff1dc"], ["Cool", "#e6f0ff"], ["White", "#ffffff"],
+  ["Warm", "#ffd9a8"], ["Neutral", "#fff1dc"], ["Cool", "#e6f0ff"], ["White", "#ffffff"], ["Half white", "#808080"],
 ];
 
 let tab = "desk";
@@ -93,11 +93,13 @@ function renderHeader() {
   const heads = selectionHeads();
   const box = $("#prog-sel");
   if (!heads.length) {
-    box.textContent = "Select fixtures";
+    box.textContent = "";
+    box.title = "";
     box.classList.remove("has");
   } else {
     const types = [...new Set(heads.map((x) => (x.body && x.body.label) || x.model))];
-    box.textContent = `${heads.length} × ${types.length === 1 ? types[0] : types.length + " types"}`;
+    box.textContent = `${heads.length} light${heads.length === 1 ? "" : "s"} selected`;
+    box.title = types.length === 1 ? types[0] : `${types.length} kinds: ${types.join(", ")}`;
     box.classList.add("has");
   }
   $("#prog-body").classList.toggle("disabled", !heads.length && !["fx", "desk"].includes(tab));
@@ -110,7 +112,7 @@ function renderHeader() {
     const dot = b.querySelector(".dotmark");
     const want = pages[b.dataset.tab];
     const on = !!want && [...attrs].some((r) => (GROUP_OF[r.replace(/@\d+$/, "").replace(/_fine$/, "")] || "other") === want);
-    if (on && !dot) b.append(h("span.dotmark"));
+    if (on && !dot) b.prepend(h("span.dotmark", { title: "The programmer holds values here" }));
     if (!on && dot) dot.remove();
   });
 }
@@ -127,8 +129,7 @@ function progValue(role) {
 
 // ---------------------------------------------------------- intensity
 const sendIntensity = throttle((level) => {
-  const fade = parseFloat($("#int-fade").value) || 0;
-  run("set_intensity", fade ? { level, fade } : { level }, { silentError: false });
+  run("set_intensity", { level }, { silentError: false });
 }, 60);
 
 // A warning on the Level tab when a selected light's shutter "open"
@@ -190,12 +191,12 @@ function renderIntensity() {
   const num = $("#int-num");
   if (!vals.length) {
     intFader.set(0, { idle: true });
-    num.textContent = hasSel() ? "–" : "–";
+    num.textContent = "–";
     return;
   }
   const mixed = new Set(vals).size > 1;
   intFader.set(vals[0], { mixed });
-  num.textContent = mixed ? "mix" : `${vals[0]}%`;
+  num.textContent = mixed ? "mix" : String(vals[0]);
 }
 
 // -------------------------------------------------------------- colour
@@ -239,7 +240,13 @@ function renderColourExtra() {
   const key = JSON.stringify([list.map(([r]) => [r, cur(r)]), heads.map((x) => x.head_no)]);
   if (key === extraKey || Date.now() < extraHeld) return;
   extraKey = key;
-  box.replaceChildren(...(list.length ? [h("span.muted.small", mixes ? "Added on top of the colour:" : "Its colour channels:"), ...list.map(([role, label, tint]) => {
+  // the heading over them: White (white on top, and the temperature), or what they are
+  const head = $("#white-h");
+  if (head) {
+    head.textContent = !mixes ? "Its colour channels" : list.some(([r]) => r !== "white") ? "On top of the colour" : "White";
+    head.hidden = !list.length && $("#kelvin-row").hidden;
+  }
+  box.replaceChildren(...(list.length ? list.map(([role, label, tint]) => {
     const input = h("input", { type: "range", min: 0, max: 255, value: cur(role), style: { accentColor: tint } });
     const out = h("output.mono.small", `${Math.round(cur(role) / 2.55)}%`);
     const send = throttle((v) => run("set_attribute", { attribute: role, value: v }, { silentError: true }), 60);
@@ -248,8 +255,8 @@ function renderColourExtra() {
       out.textContent = `${Math.round(+input.value / 2.55)}%`;
       send(+input.value);
     });
-    return h("label.extra-row", h("i.extra-dot", { style: { background: tint } }), h("span", label), input, out);
-  })] : []));
+    return h("label.extra-row", h("span", mixes ? `Added ${label.toLowerCase()}` : label), input, out);
+  }) : []));
 }
 
 function renderColour() {
@@ -259,15 +266,14 @@ function renderColour() {
     picker.set(hex);
     if (document.activeElement !== $("#hex-in")) $("#hex-in").value = hex;
   }
+  $("#hex-swatch").style.background = hex || "";
   $$("#swatches button").forEach((b) => b.classList.toggle("on", !!hex && b.dataset.hex === hex));
   renderWheel();
   const heads = selectionHeads();
   const full = (x) => { const m = x.map || []; return ["red", "green", "blue"].every((r) => m.includes(r)) || ["cyan", "magenta", "yellow"].every((r) => m.includes(r)); };
   const mixers = heads.filter(full).length;
-  $("#colour-reach").textContent = !heads.length ? ""
-    : mixers === heads.length ? (heads.length === 1 ? "this light mixes any colour" : `all ${heads.length} mix any colour`)
-      : mixers ? `${mixers} of ${heads.length} mix any colour - the rest only make their own colours`
-        : "";
+  // said only when it matters: some of the selection can't mix
+  $("#colour-reach").textContent = mixers && mixers < heads.length ? `${mixers} of ${heads.length} mix any colour - the rest only make their own colours` : "";
 }
 
 // Black-body colour for a white temperature (Tanner Helland's fit).
@@ -337,17 +343,18 @@ function renderWheel() {
   const key = [wheel && wheel.slots ? JSON.stringify(wheel.slots) : "guess", wheelOnly, pickerAnyway].join("|");
   if (box.dataset.key === key) return;
   box.dataset.key = key;
+  const guessed = !(wheel && wheel.slots);
   box.replaceChildren(
-    h("span.muted.small", wheelOnly
-      ? "These lights have a colour wheel: tap one of its colours."
-      : wheel && wheel.slots ? (whitesOnly(wheel.slots) ? "White presets:" : "Colour wheel:") : "Colour wheel (guessed positions):"),
+    wheelOnly ? h("span.muted.small", "These lights have a colour wheel: tap one of its colours.")
+      : h("h3.col-h.wheel-h", wheel && wheel.slots && whitesOnly(wheel.slots) ? "White presets" : "Colour wheel",
+        guessed ? h("small", { title: "The fixture file doesn't give the wheel's steps: these are evenly spaced guesses" }, "guessed steps") : null),
     ...slotButtons("wheel", wheel),
     // the file doesn't say which colours they are: name them once (by
     // looking at the real light) and they're named everywhere after
     !(wheel && wheel.slots && wheel.slots.some((x) => x.hex)) ? h("div.wheel-teach",
-      h("span.muted.small", "The fixture file doesn't say which colours these are."),
-      h("button.btn.small", { title: "Step through the wheel on the real light and name each colour (once for this model)",
-        onclick: () => import("./teachwheel.js").then((m) => m.openTeachWheel("wheel", () => { box.dataset.key = ""; loadAttributes(); })) }, "Name the colours…")) : null,
+      h("span", "The fixture file doesn't name these colours."),
+      h("button.linkish", { type: "button", title: "Step through the wheel on the real light and name each colour (once for this model)",
+        onclick: () => import("./teachwheel.js").then((m) => m.openTeachWheel("wheel", () => { box.dataset.key = ""; loadAttributes(); })) }, "Name them…")) : null,
     wheelOnly ? h("button.linkish.small", { onclick: () => { pickerAnyway = !pickerAnyway; box.dataset.key = ""; renderWheel(); } },
       pickerAnyway ? "Hide the colour picker" : "Pick any colour (goes to the nearest wheel colour)") : null);
 }
@@ -939,14 +946,17 @@ function renderProgCells() {
   ]);
   row.title = cur.size ? `Changes go to head${cur.size > 1 ? "s" : ""} ${[...cur].sort((a, b) => a - b).join(", ")} only` : "Tap a head to colour it on its own (Ctrl/Shift + tap adds heads)";
   row.replaceChildren(...[h("span.prog-heads-k", "Heads"),
-    h("button.chip" + (!cur.size ? ".on" : ""), { title: "Every head of the light", onclick: () => pick(0) }, "All"),
-    ...Array.from({ length: n }, (_, i) => h("button.chip.cell-chip" + (cur.has(i + 1) ? ".on" : ""), {
-      title: `Head ${i + 1} on its own - Ctrl or Shift + tap to add it to the heads already picked`,
-      onclick: (ev) => pick(i + 1, ev) },
-      dots[i] ? h("i.slot-dot", { style: { background: dots[i] } }) : null, String(i + 1))),
-    n >= 4 ? h("button.chip" + (same(odd) ? ".on" : ""), { title: "Heads 1, 3…", onclick: () => set(odd) }, "Odd") : null,
-    n >= 4 ? h("button.chip" + (same(even) ? ".on" : ""), { title: "Heads 2, 4…", onclick: () => set(even) }, "Even") : null,
-    dots[0] ? h("button.chip.icon", { title: "Copy a head's colour to all, spread a gradient", "aria-label": "More for the heads", onclick: more }, "⋯") : null,
+    h("span.seg.heads-seg",
+      h("button" + (!cur.size ? ".on" : ""), { type: "button", "aria-pressed": String(!cur.size), title: "Every head of the light", onclick: () => pick(0) }, "All"),
+      ...Array.from({ length: n }, (_, i) => h("button.cell-chip" + (cur.has(i + 1) ? ".on" : ""), {
+        type: "button", "aria-pressed": String(cur.has(i + 1)),
+        title: `Head ${i + 1} on its own - Ctrl or Shift + tap to add it to the heads already picked`,
+        onclick: (ev) => pick(i + 1, ev) },
+        dots[i] ? h("i.slot-dot", { style: { background: dots[i] } }) : null, String(i + 1)))),
+    n >= 4 ? h("span.seg.heads-seg",
+      h("button" + (same(odd) ? ".on" : ""), { type: "button", "aria-pressed": String(same(odd)), title: "Heads 1, 3…", onclick: () => set(odd) }, "Odd"),
+      h("button" + (same(even) ? ".on" : ""), { type: "button", "aria-pressed": String(same(even)), title: "Heads 2, 4…", onclick: () => set(even) }, "Even")) : null,
+    dots[0] ? h("button.btn.ghost.small.icon", { type: "button", title: "Copy a head's colour to all, spread a gradient", "aria-label": "More for the heads", onclick: more }, "⋯") : null,
     // tilt per head: a chip in this row, its sliders floating under it -
     // never a row of its own pushing the programmer down
     tab === "position" ? headBar(heads, n) : null,
@@ -1401,15 +1411,7 @@ function renderLooks(force = false) {
     if (!strip) continue;
     // only the palettes the selected lights can take (no gobo wheel: no
     // gobo palettes); nothing selected: all of them
-    strip.replaceChildren(...(pals[kind] || []).filter((p) => paletteFits(p) !== false).map((p) => palButton(kind, p)),
-      h("button.pal-item.pal-save", {
-        title: `Save the selection's ${kind} as a palette`,
-        onclick: async () => {
-          if (!hasSel()) { toast("Select fixtures and set a look first"); return; }
-          const name = await promptBox(`Save ${kind} palette`, "Name", "", { ok: "Save" });
-          if (name) run("record_palette", { kind, name }, { toast: true });
-        },
-      }, "+ Save"));
+    strip.replaceChildren(...(pals[kind] || []).filter((p) => paletteFits(p) !== false).map((p) => paletteTile(kind, p)), saveTile(kind));
   }
   const presets = (state.snap && state.snap.presets) || [];
   // a search box once there are enough looks to need one
@@ -1492,34 +1494,6 @@ async function saveLook() {
 // A palette tile: lit while the selection holds it.  Tap: put it on the
 // selection; tap a lit one: take it off again (that part of the programmer,
 // for these lights).  Right-click / long-press: update, rename, delete.
-function palButton(kind, p) {
-  const v = p.values || {};
-  // a colour's swatch; a beam palette's gobo, as the light throws it
-  const sw = kind === "colour" && ("red" in v || "green" in v || "blue" in v)
-    ? h("i", { style: { background: rgbToHex(v.red || 0, v.green || 0, v.blue || 0) } })
-    : kind === "beam" ? paletteSwatch("beam", p) : null;
-  const lit = paletteOn(kind, p);
-  const opts = (e) => {
-    e.preventDefault();
-    menu(e.currentTarget, [
-      { label: "Update from the selection", hint: "record it again", run: () => hasSel() ? run("record_palette", { kind, name: p.name }, { toast: true }) : toast("Select fixtures first") },
-      { label: "Rename…", run: async () => { const name = await promptBox("Rename palette", "Name", p.name, { ok: "Rename" }); if (name) run("palette_edit", { kind, palette: p.n, name }, { toast: true }); } },
-      "-",
-      { label: "Delete", danger: true, run: async () => { if (await confirmBox("Delete palette", `Delete “${p.name}”? Cues keep their values. Ctrl+Z brings it back.`, { ok: "Delete", danger: true })) run("palette_edit", { kind, palette: p.n, delete: true }, { toast: true }); } },
-    ]);
-  };
-  return h("button.pal-item" + (lit ? ".on" : ""), {
-    title: lit ? `${p.name} is on the selection - tap to take it off (right-click: rename, delete)` : `Apply ${p.name} to the selection (right-click: rename, delete)`,
-    "aria-pressed": String(lit),
-    onclick: () => {
-      if (!hasSel()) { toast("Select fixtures first"); return; }
-      if (lit) run("clear_attrs", { group: kind === "beam" ? "beam" : kind, heads: selected() });
-      else run("include_palette", { kind, palette: p.n });
-    },
-    oncontextmenu: opts,
-  }, sw, p.name);
-}
-
 function wireTools() {
   // FLIP / MIRROR on the Position tab
   $$("[data-pt]").forEach((b) => b.addEventListener("click", () => run(b.dataset.pt === "flip" ? "flip" : "mirror_pan", {}, { toast: true })));
@@ -1612,7 +1586,10 @@ export function initProgrammer() {
   const body = $("#prog-body");
   if (body && window.ResizeObserver) new ResizeObserver(() => body.style.setProperty("--ph", `${body.clientHeight}px`)).observe(body);
   wireActs();
-  intFader = vfader($("#int-fader"), { min: 0, max: 100, onInput: (v) => { $("#int-num").textContent = v + "%"; sendIntensity(v); } });
+  intFader = vfader($("#int-fader"), { min: 0, max: 100, onInput: (v) => { $("#int-num").textContent = String(v); sendIntensity(v); } });
+  // Full and Out under the level
+  $("#int-full").addEventListener("click", () => { if (!hasSel()) { toast("Select lights first"); return; } sendIntensity(100); });
+  $("#int-out").addEventListener("click", () => { if (!hasSel()) { toast("Select lights first"); return; } sendIntensity(0); });
   // double-click the level bar: full (drag it for the rest)
   $("#int-fader").addEventListener("dblclick", () => { if (!hasSel()) { toast("Select fixtures first"); return; } sendIntensity(100); });
   $("#locate-btn").addEventListener("click", () => run("locate"));
@@ -1621,9 +1598,10 @@ export function initProgrammer() {
     const cur = (state.snap && state.snap.highlight) || {};
     run("highlight", { state: !cur.on, solo: e.shiftKey || (cur.on ? cur.solo : false) }, { toast: true });
   });
+  // (shown only while it is on, lit, to turn it off: the Lights ⋯ and H turn it on)
   const syncHl = () => {
     const cur = (state.snap && state.snap.highlight) || {};
-    hl.classList.toggle("on", !!cur.on);
+    hl.hidden = !cur.on;
     hl.textContent = cur.on && cur.solo ? "Solo" : "Highlight";
   };
   on("snapshot", syncHl);

@@ -5924,7 +5924,7 @@ def test_sweep3_fixes() -> None:
           and "export function goboIcon" in gi and "goboIcon(goboRef(role, s))" in pg and "goboIcon(goboRef(a.role, s))" in pg
           and "goboIcon(ref)" in dv, "")
     check("a group held in the side panel flashes (a tap still selects it)", "function holdToFlash(list)" in fx
-          and '"group_flash", { group, down: true }' in fx and 'holdToFlash($("#fx-rows"));' in fx, "")
+          and '"group_flash", { group, down: true }' in fx and "holdToFlash(list);" in fx and 'closest(".grp-row")' in fx, "")
 
 
 def test_sweep3_adds() -> None:
@@ -7863,9 +7863,9 @@ def test_b2_groups() -> None:
             e.shutdown()
     fx = (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8")
     cj = (ROOT / "web" / "app" / "copilot.js").read_text(encoding="utf-8")
-    check("drag lights onto a group folder, out of its folder, or between groups",
+    check("drag lights onto a group in the Groups list; the selection's Group… adds them to one or takes them out",
           "function dragStart" in fx and "function dropTarget" in fx and '"group_edit", { group: t.to, add: d.heads }' in fx
-          and '"group_edit", { group: d.from, remove: d.heads }' in fx, "")
+          and "function selGroupMenu" in fx and '"group_edit", { group: g.n, remove: sel.filter(' in fx, "")
     check("the screen: a group's menu (its folder, a right-click), Add to group on a light, Tidy auto copies",
           "export function groupMenu" in fx and '"group_edit"' in fx and "function groupItems" in fx
           and "auto: true" in fx and "auto: true" in cj, "")
@@ -10263,9 +10263,10 @@ def test_council_fixes() -> None:
           ">Palettes</button>" in html and 'data-tab="tools"' not in html
           and "#prog-tabs :is([data-tab=looks], [data-tab=tools]) span { display: none; }" not in css, "")
     rt = (ROOT / "web" / "app" / "rigtools.js").read_text(encoding="utf-8")
-    check("...Fan on the value bar, limits and orientation on a light's menu, arranging in the side panel's tools, select by kind under the selection's ⋯",
+    check("...Fan on the value bar, limits and orientation on a light's menu, arranging in the side panel's tools, select by kind under the Lights ⋯",
           'm.openFan(' in (ROOT / "web" / "app" / "wheels.js").read_text(encoding="utf-8")
-          and all(f"m.{f}(" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8") for f in ("openLimits", "openArrange", "selectMenu"))
+          and all(f"m.{f}(" in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8") for f in ("openLimits", "openArrange"))
+          and "...selectItems()," in (ROOT / "web" / "app" / "fixtures.js").read_text(encoding="utf-8") and "export function selectItems()" in rt
           and all(k in rt for k in ('"set_limits"', '"clear_limits"', '"set_orient"', '"distribute"', '"select_query"', '"select_step"')), "")
     check("...and Fan offers what the desk does (no 'center' / 'mirror' it would refuse)",
           all(f'["{m}",' in rt for m in ("normal", "reverse", "centre_out", "into_centre", "random")) and '"center"' not in rt, "")
@@ -10361,11 +10362,13 @@ def test_room_by_pointing() -> None:
 
     pj = (ROOT / "web" / "app" / "programmer.js").read_text(encoding="utf-8")
     css = desk_css()
-    check("a palette tile is lit only while the selection holds it, and a second tap takes it off",
-          "const lit = paletteOn(kind, p);" in pj and 'if (lit) run("clear_attrs"' in pj and ".pal-item.on {" in css, "")
-    check("a wide programmer: room map + pan/tilt pad side by side, the pad keeps its shape, swatches stay swatch-sized",
+    pt = (ROOT / "web" / "app" / "palettes.js").read_text(encoding="utf-8")
+    check("a palette tile is lit only while the selection holds it, and a second tap takes it off - the same tile on the Palettes page and in the tabs",
+          "const on = paletteOn(kind, p);" in pt and 'if (on) run("clear_attrs"' in pt and ".pool-tile.on {" in css
+          and "paletteTile(kind, p)" in pj, "")
+    check("a wide programmer: room map + pan/tilt pad side by side, the pad keeps its shape, the quick colours small squares nine across",
           "overflow-y: auto; padding: var(--pad); container-type: inline-size; }" in css and ".mv-pt .pad { width: 100%; aspect-ratio: 1.6;" in css
-          and "repeat(auto-fill, minmax(calc(40px * var(--ctl)), calc(60px * var(--ctl))))" in css, "")
+          and ".swatches { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr));" in css and ".swatches button { aspect-ratio: 1;" in css, "")
 
     from app import engine as eng
     with tempfile.TemporaryDirectory() as td:
@@ -10702,8 +10705,9 @@ def test_programmer_overhaul() -> None:
           and '.tab-pane[data-pane="position"][data-sub="point"]:not([hidden]) { flex: 1;' in css and "Aim at one click" not in html, "")
     check("Move in three columns, no folded rows", 'h("div.mv-col.mv-col-shapes"' in mv and 'h("div.mv-col.mv-col-knobs"' in mv
           and "More: direction, arc, lock" not in mv, "")
-    check("the level a bar beside every tab (the fade under it); Colour and Beam made for a wide panel", ".level .level-bar {" in css and 'id="int-fade"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
-          and '.tab-pane[data-pane="colour"] #picker canvas' in css and ".beam-quick { display: grid;" in css, "")
+    check("the level a bar beside every tab (Full and Out under it, no fade box); Colour and Beam made for a wide panel", ".level .level-bar {" in css and 'id="int-full"' in (ROOT / "web" / "index.html").read_text(encoding="utf-8") and 'id="int-fade"' not in (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+          and ".col-grid { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, .92fr);" in css and ".picker canvas {" in css
+          and ".beam-quick { display: grid;" in css, "")
     check("Text size: Standard / Large / Extra large, layout and all", ':root[data-textsize="xl"]' in css
           and "--ts: calc(var(--ts-base) * var(--ts-user) * var(--ts-gig))" in css
           and "TEXT_SCALE" in (web / "theme.js").read_text(encoding="utf-8"), "")
@@ -10791,7 +10795,7 @@ def test_shapes_drawn_palettes_fit() -> None:
           and '(fits === false ? ".na" : "")' in dv and ".pool-tile.na {" in css, "")
     pj = (web / "programmer.js").read_text(encoding="utf-8")
     check("...and the Beam / Colour / Position tabs list only the palettes the selected lights can take",
-          ".filter((p) => paletteFits(p) !== false).map((p) => palButton(kind, p))" in pj, "")
+          ".filter((p) => paletteFits(p) !== false).map((p) => paletteTile(kind, p))" in pj, "")
     mj = (ROOT / "desktop" / "main.js").read_text(encoding="utf-8")
     check("the desktop app keeps one address, so the screen settings survive a restart", "function localPort()" in mj
           and "await localPort()" in mj and "saved._localPort" in mj, "")
@@ -12718,6 +12722,43 @@ def test_haze_area() -> None:
                   "By the DJ" not in xml and "SceneObject" in xml, "the room's other objects go, the haze area doesn't")
         finally:
             e.shutdown()
+
+
+def test_palette_tile_colour() -> None:
+    """A saved colour's tile shows the colour it makes: recorded on a wheel light and LED lights
+    together, its colour comes from a light that mixes (a wheel only gets near it: Pink read
+    magenta, UV blue); the tile works it out from the values, white, amber and UV included."""
+    from app import engine as eng_mod
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        db = tmp / "f.db"
+        fixtures.seed_generics(db)
+        e = eng_mod.Engine(db_path=db, dry_run=True, show_dir=tmp / "s")
+        try:
+            fixtures.create_profile(db, "TestCo", "Wheel Spot", "6ch", ["Dimmer", "Shutter", "Color Wheel", "Gobo", "Pan", "Tilt"])
+            e.act("add_heads", query="TestCo Wheel Spot", qty=1, universe=1, address=1)
+            e.act("add_heads", query="LED PAR 4ch", mode="4ch RGBW", qty=2, universe=1, address=40)
+            wheel_light = e.patch[0]
+            check("(the first light picks its colour with a wheel)", "wheel" in (wheel_light.get("map") or []), wheel_light.get("map"))
+            # the pars mix pink; the wheel light's nearest step is magenta
+            e.act("select_heads", heads=[2, 3])
+            e.act("set_colour", hex="#ff7fbf")
+            e.act("select_heads", heads=[1])
+            e.act("set_attribute", attribute="wheel", value=87)
+            own = e._hex_for
+            e._hex_for = lambda hd, vals: "#ff00ff" if hd["head_no"] == 1 else own(hd, vals)
+            e.act("select_heads", heads=[1, 2, 3])
+            e.act("record_palette", kind="colour", name="Pink")
+            entry = e.snapshot()["palettes"]["colour"][0]
+            hx = str(entry.get("hex") or "")
+            g = int(hx[3:5], 16) if len(hx) == 7 else -1
+            check("a pink recorded on a wheel light and LED pars keeps pink as its tile's colour (not the wheel's magenta)",
+                  g >= 0x60, hx)
+        finally:
+            e.shutdown()
+    pal = (ROOT / "web" / "app" / "palettes.js").read_text(encoding="utf-8")
+    check("the tile works its colour out from the values (white, amber and UV on top), the stored colour only for a wheel's step",
+          "mixedHex(p.values || {}) || p.hex" in pal and "export function mixedHex(v)" in pal and 'n("uv")' in pal, "")
 
 
 def test_stylesheet_rules() -> None:
