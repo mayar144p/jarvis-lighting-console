@@ -152,3 +152,19 @@ body.arranging .stage-hud.drawn-hud { left: calc(108px * var(--ctl) + 22px); }
 .rec-pill i { flex: none; aspect-ratio: 1; }
 
 @keyframes rec-blink { 50% { opacity: .25; } }
+
+.hud-btn.icon { width: calc(30px * var(--ctl)); padding: 0; display: grid; place-items: center; }
+.hud-btn.toggle.on { background: var(--select); box-shadow: inset 0 0 0 1px var(--lit); color: var(--text); }
+.hud-btn.primary { background: var(--lit); color: var(--lit-ink); border-color: var(--lit); }
+.stage { position: absolute; inset: var(--vis-h, 38px) 0 0 0; }
+.stage canvas { display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
+.stage-tag.sel { border-color: var(--lit); color: var(--text); }
+.stage-hud.top-left { top: 10px; left: 10px; }
+.stage-hud.bottom-left.hint { width: fit-content; max-width: calc(100% - 350px); padding: 5px 9px; border-radius: var(--r); background: color-mix(in srgb, var(--black) 78%, transparent); backdrop-filter: blur(4px); line-height: 1.4; }
+.stage-tag.drawn { border-style: dashed; border-color: color-mix(in srgb, var(--blind) 70%, transparent); }
+.vis-bar .hud-btn.icon { width: calc(28px * var(--ctl)); padding: 0; }
+.vis-bar .hud-btn.toggle.on { background: var(--select); box-shadow: inset 0 0 0 1px var(--lit); color: var(--text); }
+.stage.wire { background: var(--black); }
+.vis-select.preview { color: var(--blind); border-color: var(--blind); background: var(--blind-face); }
+
+body.gig .stage-hud button { min-height: calc(42px * var(--ctl)); }

@@ -23,12 +23,7 @@
 .out-more summary { cursor: pointer; color: var(--text-2); margin: 6px 0; }
 .out-row .btn { margin-left: auto; }
 .out-tag { font-size: var(--t-xs); color: var(--lit); background: var(--select); padding: 1px 6px; border-radius: 999px; }
-body.gig { font-size: var(--t-l); }
-body.gig .fx-table td { height: calc(48px * var(--ctl)); }
-body.gig small { font-size: var(--t-s); }
-body.gig input[type=range] { height: calc(32px * var(--ctl)); }
-body.gig .stage-hud button { min-height: calc(42px * var(--ctl)); }
-body.gig .fx-table td { height: calc(40px * var(--ctl)); }
+
 .tpl { display: flex; flex-direction: column; gap: 12px; }
 .tpl h3 { margin: 6px 0 0; font-size: var(--t); color: var(--text-2); }
 .hue-box .row-btns { align-items: flex-end; }
@@ -41,3 +36,8 @@ body.gig .fx-table td { height: calc(40px * var(--ctl)); }
 .look-row { display: grid; grid-template-columns: 130px auto 1fr; align-items: center; gap: 12px; }
 .look-row input[type=range] { width: 220px; }
 .look-checks { display: grid; gap: 6px; margin-bottom: 8px; }
+
+.modal:has(> .modal-body > .settings), .modal:has(.modal-body > .settings) { width: min(980px, 94vw); height: min(760px, 88vh); display: flex; flex-direction: column; }
+.modal-body:has(> .settings) { flex: 1; min-height: 0; overflow: hidden; }
+.modal-body > .settings { height: 100%; min-height: 0; }
+.settings { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 20px; min-height: min(520px, 64vh); }

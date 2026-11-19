@@ -327,3 +327,6 @@ body:not([data-mode="live"]) .pb-mini { display: none; }
 .page-n { color: var(--text-3); text-align: right; }
 .page-row small { color: var(--text-3); }
 .pages-tidy { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; padding: 8px 10px; border-radius: var(--r); background: var(--blind-face); }
+
+.qb-back { font-weight: 700; color: var(--lit); }
+.qb-profile { font-weight: 600; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -493,3 +493,24 @@ details.mv-more > summary { cursor: pointer; color: var(--text-2); font-size: va
 .slot-dot { flex: none; aspect-ratio: 1; }
 
 @keyframes blindpulse { 50% { background: color-mix(in srgb, var(--f-fx) 32%, transparent); } }
+
+.aim-tools .select { max-width: 160px; }
+.fx-running { display: flex; flex-direction: column; gap: 4px; }
+.beam { width: calc(34px * var(--ctl)); height: calc(34px * var(--ctl)); border-radius: 50%; border: 1px solid var(--line-strong); background: var(--base); color: var(--text-3); font: 600 var(--t-xs) var(--font); cursor: pointer; }
+.beam:hover { border-color: var(--lit); color: var(--text); }
+.beam.on { background: var(--lit); color: var(--lit-ink); border-color: var(--lit); box-shadow: none; }
+#colour-match { margin-top: 10px; }
+.fx-running { gap: 8px; }
+.fx-run > .btn.small { height: calc(32px * var(--ctl)); padding: 0 14px; font-size: var(--t); }
+.beam { flex: none; aspect-ratio: 1; }
+.pad { position: relative; width: 100%; aspect-ratio: 1.3; max-height: 240px; border-radius: var(--r); background: var(--well); border: 1px solid var(--line-strong); touch-action: none; cursor: crosshair; overflow: hidden; }
+.pad::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--line-strong); }
+.pad::before { content: ""; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background: var(--line-strong); }
+.mv-sec > .knob .knob-k { width: calc(84px * var(--ctl)); }
+.pal-item i.gobo-ic { width: calc(22px * var(--ctl)); height: calc(22px * var(--ctl)); border-radius: 50%; }
+.palette-strip .pal-item:has(.gobo-ic) { align-items: center; gap: 7px; }
+.pal-item i.gobo-ic { flex: none; aspect-ratio: 1; }
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(40px * var(--ctl)), calc(60px * var(--ctl)))); gap: 6px; margin: 12px 0; }
+.swatches button { aspect-ratio: 1; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--text) 12%, transparent); }
+.swatches button:hover { transform: scale(1.08); }
+.swatches button.on { outline: 2px solid var(--text); outline-offset: 1px; }

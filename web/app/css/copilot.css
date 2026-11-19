@@ -60,7 +60,10 @@
 .auto-take { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--raised); }
 .auto-take-head { display: flex; align-items: center; gap: 8px; }
 .auto-take-head b { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--lit); color: var(--lit-ink); font-size: var(--t-xs); }
-.djreq { position: fixed; right: 16px; bottom: calc(var(--pb-h, 200px) + 16px); z-index: 60; display: grid; gap: 8px; width: min(340px, calc(100vw - 32px)); pointer-events: none; }
+/* a DJ's request: under the title bar, beside the master rail (never over
+   the master or Blackout) */
+.djreq { position: fixed; top: calc(var(--bar) + 12px); right: calc(104px * var(--ctl) + 16px); z-index: 60; display: grid; gap: 8px; width: min(340px, calc(100vw - 32px)); pointer-events: none; }
+body.rail-left .djreq { right: 16px; }
 .djreq-card { pointer-events: auto; background: var(--raised); border: 1px solid var(--lit); border-radius: var(--r); padding: 10px 12px; box-shadow: var(--shadow); display: grid; gap: 6px; animation: djreq-in .2s var(--ease); }
 .djreq-card.busy { opacity: .6; pointer-events: none; }
 .djreq-who { font-size: var(--t-xs); text-transform: uppercase; letter-spacing: .06em; color: var(--lit); font-weight: 700; }
@@ -112,3 +115,26 @@
 
 @keyframes djreq-in { from { transform: translateY(8px); opacity: 0; } }
 @keyframes mic-pulse { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--live) 30%, transparent); } }
+
+.finding { border-radius: var(--r); padding: 10px 12px; background: var(--base); border: 1px solid var(--line-strong); }
+.finding.error { border-color: color-mix(in srgb, var(--live) 50%, transparent); }
+.finding.warn { border-color: color-mix(in srgb, var(--blind) 50%, transparent); }
+.finding.ok { border-color: color-mix(in srgb, var(--go) 45%, transparent); }
+.finding b { display: block; margin-bottom: 3px; }
+.finding p { margin: 0; color: var(--text-2); font-size: var(--t-s); }
+.copilot .drawer-head { padding: 14px 18px; }
+.copilot .drawer-head h2 { font-size: var(--t-l); }
+.copilot .msg { font-size: var(--t); max-width: 88%; }
+.copilot .ai-input { background: var(--base); border: 1px solid var(--line-strong); border-radius: var(--r); padding: 8px; gap: 10px; }
+.copilot .ai-input:focus-within { border-color: var(--lit); }
+.copilot .ai-input textarea { border: 0; background: transparent; font-size: var(--t); min-height: calc(64px * var(--ctl)); resize: none; box-shadow: none; outline: none; }
+.copilot .ai-input .btn { min-height: calc(40px * var(--ctl)); padding: 0 18px; }
+.cp-card .input { width: 100%; box-sizing: border-box; font-size: var(--t); }
+.cp-row .input { flex: 1; min-width: 0; height: calc(36px * var(--ctl)); }
+.cp-card .row-btns { display: flex; gap: 10px; align-items: center; margin: 0; }
+.msg { max-width: 92%; padding: 9px 12px; border-radius: 12px; line-height: 1.45; white-space: pre-wrap; }
+.msg.user { align-self: flex-end; background: var(--hover); border-bottom-right-radius: 4px; }
+.msg .src { font: 700 var(--t-xs) var(--font); color: var(--text-3); margin-left: 6px; vertical-align: middle; }
+.plan { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.msg { user-select: text; -webkit-user-select: text; }
+.doctor.ready { min-width: 0; }

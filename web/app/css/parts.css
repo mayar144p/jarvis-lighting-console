@@ -225,3 +225,33 @@ kbd { padding: 0 5px; border-radius: 3px; background: var(--raised); color: var(
 /* --------------------------------------------------------------- tooltip */
 /* hover help (Settings -> Screen -> Hover help) */
 .help-tip { position: fixed; z-index: 200; max-width: 300px; padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--hover); color: var(--text); box-shadow: var(--shadow); font-size: var(--t-s); line-height: 1.35; pointer-events: none; }
+
+.hint { color: var(--text-2); font-size: var(--t-s); }
+.choice-body { display: grid; gap: 10px; max-width: 520px; }
+.choice-message { margin: 0; font-size: var(--t-l); font-weight: 600; color: var(--text); }
+.choice-detail { margin: 0; white-space: pre-wrap; color: var(--text-2); line-height: 1.5; user-select: text; overflow-wrap: anywhere; }
+.gobo-ic { width: calc(22px * var(--ctl)); height: calc(22px * var(--ctl)); flex: none; display: inline-block; border-radius: 50%; background: var(--black) center / cover no-repeat; box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 30%, transparent); }
+.gobo-ic.open { background: radial-gradient(circle, var(--text) 0 62%, var(--black) 64%); }
+.gobo-ic.standin { background: radial-gradient(circle at 50% 50%, var(--text) 0 14%, transparent 16%), radial-gradient(circle at 50% 18%, var(--text) 0 9%, transparent 11%), radial-gradient(circle at 50% 82%, var(--text) 0 9%, transparent 11%), radial-gradient(circle at 18% 50%, var(--text) 0 9%, transparent 11%), radial-gradient(circle at 82% 50%, var(--text) 0 9%, transparent 11%), var(--black); opacity: 0.7; }
+.gobo-ic.loading { opacity: 0.4; }
+.ic { width: var(--t-l); height: var(--t-l); flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; vertical-align: -0.2em; }
+.ic .fill { fill: currentColor; stroke: none; }
+.ic.glyph { width: 1.05em; height: 1.05em; margin: 0 .15em; vertical-align: -0.18em; }
+.ic-caret.glyph, .ic-caretr.glyph { width: .9em; height: .9em; opacity: .8; }
+.ic .dim { opacity: .45; }
+.ic-rec .fill { fill: var(--live); }
+.mono { font-family: var(--font); }
+.linkish { background: none; border: 0; padding: 3px 4px; margin: -3px -4px; min-height: calc(24px * var(--ctl)); border-radius: 4px; color: var(--lit); cursor: pointer; font: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.linkish:hover { color: var(--text); }
+.row-btns + .row-btns { margin-top: 12px; }
+body.gig .btn { height: auto; min-height: calc(44px * var(--ctl)); padding: 0 14px; font-size: var(--t-l); }
+body.gig .btn.small { min-height: calc(40px * var(--ctl)); }
+body.gig .btn.icon { min-width: calc(44px * var(--ctl)); }
+body.gig .chip { height: auto; min-height: calc(40px * var(--ctl)); padding: 0 14px; font-size: var(--t); border-radius: 20px; }
+body.gig .tabs button { height: calc(44px * var(--ctl)); padding: 0 12px; font-size: var(--t-l); }
+body.gig .muted.small { font-size: var(--t-s); }
+body.gig .seg button { min-height: calc(40px * var(--ctl)); }
+
+body.gig { font-size: var(--t-l); }
+body.gig small { font-size: var(--t-s); }
+body.gig input[type=range] { height: calc(32px * var(--ctl)); }

@@ -80,3 +80,16 @@ body.whats-this button:hover, body.whats-this [role=tab]:hover, body.whats-this 
 .gc-n { flex: none; aspect-ratio: 1; }
 
 @keyframes gc-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--lit) 55%, transparent); } 50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--lit) 0%, transparent); } }
+
+.help { display: flex; flex-direction: column; gap: 12px; width: min(860px, 86vw); min-height: min(460px, 60vh); }
+.help > .help-tabs { align-self: flex-start; }
+.help-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
+.help-card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; }
+.help-card h4 { margin: 0 0 8px; font-size: var(--t-s); text-transform: uppercase; letter-spacing: .06em; color: var(--text-2); }
+.help-rows { display: grid; grid-template-columns: max-content 1fr; gap: 6px 12px; align-items: baseline; }
+.help-row { display: contents; }
+.help-row kbd { justify-self: start; white-space: nowrap; }
+.help-row span { color: var(--text-2); }
+.help-steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; }
+.help-steps li b { display: block; color: var(--text); }
+.help-steps li span { color: var(--text-2); }

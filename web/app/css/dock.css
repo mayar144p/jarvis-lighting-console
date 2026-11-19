@@ -116,3 +116,6 @@ body.gig .pb-top .btn.icon { opacity: 1; }
 body.gig .pb { grid-template-columns: calc(44px * var(--ctl)) minmax(0, 1fr); }
 body.gig .pb .vfader { width: calc(44px * var(--ctl)); }
 body.gig .pb .go, body.gig .pb button { min-height: calc(40px * var(--ctl)); min-width: calc(40px * var(--ctl)); }
+
+.tl-time .link { background: none; border: 0; color: var(--text-2); font: inherit; padding: 3px 6px; min-height: calc(26px * var(--ctl)); border-radius: 4px; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.tl-time .link:hover { background: var(--raised); color: var(--text); }

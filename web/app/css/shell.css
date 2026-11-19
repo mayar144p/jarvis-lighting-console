@@ -357,3 +357,13 @@ body[data-mode="live"] .grp-dock.folded .grp-grip { top: 0; bottom: 0; height: a
 .dock-bar, .dock-body > .tl, .pb-cues, .grp-dock, .rail > :not(.blackout):not(.pb-relall),
 .pb-strip .pb > :not(.pb-btns), .pb-btns > :not(.go), .qb > :not(.pb-mini), .pbm > :not(.pbm-btns) { filter: var(--panel-filter, none); }
 :root[data-theme="showdark"] body { background: var(--black); }
+
+#lock-label { display: none; }
+#out-sub { white-space: nowrap; }
+@media (max-width: 1500px) {
+  #out-sub { display: none; }
+}
+#err-count { font-weight: 700; font-variant-numeric: tabular-nums; }
+body[data-lock="locked"] :is(#programmer, #fixtures-panel) { position: relative; }
+body[data-lock="locked"] :is(#programmer, #fixtures-panel) > * { opacity: .45; pointer-events: none; }
+body[data-lock="locked"] :is(#programmer, #fixtures-panel)::after { content: "Locked: playing only - GO, faders, buttons and blackout work. Top bar → Design to change things."; position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); width: min(80%, 360px); z-index: 5; text-align: center; padding: 12px 14px; border-radius: var(--r); background: var(--raised); border: 1px solid var(--live); color: var(--text); font-weight: 600; font-size: var(--t); }
