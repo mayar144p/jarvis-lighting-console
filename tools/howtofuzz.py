@@ -64,7 +64,7 @@ TOPICS: list[tuple[str, list[str]]] = [
                                "keep strobes slow for epilepsy"]),
     (r"Shows", ["save my show", "open a show", "go back to an earlier version of my show"]),
     (r"templates", ["start a new show from a template", "load the demo show"]),
-    (r"Workspaces", ["change the layout", "hide the 3d", "save my window layout"]),
+    (r"The layout", ["change the layout", "hide the 3d", "save my window layout"]),
     (r"Keyboard", ["see the keyboard shortcuts", "use the keyboard to go"]),
     (r"AI assistant|Talking|What the AI has learned", ["use the copilot", "set up the ai key", "talk to the copilot", "use voice control",
                                "see what the ai has learned", "make the ai forget something"]),

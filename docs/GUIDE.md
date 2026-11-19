@@ -6,12 +6,16 @@ How to use the desk. Getting it running is in the [README](../README.md)'s quick
 
 | Region | What it does |
 |---|---|
-| **Top bar** | show name, output state and **GO LIVE**, undo/redo with the last action named, command palette (<kbd>Ctrl</kbd>+<kbd>K</kbd>), copilot, patch lock, settings, help |
-| **Fixtures** (left) | the patch as a table; filter, add lights, select by click / ctrl-click / shift-click, select similar. **Change a group after it exists:** a right-click on its folder adds the selected lights, takes them out, makes it exactly the selection, renames or deletes it; a light's own menu has *Add to “group”* / *Take it out of “group”*. Buttons, faders and sound links that use the group follow. **Drag and drop:** drag a light (or the selected lights, or a folded type) onto a group's folder to put it in; drag it out of a group's folder onto the list to take it out; from one group onto another moves it (hold Alt to keep it in both); *＋ New group* appears while you drag. **Your groups are folders**, like a code editor's file tree: ▸ opens one, clicking its name selects all its lights, hovering it rings them in the 3D view (double-click frames them). Lights in no group stay in the list below |
-| **Stage** (centre) | the 3D venue; views and saved views, frame selection, house lights, haze, crowd, zones, **Arrange** mode, full screen, and a *now playing* strip |
-| **Programmer** (right) | tabs for what the selection can actually do: Level (and shutter open/close for lights without a dimmer), Colour (HSV picker, swatches, hex, white temperature, wheel steps), Position (pan/tilt pad, aim in degrees, **aim at a spot** or a performer mark, home), Beam (strobe speeds, gobo/prism steps, zoom/iris/frost, every attribute), FX, Looks (palettes and presets), Tools (fan, arrange, limits). The busy tabs come in parts, each remembered: **Position** - *Point* (aim, spots, the room map, the pad), *Move* (movements, A → B, waves; direction / arc / lock under *More*), *Limits* (stay on the floor, each light's range, laser safety); **Beam** - *Quick* (one-press strobe, gobo, prism, zoom...) and *All channels*; **FX** - *Effects*, *Running* (with how many run) and *Step & paint* |
-| **Bottom panel** | three modes: **Faders** (cue stacks with GO / back / release, crossfade time, a per-cue fade / hold / follow timeline), **Buttons** (quick buttons) and **Timeline** (the show against the music), plus the grand master and BLACKOUT |
-| **Status bar** | output target and rate, network, feed health, last save |
+| **Title bar** | the show's name and its menu (new, save, open, paperwork, **Check the show…**), **Blind** / **Go live…** (the output), **Arm FX** / **Kill FX**, the three modes, the tempo, the command line (<kbd>/</kbd> or <kbd>Ctrl</kbd>+<kbd>K</kbd>), the **Copilot**, undo and redo with the last changes named, the lock, the 3D view, the phone remote, settings and help |
+| **Lights** (the side panel, left) | the patch as a list; filter, **+ Add**, select by click / ctrl-click / shift-click, select similar. **Change a group after it exists:** a right-click on its folder adds the selected lights, takes them out, makes it exactly the selection, renames or deletes it; a light's own menu has *Add to “group”* / *Take it out of “group”*. Buttons, faders and sound links that use the group follow. **Drag and drop:** drag a light (or the selected lights, or a folded type) onto a group's folder to put it in; drag it out of a group's folder onto the list to take it out; from one group onto another moves it (hold Alt to keep it in both); *＋ New group* appears while you drag. **Your groups are folders**, like a code editor's file tree: ▸ opens one, clicking its name selects all its lights, hovering it rings them in the 3D view (double-click frames them). Lights in no group stay in the list below. Hold a group's name to flash its lights. At its foot, the selection: how many, its **⋯** (the same type, every mover, every light with gobos, one light at a time), Odd / Even / Left / Right, **Locate**, **Highlight**, All, None, **Group** |
+| **Programmer** (the middle) | tabs for what the selection can actually do: **Colour** (HSV picker, swatches, hex, white temperature, wheel steps), **Position** (pan/tilt pad, aim in degrees, **aim at a spot** or a performer mark, home), **Beam** (strobe speeds, gobo/prism steps, zoom/iris/frost, every attribute), **Effects** and **Palettes** - a laser's and a special effect's own tabs too when one is selected. The busy tabs come in parts, each remembered: **Position** - *Point* (aim, spots, the room map, the pad), *Move* (movements, A → B, waves), *Limits* (stay on the floor, each light's range, laser safety); **Beam** - *Quick* (one-press strobe, gobo, prism, zoom...) and *All channels*; **Effects** - *Effects*, *Running* (with how many run) and *Step & paint*. Beside every tab, the **Level** bar and its fade (double-click: full); under the tab, the value bar; along the foot, **Clear**, **Make a button…**, **Update** and **Record cue…** |
+| **The dock** (under the programmer) | **Buttons** (pages of instant buttons), **Cues** (the playbacks: a fader, GO, Flash, back and stop each, **+** for a new one, the cue list of the one in focus), **Timeline** (the show against the music) and **Group faders**; ⤢ gives it the whole middle |
+| **Master** (right) | the grand master, **Release all** (hold it) and **BLACKOUT**: the same place in every mode |
+| **Status bar** | output target and rate, network, what is connected, feed health, last save |
+
+The 3D view opens in a window of its own (the cube in the title bar) - put
+it on a second screen. **Settings → Screen & 3D → Also show the 3D in this
+window** puts it beside the programmer instead.
 
 It is made for a desktop or laptop screen (1280 px wide and up).
 
@@ -22,21 +26,20 @@ cue lists and buttons aren't all there at once.
 
 | Mode | On screen | For |
 |---|---|---|
-| **Set up** | the fixture list, the 3D view and the **Set up** hub (no faders: nothing plays yet) | the lights (add, import a plot or CSV, DMX map, address them all), the room (arrange, shape, rigging, describe it in words), the connections (output, nodes, RDM, DJ gear, MIDI / OSC / Stream Deck, Hue, a backup desk), the checks (**venue check-in**, test a light, ready check). Each step says how it stands (6 lights patched · no clashes) |
-| **Program** | the fixture list, the 3D view, the programmer, and the faders / buttons / timeline below | looks, cues, palettes, effects, buttons, the timeline and songs |
-| **Live** | the 3D view, the **Live** view and the buttons, master and BLACKOUT | running the show: what plays now and what comes next |
+| **Set up** | the lights and the **Set up** screen (no faders: nothing plays yet) | the lights (add, import a plot or CSV, DMX map, address them all), the room (arrange, shape, rigging, the plot, describe it in words), the connections (output, nodes, RDM, DJ gear, MIDI / OSC / Stream Deck, Hue, a backup desk), the checks (**venue check-in**, test a light, **Check the show**). Each step says how it stands (6 lights patched · no clashes) |
+| **Program** | the lights, the programmer and the dock | looks, cues, palettes, effects, buttons, the timeline and songs |
+| **Live** | the buttons page full size, the playbacks with GO above it, the group faders, the master | running the show: what plays now and what comes next |
 
 A new, empty show opens in Set up; otherwise the desk opens as you left
-it. Each mode remembers the workspace you last used for it (the workspace
-button still arranges panels, sides and widths; your own workspaces keep
-their mode).
+it. Each mode keeps how you left it: the side panel's width, the dock's
+height and the tab it was on.
 
-**The Live view** shows the song playing (or the track on the master deck),
-the part it is in - *Drop 2* - with a bar running to the next part and
-*Breakdown in 6 bars*; the tempo with the beat and Tap / Phrase starts now;
-the autopilot (start, next look, or "covering between songs"); and the hit
-buttons (strobe, flash, blinder, fog... from the Buttons page) big enough to
-hit in the dark. A hit holds while your finger is on it.
+**Live** is the buttons page, big enough to hit in the dark (a hit holds
+while your finger is on it), with the playbacks that hold cues and their GO
+above it. While something plays, a slim strip over them says what: the song
+(or the track on the master deck), the part it is in - *Drop 2* - with a bar
+running to the next part, and the autopilot (a new look every so many bars,
+*the next now*, stop).
 
 **The programmer follows the rig:** with nothing selected it shows the tabs
 the patched lights can use at all - no moving heads, no Position tab.
@@ -290,9 +293,9 @@ when the 3D is on WebGPU the desk offers to switch it and reload, then choose
 
 ### Quick buttons
 
-*Where:* Buttons (bottom left)
+*Where:* the dock → Buttons
 
-**Buttons** in the bottom panel is a grid of instant buttons on up to 32
+**Buttons** in the dock is a grid of instant buttons on up to 32
 named pages (double-click a page in Edit to name it), like a MagicQ execute
 window. Each one is **hold** (on while pressed),
 **latch** (press on, press off) or **tap**:
@@ -413,12 +416,12 @@ played one after another with **GO**.
 
 ### Effects
 
-*Where:* Programmer → FX
+*Where:* Programmer → Effects
 
-Programmer → **FX**: chases, waves, circles and other movement, colour and
+Programmer → **Effects**: chases, waves, circles and other movement, colour and
 dimmer effects on the selected lights.
 
-1. Select the lights, open **FX**, pick an effect and set its size, speed and
+1. Select the lights, open **Effects**, pick an effect and set its size, speed and
    spread (how it runs across the lights - **Left to right**, **Middle out**...).
 2. **Run** starts it; it is recorded into cues and buttons like any look.
 3. Running effects show as a chip on the programmer bar: **×** on the chip
@@ -427,9 +430,9 @@ dimmer effects on the selected lights.
 
 ### Timeline
 
-*Where:* Timeline (bottom left)
+*Where:* the dock → Timeline
 
-**Timeline** in the bottom panel runs the show against the music:
+**Timeline** in the dock runs the show against the music:
 
 * **Tracks.** *Cue* tracks GO a playback to a cue at a time. *Button* tracks
   hold a quick button for a clip's length, such as strobe hits on the beat.
@@ -643,7 +646,7 @@ group (lights added to the group later follow it). Rename it in Edit.
 **Stopping effects:** the "In the programmer" bar shows **Effects** with
 a ×: it stops the effects you started and leaves the lights' colour, level
 and position (and the effects of cues, buttons and the timeline) alone.
-The FX tab's Running list says where each effect comes from; **Stop mine**
+The Effects tab's Running list says where each effect comes from; **Stop mine**
 and **Stop all** are there too. **Clear all** no longer stops the effects
 of cues and buttons.
 
@@ -654,12 +657,12 @@ on the edges, the readout in degrees, and the part they can't reach (their
 limits, the dance floor when it's locked) greyed out. A drag stops at the
 limit. A light that only tilts (a CO2 jet, some bars) gets a tilt-only pad,
 only the movements it can do (Bounce), and no aim tools. The Level, Colour,
-Beam and FX tabs are for lights. A laser's or effect machine's own colour
+Beam and Effects tabs are for lights. A laser's or effect machine's own colour
 and settings are on its Laser or SFX tab.
 
 ### Painting the rig and shapes
 
-* **FX tab -> Paint the rig.** A **gradient** of 2 to 6 colours across
+* **Effects tab → Paint the rig.** A **gradient** of 2 to 6 colours across
   the room (left to right, from the stage out, bottom to top, centre out,
   round the room), still, scrolling or on the beat. Or a **picture or
   video** laid over the lights as seen from the front or from above. A
@@ -759,28 +762,20 @@ takes longer (the progress shows how long is left; Cancel stops it). Full
 HD, 4K or small, at 30 or 60 pictures a second (60 shows fast strobes as
 they are).
 
-### Workspaces
+### The layout: panels, the dock and the 3D view
 
-The top bar's **workspace** button arranges the screen for the job:
-*Set up*, *Live*, *Programming*, *Theatre (cues)* (the cue list of the
-playback in focus beside the faders: the live cue marked, a tap is GO to
-that cue) and *No 3D (buttons + programmer)* (no visualiser at all: the
-programmer and the buttons get the room, and the computer does no 3D
-work).  The menu's *3D view* and *Cue list beside the faders* turn those on
-or off in any workspace.  (Busking and Show from earlier versions stay in
-your list as your own workspaces.)
-Alt+1 ... Alt+9 switches between them. Each one keeps the screen as you
-left it: the fixture list and programmer shown or hidden, which side each
-is on (drag a panel by its title to the side you want - both can go on the
-same side - or pick it in the workspace menu), or floating over the 3D view
-(drag it by its title anywhere over the 3D; drag it near a side to dock it
-again), their widths (drag a panel's
-inner edge; double-click for the normal width), the faders / buttons dock at
-the bottom or the top and its height, the programmer's tab. *Save as a new workspace* makes your own. Workspaces belong to this
-computer (each operator's own), not to the show.
+The modes are the switch: no menu of layouts. Drag the side panel's inner
+edge, and the dock's top edge, to size them (double-click: back to the
+normal size); each mode keeps its own. ⤢ on the dock gives it the whole
+middle, and back. The master can sit on the left of the screen instead
+(right-click it: *Master on the left of the screen*). The 3D view is a
+window of its own - close it to hide the 3D; **Settings → Screen & 3D →
+Also show the 3D in this window** puts it beside the programmer, and
+unticking it hides it again. These belong to this computer (each
+operator's own), not to the show.
 
 **Small screens (1280 x 720):** the dock's height follows the window, the
-group faders fold away (the ‹ beside them) and scroll, the fixture list
+group faders fold away (the ‹ beside them) and scroll, the list of lights
 keeps at least 5 rows, and panels never squeeze below what they can show.
 In Live, blackout, the hits, the tempo and the autopilot come first.  In
 full screen the buttons have their own Blackout; pages, Edit and Layout
@@ -788,7 +783,7 @@ work there too.
 
 **Help → Take the tour** shows round the mode on screen (Set up, Program
 or Live); the first time in each mode the desk offers it once.  A greyed
-*Record cue* says why underneath.  **Check the show…** (the Show menu) puts a button on each thing
+*Record cue* says why (hold the pointer on it).  **Check the show…** (the Show menu) puts a button on each thing
 to fix (Add lights, Show the clashes, Record a cue, Save, Output
 settings, Turn on Stay on the floor...) and *Check again*.
 
@@ -878,7 +873,7 @@ desk after each one.
 Tick *Offline compiler* (or have no key) for the keyword copilot described
 below.
 
-**AI** in the top bar opens it. Three tabs:
+**Copilot** in the top bar opens it. Three tabs:
 
 * **Ask.** *“Warm wash on the pars at 70%, then a slow rainbow on the
   movers.”* The request, your rig (types, groups, palettes, cues, selection)
@@ -1200,21 +1195,22 @@ one Ctrl+Z, and that brings back the show that was open.
 - **Hover help:** rest the pointer on any control for what it does (on by
   default). **Look back to how it came** undoes all of it.
 
-Which panels show, on which side and how wide is the **workspace** button
-in the top bar (each workspace keeps its own; Alt+1..9 switches).
-
-**Arranging lights:** select some, then the fixture list's **⋯**: line them
-up in a row across the stage or at the same height, space them evenly left
-to right or front to back, or flip them left ↔ right. **Clear the
+**Arranging lights:** select some, then the side panel's **⋯** →
+**Arrange the selection…**: line them up, spread them evenly or mirror
+them - across the stage, front to back or in height (or the quick *in a
+row across the stage* / *all at the same height*). **Clear the
 selection's values** takes only those lights out of the programmer.
 **Settings → Venue → Describe the room** builds a room from words ("a 12 x
 8 m club, bar on the left, DJ booth on a 40 cm riser"); *What would it
 build?* shows what it understood first.
 
-**Wheels:** under the programmer's tabs, a wheel for each attribute of the
-open tab that the selected lights have (dimmer, colour, pan / tilt, zoom,
-focus, iris, frost, gobo spin). Drag up or down or scroll to turn. **FINE**,
-or holding Shift, turns a tenth as far. Arrow keys work too.
+**The value bar:** under the programmer's tab, a cell for each attribute
+of the open tab (colour, pan / tilt, zoom, focus, iris, frost, gobo spin),
+with its value now; one the selected lights don't have is greyed in its
+place. Drag a cell sideways or scroll on it to change it - every selected
+light moves by the same share of its travel. **Fine**, or holding Shift,
+moves a tenth as far; arrow keys work too. **Fan…** spreads one value
+across the selection, from the first light to the last.
 
 **More universes:** Settings → Output → *More universes* sends any universe
 to a node of its own (one node per truss), over Art-Net or sACN. With sACN

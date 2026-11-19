@@ -96,6 +96,7 @@ is the 15-minute check with real lights.
 │   ├── index.html         the app shell
 │   ├── app/               UI modules (store, actions, panels, copilot, keys,
 │   │                      venue panel, quick buttons, timeline)
+│   ├── app/css/           the desk's look, one file per part (see Stylesheets)
 │   ├── js/stage/          visualiser (models, materials, venue, editor, GDTF meshes)
 │   └── vendor/            three.js and pdf.js, vendored for offline use
 ├── tools/
@@ -108,6 +109,37 @@ is the 15-minute check with real lights.
 ├── fixtures_inbox/        drop .gdtf / .qxf / OFL .json files here
 └── data/                  runtime data (git-ignored): fixtures.db, shows, cache
 ```
+
+## Stylesheets
+
+`web/index.html` links the files of `web/app/css/` in this order, each the
+look of one part of the desk:
+
+| File | What it styles |
+|---|---|
+| `tokens.css` | the named values: every colour, the type scale, sizes, the typeface. The only file with a colour written out |
+| `base.css` | the page itself, and the few rules that must win everywhere (`hidden`, reduced motion, the pointer modes) - the only file with `!important` |
+| `parts.css` | the shared parts: buttons, fields, the segmented switch, tabs, chips, faders, menus, the window frame, toasts, icons |
+| `shell.css` | the frame: title bar, side panel / work area / master rail, the three modes, the status bar |
+| `buttons.css` | the button pages and the button editor |
+| `program.css` | the programmer: its tabs, the Level bar, the value bar |
+| `side.css` | the side panel: the lights, the groups, the selection |
+| `palettes.css` | the Palettes tab: the looks and the colour, position and beam pools |
+| `dock.css` | the dock: Cues (the playbacks, the cue list) and the Timeline |
+| `setup.css`, `settings.css` | the Set up screen; Settings |
+| `dialogs.css` | the windows (adding lights, cues, the DMX map, Check the show, line up, the room...) |
+| `copilot.css`, `help.css` | the Copilot drawer; Help, the tour and the coach |
+| `stage.css` | the 3D view and its window's toolbar |
+
+Rules: a colour is named in `tokens.css` and used by name everywhere else
+(`var(--lit)`, `color-mix(in srgb, var(--live) 40%, transparent)`);
+`!important` only in `base.css`; a rule goes in the file of the part it
+styles, scoped to it (a bare one-word class such as `.empty` can reach
+another screen). `test_stylesheet_rules` in the self-test holds these.
+The phone remote (`web/remote/remote.css`), the DJ request page and the
+paperwork load `tokens.css` too, so they share the desk's colours and
+typeface. Canvas drawings read the named colours with `cssVar()`
+(`web/app/ui.js`).
 
 ## Running the visual checks on your own PC (graphics card)
 
